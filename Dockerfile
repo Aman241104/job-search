@@ -5,7 +5,12 @@
 # GDK-PixBuf for text shaping and rendering), installed below as root during
 # the image build — this also sidesteps the earlier `su`/sudo restriction
 # Render's native Python buildpack has (Docker builds run as root by default).
-FROM python:3.12-slim
+#
+# Pinned to -bookworm explicitly, not the floating `slim` tag: that tag moved
+# to Debian trixie underneath us mid-deploy and broke this exact apt-get step
+# (trixie renamed libgdk-pixbuf2.0-0). Bookworm's package names below are the
+# ones WeasyPrint's own install docs document.
+FROM python:3.12-slim-bookworm
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpango-1.0-0 \
