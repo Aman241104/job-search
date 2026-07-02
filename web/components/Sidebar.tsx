@@ -14,6 +14,8 @@ import {
   FileText,
   User,
   Search,
+  MoreHorizontal,
+  X as CloseIcon,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useGlobalSearch } from '@/components/GlobalSearch';
@@ -29,12 +31,25 @@ const navItems = [
   { href: '/links', icon: Link2, label: 'Job Boards' },
 ];
 
+// Mobile bottom nav only has room for ~5 comfortable tabs on a 375px screen
+// (9 items — 7 nav links + Search + Export — was overflowing/cramping badly).
+// Keep the 4 most-used destinations visible; everything else lives in "More".
+const mobilePrimaryHrefs = ['/dashboard', '/jobs', '/train', '/analytics'];
+const mobilePrimaryItems = navItems.filter((n) => mobilePrimaryHrefs.includes(n.href));
+const mobileMoreItems = navItems.filter((n) => !mobilePrimaryHrefs.includes(n.href));
+
 export default function Sidebar() {
   const pathname = usePathname();
   const sidebarRef = useRef<HTMLDivElement>(null);
   const itemsRef = useRef<HTMLDivElement>(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [showMore, setShowMore] = useState(false);
   const { open: openSearch } = useGlobalSearch();
+
+  // Close the "More" sheet on route change so it doesn't stay open after navigating.
+  useEffect(() => {
+    setShowMore(false);
+  }, [pathname]);
 
   useEffect(() => {
     if (!sidebarRef.current) return;
@@ -150,9 +165,59 @@ export default function Sidebar() {
         </div>
       </aside>
 
-      {/* Mobile Bottom Nav */}
+      {/* Mobile "More" sheet — everything not in the primary 4-tab bar */}
+      {showMore && (
+        <>
+          <div
+            className="md:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
+            onClick={() => setShowMore(false)}
+          />
+          <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-bg-1 border-t border-border rounded-t-2xl px-4 pt-4 pb-8">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-mono text-white/30 uppercase tracking-widest">More</span>
+              <button onClick={() => setShowMore(false)} className="p-1 text-white/40">
+                <CloseIcon size={18} />
+              </button>
+            </div>
+            <div className="grid grid-cols-4 gap-3">
+              {mobileMoreItems.map(({ href, icon: Icon, label }) => {
+                const isActive = pathname === href || pathname.startsWith(href + '/');
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    className={clsx(
+                      'flex flex-col items-center gap-1.5 py-3 rounded-xl transition-all duration-150',
+                      isActive ? 'text-accent-green bg-accent-green/10' : 'text-white/50 bg-white/5'
+                    )}
+                  >
+                    <Icon size={20} />
+                    <span className="text-[10px] font-medium text-center leading-tight">{label}</span>
+                  </Link>
+                );
+              })}
+              <button
+                onClick={() => { setShowMore(false); openSearch(); }}
+                className="flex flex-col items-center gap-1.5 py-3 rounded-xl text-white/50 bg-white/5"
+              >
+                <Search size={20} />
+                <span className="text-[10px] font-medium">Search</span>
+              </button>
+              <button
+                onClick={() => { setShowMore(false); handleExport(); }}
+                className="flex flex-col items-center gap-1.5 py-3 rounded-xl text-white/50 bg-white/5"
+              >
+                <Download size={20} />
+                <span className="text-[10px] font-medium">Export</span>
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Mobile Bottom Nav — 4 primary destinations + More, sized to fit 375px comfortably */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-bg-1/95 backdrop-blur-lg border-t border-border flex items-center justify-around px-2 py-2">
-        {navItems.map(({ href, icon: Icon, label }) => {
+        {mobilePrimaryItems.map(({ href, icon: Icon, label }) => {
           const isActive = pathname === href || pathname.startsWith(href + '/');
           return (
             <Link
@@ -172,18 +237,14 @@ export default function Sidebar() {
           );
         })}
         <button
-          onClick={openSearch}
-          className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl text-white/40"
+          onClick={() => setShowMore(true)}
+          className={clsx(
+            'flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all duration-150',
+            showMore ? 'text-accent-green' : 'text-white/40'
+          )}
         >
-          <Search size={20} />
-          <span className="text-[10px] font-medium">Search</span>
-        </button>
-        <button
-          onClick={handleExport}
-          className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl text-white/40"
-        >
-          <Download size={20} />
-          <span className="text-[10px] font-medium">Export</span>
+          <MoreHorizontal size={20} />
+          <span className="text-[10px] font-medium">More</span>
         </button>
       </nav>
     </>

@@ -363,7 +363,7 @@ export default function AnalyticsPage() {
         <div ref={pageRef} className="space-y-6">
 
           {/* ── Feature 4: Weekly Activity Strip ── */}
-          <div ref={weekStripRef} className="anim-card grid grid-cols-3 gap-3">
+          <div ref={weekStripRef} className="anim-card grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[
               {
                 label: 'Found this week',
