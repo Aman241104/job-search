@@ -1,5 +1,15 @@
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'production' && !process.env.NEXT_PUBLIC_API_URL) {
+  // Loud on purpose — a silent fallback to localhost:8000 in a deployed build
+  // means every API call fails, but looks like a generic network error with
+  // no clue why. This is the single most load-bearing env var in this deploy.
+  console.error(
+    '[job-serach] NEXT_PUBLIC_API_URL is not set in this production build — ' +
+    'falling back to http://localhost:8000, which will not work. Set it in Vercel\'s project env vars and redeploy.'
+  );
+}
+
 export interface Job {
   id: string;
   title: string;
