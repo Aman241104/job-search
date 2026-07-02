@@ -72,9 +72,14 @@ async def get_stats():
     stats['rejected']     = stats.get('rejected', 0)
     stats['ghosted']      = stats.get('ghosted', 0)
 
-    finder = JobFinderAgent()
-    all_jobs = finder.get_all_jobs()
-    scores = [j.get('score', 0) for j in all_jobs]
+    # Score breakdown from the database directly, not JobFinderAgent.get_all_jobs()
+    # (that reads a local found_jobs.json cache file — regenerable local scrape
+    # state, gitignored, and absent entirely on a fresh deploy like Render's,
+    # where this silently produced all-zero score stats despite jobs.score
+    # being right there in the same DB every other stat on this page uses).
+    with tracker._get_conn() as conn:
+        score_rows = conn.execute("SELECT score FROM jobs").fetchall()
+    scores = [row[0] or 0 for row in score_rows]
     stats['score_80_plus']  = sum(1 for s in scores if s >= 80)
     stats['score_60_79']    = sum(1 for s in scores if 60 <= s < 80)
     stats['score_40_59']    = sum(1 for s in scores if 40 <= s < 60)
