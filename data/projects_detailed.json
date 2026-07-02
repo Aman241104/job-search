@@ -1,0 +1,256 @@
+{
+  "flagship": [
+    {
+      "id": "whatsapp-ai-agent",
+      "name": "WhatsApp AI Agent — Multi-Tenant SaaS",
+      "tier": "S",
+      "tech_stack": ["Next.js 16", "React 19", "Supabase", "Groq LLM", "Meta Cloud API", "Tailwind 4", "Vitest"],
+      "live_url": "https://whatsapp-ai-agent-inky.vercel.app",
+      "github_url": "https://github.com/Aman241104/whatsapp-ai-agent",
+      "deployed": true,
+      "private_repo": true,
+      "description": "Multi-tenant WhatsApp Business AI SaaS: an admin dashboard lets each business workspace configure an LLM-powered agent that handles customer conversations over the real WhatsApp Business Cloud API, with automated drip-sequence follow-ups and an appointment/reservation booking state machine.",
+      "highlights": [
+        "Row-Level-Security-based tenant isolation across contacts, conversations, and knowledge-base tables, backed by integration tests (found and fixed a real cross-tenant data-leak bug via a live RLS audit)",
+        "Booking state machine handling multi-step reservation/appointment flows over chat",
+        "Drip sequence engine for scheduled automated follow-up messages",
+        "Groq-backed LLM tool-calling agent with per-workspace knowledge-base injection",
+        "Real Vitest integration test suite, including tests that assert against the live Supabase project"
+      ],
+      "bullets": [
+        "Built a multi-tenant WhatsApp Business AI SaaS (Next.js 16, Supabase, Groq) letting businesses deploy an LLM agent over their real WhatsApp number, with per-tenant RLS-enforced data isolation",
+        "Designed a booking state machine and drip-sequence engine for automated appointment scheduling and follow-up messaging",
+        "Wrote integration tests that queried the live database directly to verify tenant isolation, catching and fixing a real cross-tenant RLS misconfiguration"
+      ],
+      "keywords": ["multi-tenant", "saas", "supabase", "rls", "row level security", "whatsapp", "llm", "agent", "groq", "next.js", "react", "chatbot", "automation", "tool-calling"]
+    },
+    {
+      "id": "job-serach",
+      "name": "Job Search Automation Platform (this app)",
+      "tier": "S",
+      "tech_stack": ["Python", "FastAPI", "Next.js 14", "Postgres", "Gemini API", "Playwright", "SSE"],
+      "live_url": null,
+      "github_url": null,
+      "deployed": false,
+      "description": "Self-built multi-agent job-search system: scrapes 9 job sources concurrently, scores every listing against a candidate profile via LLM + keyword heuristics, generates tailored ATS-friendly PDF CVs and cover letters per job, tracks the full application pipeline, and includes an AI-driven mock interview trainer with scored feedback.",
+      "highlights": [
+        "9-source job scraper (Internshala, LinkedIn, WeWorkRemotely, Remotive, RemoteOK, Jobicy, Arbeitnow, Remote.co, Adzuna) unified into one pipeline",
+        "Two-stage scoring: cheap keyword heuristic first, LLM batch-scoring only for uncertain (35-65) matches — keeps API usage low",
+        "Per-job CV/cover-letter tailoring: relevance-ranks the candidate's own project portfolio by keyword overlap with the job description before generating",
+        "Server-Sent-Events streaming for live scrape progress in the UI",
+        "Pluggable AI provider layer: Gemini for scoring/production, an optional local Claude Code CLI path for higher-quality CV writing during development"
+      ],
+      "bullets": [
+        "Built a multi-agent job-search platform (FastAPI, Next.js, Postgres) that scrapes 9 job boards, scores listings via a hybrid keyword+LLM pipeline, and auto-generates tailored PDF CVs per application",
+        "Designed a provider-agnostic AI abstraction supporting both a cloud LLM API and a local CLI-based model, with automatic fail-open fallback",
+        "Implemented an AI mock-interview trainer with scored, topic-based feedback sessions"
+      ],
+      "keywords": ["python", "fastapi", "automation", "scraping", "llm", "gemini", "agent", "postgres", "sse", "multi-agent", "ai", "pipeline"]
+    },
+    {
+      "id": "outreach-automation",
+      "name": "Outreach Automation — Freelance Client Acquisition System",
+      "tier": "S",
+      "tech_stack": ["Next.js 16", "React 19", "Tailwind", "Recharts", "n8n", "Airtable"],
+      "live_url": null,
+      "github_url": "https://github.com/Aman241104/outreach",
+      "deployed": false,
+      "description": "Freelance client-acquisition automation: an Airtable-backed lead database drives 4 n8n workflows (daily outreach send, automated follow-up, inbound reply detection, Apollo.io lead import) surfaced through a Next.js analytics dashboard.",
+      "highlights": [
+        "4 built n8n workflows covering the full outreach loop: import leads → send → follow up → detect replies",
+        "Apollo.io integration for automated lead sourcing",
+        "Next.js dashboard with Recharts visualizations for outreach funnel metrics"
+      ],
+      "bullets": [
+        "Designed a freelance-lead-generation automation system combining Airtable, n8n workflow automation, and Apollo.io lead sourcing",
+        "Built a Next.js analytics dashboard visualizing outreach funnel performance (sent, followed-up, replied) via Recharts"
+      ],
+      "keywords": ["automation", "n8n", "airtable", "workflow", "outreach", "dashboard", "recharts", "next.js", "react", "analytics"]
+    },
+    {
+      "id": "iot-weather-frontend",
+      "name": "IoT Weather Dashboard — Frontend",
+      "tier": "A",
+      "tech_stack": ["React (Create React App)"],
+      "live_url": "https://iot-weather-frontend.vercel.app",
+      "github_url": "https://github.com/Aman241104/iot-weather-frontend",
+      "deployed": true,
+      "private_repo": true,
+      "description": "Live dashboard visualizing real-time sensor readings (temperature/humidity/weather data) streamed from a physical IoT device via the companion backend API.",
+      "highlights": ["Paired with a real Express/MongoDB backend ingesting live sensor data — a genuine hardware-adjacent project, distinct from the web-only portfolio work"],
+      "bullets": [
+        "Built a live IoT sensor dashboard in React consuming real-time weather/environmental data from a physical device's backend API"
+      ],
+      "keywords": ["iot", "react", "dashboard", "real-time", "hardware", "sensors"]
+    },
+    {
+      "id": "iot-weather-backend",
+      "name": "IoT Weather Dashboard — Backend API",
+      "tier": "A",
+      "tech_stack": ["Node.js", "Express 5", "MongoDB/Mongoose", "CORS"],
+      "live_url": null,
+      "github_url": "https://github.com/Aman241104/iot-weather-backend",
+      "deployed": false,
+      "description": "REST API ingesting and serving sensor readings from a physical IoT weather device into MongoDB, consumed by the companion frontend dashboard.",
+      "highlights": ["Single-purpose Express 5 API with a `Reading` model — small but a genuine hardware-data-ingestion backend, not a CRUD demo"],
+      "bullets": [
+        "Built an Express/MongoDB REST API to ingest and serve real-time sensor readings from a physical IoT device"
+      ],
+      "keywords": ["node.js", "express", "api", "mongodb", "iot", "backend", "rest"]
+    },
+    {
+      "id": "inventory-manager",
+      "name": "Inventory Manager — Lot-Based Stock Ledger",
+      "tier": "A",
+      "tech_stack": ["Next.js 16", "React 19", "MongoDB/Mongoose", "Tailwind 3"],
+      "live_url": null,
+      "github_url": "https://github.com/Aman241104/inventory-manager",
+      "deployed": false,
+      "description": "A batch/lot-based inventory management system (built for a produce/fruit-stock use case) with products, vendors, and customers CRUD, buy/sell transaction ledgers, weighted-average cost calculation across lots, and a soft-delete trash bin.",
+      "highlights": [
+        "Lot-based inventory with weighted-average rate calculation across purchase batches",
+        "Business-logic validation: rejects sales recorded before a lot's purchase date to prevent ledger inconsistencies",
+        "Dashboard-summary and stock API routes for real-time inventory position",
+        "Soft-delete (trash) pattern instead of hard deletes on products/vendors/customers"
+      ],
+      "bullets": [
+        "Built a lot-based inventory management system (Next.js, MongoDB) with weighted-average cost tracking across purchase batches",
+        "Implemented transaction-safety validation logic (date-ordering checks) to prevent inconsistent stock ledger states",
+        "Designed products/vendors/customers CRUD with a soft-delete trash pattern instead of destructive deletes"
+      ],
+      "keywords": ["inventory", "mongodb", "crud", "next.js", "react", "business logic", "ledger", "full stack"]
+    },
+    {
+      "id": "event-management",
+      "name": "Zing Bliss Events — Luxury Event Agency Platform",
+      "tier": "S",
+      "tech_stack": ["Next.js 16", "React 19", "GSAP", "Lenis", "Tailwind 4"],
+      "live_url": "https://event-management-omega-one.vercel.app",
+      "github_url": "https://github.com/Aman241104/event-management",
+      "deployed": true,
+      "description": "A high-end event-management agency platform going well beyond a marketing site: public routes (home, about, services, gallery, per-event case studies, contact) plus an interactive AI-style client-preference quiz, a private authenticated client portal with live event itineraries, and an admin dashboard/CMS for creating and managing events.",
+      "highlights": [
+        "Atomic-design component architecture (atoms/molecules/organisms) for a large, motion-heavy Next.js 16 + Tailwind 4 codebase",
+        "GSAP + Lenis smooth-scroll cinematic animation system across every route",
+        "Client-facing 'style quiz' feature for lead qualification",
+        "Private client portal (event itineraries, live countdowns) distinct from the public marketing routes",
+        "Admin CMS route for creating/managing events with a live preview"
+      ],
+      "bullets": [
+        "Built a full event-management agency platform (Next.js 16, GSAP, Lenis) with public marketing routes, an interactive client-preference quiz, a private client portal, and an admin CMS for event management",
+        "Implemented a GSAP/Lenis-driven cinematic animation system across an atomic-design component architecture",
+        "Designed and shipped an authenticated client portal separate from the public site for live event itinerary tracking"
+      ],
+      "keywords": ["next.js", "react", "gsap", "animation", "cms", "admin dashboard", "client portal", "frontend", "design system", "tailwind"]
+    },
+    {
+      "id": "gym-app",
+      "name": "Gym Tracker — Workout Analytics & Progressive-Overload Coach",
+      "tier": "S",
+      "tech_stack": ["Next.js 14", "MongoDB/Mongoose", "NextAuth.js", "Recharts", "Tailwind"],
+      "live_url": null,
+      "github_url": "https://github.com/Aman241104/gym-app",
+      "deployed": false,
+      "description": "A full-stack fitness tracker: workout logging, routine builder, a per-exercise analytics view (dynamic `[exercise]` route) charting historical performance via Recharts, and an algorithmic progressive-overload coach that suggests the next workout's weights/reps based on logged history. Auth via NextAuth with a MongoDB adapter (GitHub OAuth).",
+      "highlights": [
+        "Multi-user auth (NextAuth + MongoDB adapter, GitHub OAuth)",
+        "Per-exercise analytics with historical trend charts (Recharts)",
+        "Algorithmic (non-LLM) progressive-overload suggestion logic based on logged workout history",
+        "Routines, workout history, and settings as first-class features, not just a logging form"
+      ],
+      "bullets": [
+        "Built a full-stack workout tracker (Next.js, MongoDB, NextAuth) with multi-user auth via GitHub OAuth",
+        "Designed an algorithmic progressive-overload coach that analyzes logged workout history to suggest next-session weights/reps",
+        "Implemented per-exercise historical analytics dashboards using Recharts"
+      ],
+      "keywords": ["next.js", "mongodb", "nextauth", "oauth", "authentication", "full stack", "analytics", "recharts", "algorithm", "fitness"]
+    },
+    {
+      "id": "stock_app_demo",
+      "name": "Stock Trading Demo App",
+      "tier": "S",
+      "tech_stack": ["Next.js 15", "React 19", "MongoDB/Mongoose", "better-auth", "Inngest", "Radix UI"],
+      "live_url": "https://stock-app-demo.vercel.app",
+      "github_url": "https://github.com/Aman241104/stock_app_demo",
+      "deployed": true,
+      "description": "A stock/trading demo application with authenticated and public route groups, background job processing via Inngest (for scheduled/async tasks like email notifications), and a Radix UI component system — the most feature-dense of the standalone apps (auth, background jobs, email, form validation).",
+      "highlights": [
+        "Inngest-based background job processing — a genuinely production-grade pattern for async work (not just synchronous API routes)",
+        "better-auth for authentication instead of a hand-rolled solution",
+        "Radix UI + react-hook-form for accessible, validated forms",
+        "Nodemailer integration for transactional email"
+      ],
+      "bullets": [
+        "Built a stock-trading demo app (Next.js 15, MongoDB) with background job processing via Inngest for async/scheduled tasks",
+        "Implemented authentication with better-auth and accessible form UI with Radix UI + react-hook-form",
+        "Integrated transactional email (Nodemailer) triggered from background jobs"
+      ],
+      "keywords": ["next.js", "react", "mongodb", "background jobs", "inngest", "async", "auth", "radix ui", "full stack"]
+    },
+    {
+      "id": "kata_sweet_shop",
+      "name": "Sweet Shop Management System (TDD Kata)",
+      "tier": "C",
+      "tech_stack": ["React 19", "Vite", "Tailwind 4", "JSON Server", "Jest", "React Testing Library"],
+      "live_url": null,
+      "github_url": "https://github.com/Aman241104/kata_sweet_shop",
+      "deployed": false,
+      "description": "A test-driven-development kata: a small sweet-shop inventory CRUD app (add/search/filter sweets by name, category, price) built against a mocked REST API (json-server), with component-level Jest + React Testing Library coverage on every major component.",
+      "highlights": [
+        "Deliberate TDD exercise — tests written alongside components (Navbar, SweetCard, AddSweet)",
+        "Mocked REST backend via json-server rather than a real database, keeping the exercise focused on frontend logic + testing discipline"
+      ],
+      "bullets": [
+        "Completed a TDD kata building a sweet-shop inventory CRUD app (React, Vite) with full Jest + React Testing Library component coverage"
+      ],
+      "keywords": ["testing", "tdd", "jest", "react testing library", "react", "vite", "kata", "quality"]
+    },
+    {
+      "id": "portfolio-1",
+      "name": "Personal Portfolio Site",
+      "tier": "A",
+      "tech_stack": ["Next.js", "React"],
+      "live_url": "https://portfolio-1-five-jet.vercel.app",
+      "github_url": "https://github.com/Aman241104/Portfolio_1",
+      "deployed": true,
+      "description": "Personal developer portfolio site — the canonical entry point for the rest of this project list, kept pinned on GitHub.",
+      "highlights": [],
+      "bullets": [],
+      "keywords": ["portfolio", "personal site", "next.js", "react"]
+    },
+    {
+      "id": "devevents",
+      "name": "DevEvents — Event Discovery Platform",
+      "tier": "A",
+      "tech_stack": ["Next.js", "TypeScript", "React", "Tailwind CSS"],
+      "live_url": "https://deveventsbyaman.vercel.app",
+      "github_url": "https://github.com/Aman241104/next_js_demo",
+      "deployed": true,
+      "description": "A dynamic event discovery platform with server-side rendering and external REST API integration for real-time event data.",
+      "highlights": ["Already present in the base resume's project list — kept here for a unified data source"],
+      "bullets": [
+        "Built a dynamic event discovery platform (Next.js, TypeScript) with SSR and real-time external API integration"
+      ],
+      "keywords": ["next.js", "typescript", "react", "ssr", "api integration", "frontend"]
+    }
+  ],
+  "gallery": {
+    "id": "landing-page-clones",
+    "name": "Landing Page & UI Clone Gallery (36 projects)",
+    "tier": "gallery",
+    "tech_stack": ["Next.js", "React", "GSAP", "Tailwind CSS", "Framer Motion"],
+    "description": "36 pixel-perfect landing-page and UI clones spanning very different client verticals (travel, astrology, legal, dental, hospitality, SaaS, weddings, and more) — 32 of 36 deployed live on Vercel. Individually these read as template work, but collectively they demonstrate the ability to ship a working, polished, deployed site fast and repeatedly across unrelated design briefs.",
+    "sample_urls": [
+      "https://ares-web.vercel.app",
+      "https://silver-spoon-web.vercel.app",
+      "https://astrology-web.vercel.app",
+      "https://lawyer-web.vercel.app",
+      "https://wedding-template.vercel.app"
+    ],
+    "bullets": [
+      "Designed and deployed 36 pixel-perfect landing-page/UI clones across travel, legal, hospitality, astrology, and SaaS verticals — 32 live on Vercel",
+      "Demonstrates rapid, repeatable delivery: pixel-accurate implementation, GSAP/Framer Motion animation, and responsive layout across dozens of unrelated design systems"
+    ],
+    "keywords": ["landing page", "gsap", "framer motion", "animation", "responsive", "frontend fundamentals", "pixel-perfect", "clone"]
+  }
+}

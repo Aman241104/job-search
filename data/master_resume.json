@@ -1,0 +1,108 @@
+{
+  "personal_info": {
+    "name": "Aman Patel",
+    "email": "patelaman0241@gmail.com",
+    "phone": "+919558009550",
+    "linkedin": "linkedin.com/in/aman-patel",
+    "github": "github.com/Aman241104",
+    "portfolio": "portfolio-1byaman.vercel.app",
+    "location": "Ahmedabad, India"
+  },
+  "summary": "Frontend & Full Stack Developer skilled in React, Next.js, and TypeScript with a strong eye for UI/UX design. EC Engineering graduate (CGPA 8.0) from LDCE Ahmedabad with hands-on experience building production-deployed web applications. Experienced with GSAP animations, responsive design, and modern JavaScript frameworks. Open to remote opportunities.",
+  "education": [
+    {
+      "degree": "B.E. Electronics and Communications Engineering",
+      "institution": "L.D. College of Engineering, Ahmedabad",
+      "university": "GTU",
+      "year": "2022-2026",
+      "cgpa": "8.00"
+    }
+  ],
+  "skills": {
+    "languages": ["JavaScript", "TypeScript", "Python", "C++", "Java", "SQL"],
+    "frontend": ["React", "Next.js", "Tailwind CSS", "HTML5", "CSS3", "GSAP", "Vite", "React Query", "React Hook Form"],
+    "backend": ["Node.js", "Express.js"],
+    "databases": ["MongoDB", "MySQL", "PostgreSQL", "Firebase"],
+    "tools": ["Git", "GitHub", "Figma", "VSCode", "Vercel", "Netlify", "Vitest"],
+    "design": ["Figma", "Adobe Photoshop", "Adobe Illustrator", "After Effects", "Framer", "Canva"],
+    "other": ["Web3.js", "WebGL", "Arduino", "ESP32", "REST APIs"]
+  },
+  "projects": [
+    {
+      "name": "DevEvents",
+      "description": "A full-stack event discovery platform for developers that aggregates hackathons, meetups, and conferences. Built with Next.js and TypeScript featuring server-side rendering, dynamic routing, and API integration.",
+      "tech_stack": ["Next.js", "TypeScript", "React", "Tailwind CSS", "REST API"],
+      "live_url": "https://deveventsbyaman.vercel.app",
+      "github_url": "https://github.com/Aman241104",
+      "bullets": [
+        "Built with Next.js 14 for SSR and optimal performance",
+        "Integrated external APIs for real-time event data aggregation",
+        "Implemented responsive UI with Tailwind CSS and dynamic filtering",
+        "Deployed on Vercel with CI/CD pipeline"
+      ]
+    },
+    {
+      "name": "Awwwards Website Clone",
+      "description": "A pixel-perfect, visually dynamic clone of the Awwwards.com homepage showcasing advanced frontend animation skills using GSAP.",
+      "tech_stack": ["HTML5", "CSS3", "JavaScript", "GSAP"],
+      "live_url": "https://awwardswebp2.netlify.app",
+      "github_url": "https://github.com/Aman241104/awwards_clone",
+      "bullets": [
+        "Implemented smooth scroll-based animations and transitions using GSAP timeline",
+        "Built custom cursor interactions, animated navigation, and hover effects",
+        "Achieved pixel-perfect responsive layout matching original Awwwards design",
+        "Optimized animation performance using GSAP's will-change and transform techniques"
+      ]
+    },
+    {
+      "name": "SaaS Product Landing Page (Xora)",
+      "description": "A modern, responsive SaaS product landing page with clean UI, animated sections, and mobile-first design built without external frameworks.",
+      "tech_stack": ["HTML5", "CSS3", "JavaScript"],
+      "live_url": "https://saaslandpage2411.netlify.app",
+      "github_url": "https://github.com/Aman241104/saas_landing_page",
+      "bullets": [
+        "Designed and developed entirely from scratch without UI frameworks",
+        "Implemented smooth scroll navigation, hero section, pricing, and testimonials",
+        "Fully responsive across mobile, tablet, and desktop breakpoints",
+        "Custom CSS animations for enhanced user engagement"
+      ]
+    },
+    {
+      "name": "Macbook Scroll Demo",
+      "description": "An interactive macOS-inspired UI demo with advanced scroll-triggered animations simulating the Apple product page experience.",
+      "tech_stack": ["JavaScript", "CSS3", "HTML5", "GSAP"],
+      "live_url": "https://macbook-demo.netlify.app",
+      "github_url": "https://github.com/Aman241104/macbook_demo",
+      "bullets": [
+        "Implemented Apple-style scroll-triggered 3D transitions",
+        "Used GSAP ScrollTrigger for precise animation control",
+        "Demonstrated advanced CSS transforms and perspective effects"
+      ]
+    },
+    {
+      "name": "Stock App Demo",
+      "description": "A TypeScript-based stock market dashboard with real-time data display and interactive charts.",
+      "tech_stack": ["TypeScript", "React", "Vite", "Tailwind CSS"],
+      "live_url": "https://stock-app-demo.vercel.app",
+      "github_url": "https://github.com/Aman241104/stock_app_demo",
+      "bullets": [
+        "Built with TypeScript for type-safe financial data handling",
+        "Implemented dynamic charts and real-time market data display",
+        "Used React hooks for efficient state management"
+      ]
+    }
+  ],
+  "achievements": [
+    "Solved 58+ problems on LeetCode with 82.4% acceptance rate (beats 66% of users globally)",
+    "Implemented key DS&A concepts: Recursion, BST, Arrays, Sorting — Easy (34) and Medium (24) level problems",
+    "CSS Battle: Solved precision CSS design challenges under time pressure",
+    "Chess64: Competed in strategic chess matches at college level",
+    "Blind C Programming competition participant"
+  ],
+  "areas_of_interest": [
+    "Frontend Development",
+    "UI/UX Design",
+    "Full Stack Development",
+    "DevOps"
+  ]
+}

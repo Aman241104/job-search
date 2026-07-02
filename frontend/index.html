@@ -1,0 +1,2310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>JobOS — Aman's Job Hunt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fragment+Mono:ital@0;1&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+/* ═══════════════════════════════════════════════════════════
+   RESET & ROOT VARIABLES
+═══════════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --green:   #63ffb2;
+  --green-d: #2ecc7e;
+  --pink:    #ff4ecd;
+  --purple:  #a78bfa;
+  --cyan:    #67e8f9;
+  --yellow:  #fbbf24;
+  --red:     #f87171;
+  --bg:      #050508;
+  --bg1:     #0a0a0f;
+  --bg2:     #0e0e16;
+  --bg3:     #12121e;
+  --border:  rgba(255,255,255,0.06);
+  --border-g: rgba(99,255,178,0.12);
+  --text:    #e2e8f0;
+  --text-2:  #94a3b8;
+  --text-3:  #475569;
+  --mono:    'Fragment Mono', monospace;
+  --sans:    'Outfit', sans-serif;
+  --sidebar: 64px;
+  --radius:  12px;
+  --glow-g:  0 0 20px rgba(99,255,178,0.15), 0 0 40px rgba(99,255,178,0.05);
+  --glow-p:  0 0 20px rgba(255,78,205,0.15);
+}
+
+html { font-size: 15px; scroll-behavior: smooth; }
+
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ANIMATED DOT-GRID BACKGROUND
+═══════════════════════════════════════════════════════════ */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(99,255,178,0.08) 1px, transparent 0);
+  background-size: 32px 32px;
+  pointer-events: none;
+  z-index: 0;
+  animation: gridPulse 8s ease-in-out infinite;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 40% at 80% 20%, rgba(99,255,178,0.04) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 30% at 20% 80%, rgba(167,139,250,0.04) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes gridPulse {
+  0%, 100% { opacity: 0.6; }
+  50%       { opacity: 1; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SIDEBAR
+═══════════════════════════════════════════════════════════ */
+#sidebar {
+  width: var(--sidebar);
+  height: 100vh;
+  background: rgba(255,255,255,0.02);
+  border-right: 1px solid var(--border-g);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 0;
+  gap: 4px;
+  position: fixed;
+  left: 0; top: 0;
+  z-index: 100;
+  backdrop-filter: blur(12px);
+}
+
+.logo {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--green);
+  letter-spacing: 0.1em;
+  margin-bottom: 20px;
+  writing-mode: horizontal-tb;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.nav-btn {
+  width: 44px; height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  font-size: 20px;
+  transition: all 0.2s;
+  position: relative;
+  text-decoration: none;
+}
+
+.nav-btn:hover {
+  background: rgba(99,255,178,0.08);
+  border-color: var(--border-g);
+}
+
+.nav-btn.active {
+  background: rgba(99,255,178,0.1);
+  border-color: rgba(99,255,178,0.3);
+  box-shadow: var(--glow-g);
+}
+
+.nav-btn.active::before {
+  content: '';
+  position: absolute;
+  left: -1px; top: 50%;
+  transform: translateY(-50%);
+  width: 3px; height: 60%;
+  background: var(--green);
+  border-radius: 0 2px 2px 0;
+  box-shadow: 0 0 8px var(--green);
+}
+
+.nav-tip {
+  position: absolute;
+  left: calc(100% + 8px);
+  background: var(--bg3);
+  border: 1px solid var(--border-g);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  z-index: 200;
+}
+
+.nav-btn:hover .nav-tip { opacity: 1; }
+
+.sidebar-bottom {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  animation: blink 2s ease-in-out infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MAIN CONTENT
+═══════════════════════════════════════════════════════════ */
+#main {
+  margin-left: var(--sidebar);
+  flex: 1;
+  height: 100vh;
+  overflow-y: auto;
+  position: relative;
+  z-index: 1;
+}
+
+.page {
+  display: none;
+  padding: 28px 32px;
+  min-height: 100vh;
+}
+
+.page.active { display: block; }
+
+/* ═══════════════════════════════════════════════════════════
+   TYPOGRAPHY
+═══════════════════════════════════════════════════════════ */
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+
+.page-title {
+  font-family: var(--mono);
+  font-size: 22px;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+
+.page-title span { color: var(--green); }
+
+.page-subtitle {
+  font-size: 13px;
+  color: var(--text-3);
+  margin-top: 2px;
+  font-family: var(--mono);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CARDS
+═══════════════════════════════════════════════════════════ */
+.card {
+  background: rgba(14,14,20,0.8);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  backdrop-filter: blur(8px);
+}
+
+.card:hover {
+  border-color: rgba(99,255,178,0.15);
+  box-shadow: var(--glow-g);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   STAT CARDS
+═══════════════════════════════════════════════════════════ */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.stat-card {
+  background: rgba(14,14,20,0.9);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 22px;
+  position: relative;
+  overflow: hidden;
+  cursor: default;
+  transition: all 0.25s;
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent, var(--green)), transparent);
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+
+.stat-card:hover { border-color: rgba(255,255,255,0.1); }
+.stat-card:hover::before { opacity: 1; }
+
+.stat-label {
+  font-size: 11px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-family: var(--mono);
+  margin-bottom: 10px;
+}
+
+.stat-value {
+  font-family: var(--mono);
+  font-size: 36px;
+  font-weight: 400;
+  color: var(--text);
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.stat-sub {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.stat-icon {
+  position: absolute;
+  right: 20px; top: 20px;
+  font-size: 22px;
+  opacity: 0.3;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   BUTTONS
+═══════════════════════════════════════════════════════════ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background: rgba(99,255,178,0.12);
+  border-color: rgba(99,255,178,0.3);
+  color: var(--green);
+}
+.btn-primary:hover {
+  background: rgba(99,255,178,0.2);
+  box-shadow: var(--glow-g);
+}
+
+.btn-secondary {
+  background: rgba(255,255,255,0.04);
+  border-color: var(--border);
+  color: var(--text-2);
+}
+.btn-secondary:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.12);
+  color: var(--text);
+}
+
+.btn-pink {
+  background: rgba(255,78,205,0.12);
+  border-color: rgba(255,78,205,0.3);
+  color: var(--pink);
+}
+.btn-pink:hover {
+  background: rgba(255,78,205,0.2);
+  box-shadow: var(--glow-p);
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-3);
+  font-size: 12px;
+  padding: 6px 12px;
+}
+.btn-ghost:hover {
+  color: var(--text);
+  border-color: rgba(255,255,255,0.12);
+}
+
+.btn-sm { padding: 6px 12px; font-size: 12px; }
+.btn-xs { padding: 4px 8px; font-size: 11px; border-radius: 6px; }
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SCORE RING
+═══════════════════════════════════════════════════════════ */
+.score-ring-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.score-ring-label {
+  position: absolute;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  text-align: center;
+  line-height: 1;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   STATUS PILLS
+═══════════════════════════════════════════════════════════ */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+
+.pill::before {
+  content: '';
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.pill-found     { color: var(--text-3); background: rgba(255,255,255,0.04); border: 1px solid var(--border); }
+.pill-applied   { color: var(--cyan);   background: rgba(103,232,249,0.08); border: 1px solid rgba(103,232,249,0.2); }
+.pill-interview { color: var(--yellow); background: rgba(251,191,36,0.08);  border: 1px solid rgba(251,191,36,0.2); }
+.pill-offer     { color: var(--green);  background: rgba(99,255,178,0.08);  border: 1px solid rgba(99,255,178,0.3); }
+.pill-rejected  { color: var(--red);    background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.2); }
+.pill-ghosted   { color: var(--text-3); background: rgba(255,255,255,0.03); border: 1px solid var(--border); }
+.pill-skipped   { color: var(--purple); background: rgba(167,139,250,0.08); border: 1px solid rgba(167,139,250,0.2); }
+
+/* ═══════════════════════════════════════════════════════════
+   JOB CARDS GRID
+═══════════════════════════════════════════════════════════ */
+.jobs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+.job-card {
+  background: rgba(14,14,20,0.85);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: all 0.22s;
+  cursor: default;
+  position: relative;
+  overflow: hidden;
+}
+
+.job-card:hover {
+  border-color: rgba(99,255,178,0.2);
+  box-shadow: inset 3px 0 0 var(--green), var(--glow-g);
+  transform: translateY(-1px);
+}
+
+.job-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.job-card-info { flex: 1; min-width: 0; }
+
+.job-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 3px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.job-company {
+  font-size: 12px;
+  color: var(--text-2);
+  font-family: var(--mono);
+}
+
+.job-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.tag {
+  font-size: 10px;
+  font-family: var(--mono);
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.tag-loc  { color: var(--cyan);   border-color: rgba(103,232,249,0.15); background: rgba(103,232,249,0.04); }
+.tag-src  { color: var(--purple); border-color: rgba(167,139,250,0.15); background: rgba(167,139,250,0.04); }
+.tag-sal  { color: var(--green);  border-color: rgba(99,255,178,0.15);  background: rgba(99,255,178,0.04); }
+
+.job-reason {
+  font-size: 11px;
+  color: var(--text-3);
+  font-style: italic;
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-card-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: auto;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   FILTER BAR
+═══════════════════════════════════════════════════════════ */
+.filter-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.filter-input {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  padding: 8px 12px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.filter-input:focus {
+  border-color: rgba(99,255,178,0.3);
+  box-shadow: 0 0 0 2px rgba(99,255,178,0.06);
+}
+
+.filter-input::placeholder { color: var(--text-3); }
+
+select.filter-input {
+  cursor: pointer;
+  appearance: none;
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2363ffb2' opacity='.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+.filter-label {
+  font-size: 12px;
+  color: var(--text-3);
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+
+.score-range-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  width: 100px;
+  height: 4px;
+  background: var(--bg3);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  cursor: pointer;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PROGRESS BAR
+═══════════════════════════════════════════════════════════ */
+.progress-bar-wrap {
+  width: 100%;
+  height: 4px;
+  background: var(--bg3);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--green), var(--cyan));
+  border-radius: 2px;
+  transition: width 0.4s ease;
+  box-shadow: 0 0 8px var(--green);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   FIND JOBS PANEL
+═══════════════════════════════════════════════════════════ */
+#find-panel {
+  background: rgba(14,14,20,0.9);
+  border: 1px solid var(--border-g);
+  border-radius: var(--radius);
+  padding: 24px;
+  margin-bottom: 24px;
+  display: none;
+}
+
+#find-panel.visible { display: block; }
+
+.find-log {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 14px;
+  max-height: 120px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.find-log-entry { display: flex; gap: 8px; align-items: baseline; }
+.find-log-entry .ts { color: var(--text-3); font-size: 10px; flex-shrink: 0; }
+.find-log-entry .msg { color: var(--cyan); }
+.find-log-entry.done .msg { color: var(--green); }
+.find-log-entry.err  .msg { color: var(--red); }
+
+/* ═══════════════════════════════════════════════════════════
+   TOP OPPORTUNITIES
+═══════════════════════════════════════════════════════════ */
+.top-jobs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.top-job-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: rgba(14,14,20,0.8);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.top-job-item:hover {
+  border-color: rgba(99,255,178,0.2);
+  background: rgba(99,255,178,0.03);
+}
+
+.top-job-rank {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-3);
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.top-job-text { flex: 1; min-width: 0; }
+.top-job-title { font-size: 13px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.top-job-company { font-size: 11px; color: var(--text-3); font-family: var(--mono); }
+
+/* ═══════════════════════════════════════════════════════════
+   DASHBOARD LAYOUT
+═══════════════════════════════════════════════════════════ */
+.dash-grid {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 20px;
+}
+
+.dash-main { min-width: 0; }
+.dash-side { display: flex; flex-direction: column; gap: 16px; }
+
+.section-title {
+  font-family: var(--mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   APPLY PAGE
+═══════════════════════════════════════════════════════════ */
+#apply-job-info {
+  display: none;
+}
+
+#apply-job-info.visible {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.apply-job-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.apply-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.apply-meta-item { display: flex; flex-direction: column; gap: 3px; }
+.apply-meta-label { font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.08em; font-family: var(--mono); }
+.apply-meta-value { font-size: 13px; color: var(--text); }
+
+.cv-preview {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.7;
+  max-height: 400px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cv-preview h1, .cv-preview h2 { color: var(--green); font-family: var(--mono); }
+.cv-preview h3 { color: var(--cyan); }
+.cv-preview strong { color: var(--text); }
+.cv-preview a { color: var(--purple); }
+
+.apply-empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-3);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.apply-empty .emoji { font-size: 40px; margin-bottom: 16px; }
+.apply-empty p { margin-bottom: 16px; }
+
+/* ═══════════════════════════════════════════════════════════
+   SPINNER
+═══════════════════════════════════════════════════════════ */
+.spinner {
+  width: 18px; height: 18px;
+  border: 2px solid rgba(99,255,178,0.2);
+  border-top-color: var(--green);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ═══════════════════════════════════════════════════════════
+   TOAST
+═══════════════════════════════════════════════════════════ */
+#toast-container {
+  position: fixed;
+  bottom: 24px; right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.toast {
+  background: var(--bg3);
+  border: 1px solid var(--border-g);
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s forwards;
+  pointer-events: auto;
+  max-width: 320px;
+}
+
+.toast.error { border-color: rgba(248,113,113,0.3); }
+.toast.success { border-color: rgba(99,255,178,0.3); }
+.toast.info { border-color: rgba(103,232,249,0.3); }
+
+@keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes fadeOut { to { opacity: 0; transform: translateX(20px); } }
+
+/* ═══════════════════════════════════════════════════════════
+   PAGINATION
+═══════════════════════════════════════════════════════════ */
+.pagination {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+
+.page-num {
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  color: var(--text-3);
+  background: transparent;
+  transition: all 0.15s;
+}
+
+.page-num:hover { border-color: rgba(99,255,178,0.3); color: var(--green); }
+.page-num.active { background: rgba(99,255,178,0.1); border-color: rgba(99,255,178,0.3); color: var(--green); }
+
+/* ═══════════════════════════════════════════════════════════
+   TRAIN PAGE
+═══════════════════════════════════════════════════════════ */
+.train-grid {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 20px;
+  height: calc(100vh - 140px);
+}
+
+.topic-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.topic-card {
+  padding: 14px 16px;
+  background: rgba(14,14,20,0.8);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.topic-card:hover {
+  border-color: rgba(99,255,178,0.2);
+  background: rgba(99,255,178,0.03);
+}
+
+.topic-card.active {
+  border-color: rgba(99,255,178,0.35);
+  background: rgba(99,255,178,0.06);
+  box-shadow: inset 3px 0 0 var(--green);
+}
+
+.topic-icon { font-size: 20px; flex-shrink: 0; width: 28px; text-align: center; }
+.topic-name { font-size: 13px; color: var(--text); font-weight: 500; }
+.topic-sub  { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  background: rgba(14,14,20,0.8);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.chat-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.chat-title { font-family: var(--mono); font-size: 13px; color: var(--text); }
+
+.score-badge {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: rgba(99,255,178,0.08);
+  border: 1px solid rgba(99,255,178,0.2);
+  color: var(--green);
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.chat-msg {
+  max-width: 80%;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.chat-msg.ai {
+  background: rgba(99,255,178,0.06);
+  border: 1px solid rgba(99,255,178,0.15);
+  color: var(--text);
+  align-self: flex-start;
+  border-radius: 4px 12px 12px 12px;
+}
+
+.chat-msg.user {
+  background: rgba(167,139,250,0.1);
+  border: 1px solid rgba(167,139,250,0.2);
+  color: var(--text);
+  align-self: flex-end;
+  border-radius: 12px 4px 12px 12px;
+}
+
+.chat-score {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 6px;
+  padding-left: 2px;
+}
+
+.chat-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--text-3);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.chat-empty-icon { font-size: 40px; opacity: 0.4; }
+
+.chat-input-wrap {
+  padding: 14px 18px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.chat-textarea {
+  flex: 1;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  padding: 10px 12px;
+  resize: none;
+  outline: none;
+  min-height: 42px;
+  max-height: 120px;
+  transition: border-color 0.2s;
+  line-height: 1.5;
+}
+
+.chat-textarea:focus {
+  border-color: rgba(99,255,178,0.3);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LINKS PAGE
+═══════════════════════════════════════════════════════════ */
+.links-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.link-card {
+  background: rgba(14,14,20,0.85);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  text-decoration: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: all 0.22s;
+  cursor: pointer;
+}
+
+.link-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--glow-g);
+  border-color: rgba(99,255,178,0.2);
+}
+
+.link-platform { font-size: 14px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 8px; }
+.link-note { font-size: 12px; color: var(--text-3); line-height: 1.5; }
+.link-url { font-size: 11px; color: var(--text-3); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 4px; }
+
+/* ═══════════════════════════════════════════════════════════
+   SCROLLBAR
+═══════════════════════════════════════════════════════════ */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.14); }
+
+/* ═══════════════════════════════════════════════════════════
+   LOADING SKELETON
+═══════════════════════════════════════════════════════════ */
+.skeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.07) 50%, rgba(255,255,255,0.04) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 6px;
+}
+
+@keyframes shimmer { to { background-position: -200% 0; } }
+
+/* ═══════════════════════════════════════════════════════════
+   MODAL
+═══════════════════════════════════════════════════════════ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5,5,8,0.85);
+  backdrop-filter: blur(6px);
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.modal-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.modal {
+  background: var(--bg2);
+  border: 1px solid var(--border-g);
+  border-radius: 16px;
+  padding: 28px;
+  width: 90%;
+  max-width: 560px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+}
+
+.modal-title {
+  font-family: var(--mono);
+  font-size: 16px;
+  color: var(--green);
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font-size: 18px;
+  cursor: pointer;
+  transition: color 0.15s;
+  padding: 2px 6px;
+}
+.modal-close:hover { color: var(--text); }
+
+/* ═══════════════════════════════════════════════════════════
+   UTILITY
+═══════════════════════════════════════════════════════════ */
+.divider {
+  height: 1px;
+  background: var(--border);
+  margin: 16px 0;
+}
+
+.flex { display: flex; }
+.flex-col { display: flex; flex-direction: column; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.gap-2 { gap: 8px; }
+.gap-3 { gap: 12px; }
+.gap-4 { gap: 16px; }
+.mt-1 { margin-top: 4px; }
+.mt-2 { margin-top: 8px; }
+.mt-3 { margin-top: 12px; }
+.mt-4 { margin-top: 16px; }
+.mb-2 { margin-bottom: 8px; }
+.mb-3 { margin-bottom: 12px; }
+.mb-4 { margin-bottom: 16px; }
+.text-green  { color: var(--green); }
+.text-pink   { color: var(--pink); }
+.text-cyan   { color: var(--cyan); }
+.text-purple { color: var(--purple); }
+.text-dim    { color: var(--text-3); }
+.text-mono   { font-family: var(--mono); }
+.text-sm     { font-size: 12px; }
+.text-xs     { font-size: 11px; }
+.font-600    { font-weight: 600; }
+.truncate    { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<nav id="sidebar">
+  <div class="logo">JOB<br>OS</div>
+
+  <button class="nav-btn active" data-page="dashboard" onclick="showPage('dashboard', this)">
+    🏠
+    <span class="nav-tip">Dashboard</span>
+  </button>
+  <button class="nav-btn" data-page="jobs" onclick="showPage('jobs', this)">
+    💼
+    <span class="nav-tip">Jobs</span>
+  </button>
+  <button class="nav-btn" data-page="apply" onclick="showPage('apply', this)">
+    ✍️
+    <span class="nav-tip">Apply</span>
+  </button>
+  <button class="nav-btn" data-page="train" onclick="showPage('train', this)">
+    🧠
+    <span class="nav-tip">Train</span>
+  </button>
+  <button class="nav-btn" data-page="links" onclick="showPage('links', this)">
+    🔗
+    <span class="nav-tip">Links</span>
+  </button>
+
+  <div class="sidebar-bottom">
+    <button class="nav-btn btn-ghost" onclick="exportExcel()" title="Export Excel" style="font-size:16px;">
+      📊
+      <span class="nav-tip">Export Excel</span>
+    </button>
+    <div class="status-dot" title="System online"></div>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<div id="main">
+
+  <!-- ══════════════════════════════════
+       DASHBOARD
+  ══════════════════════════════════ -->
+  <section id="page-dashboard" class="page active">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Hey Aman <span>👋</span></div>
+        <div class="page-subtitle">// job-os v1.0 — your personal job command center</div>
+      </div>
+      <div class="flex gap-2">
+        <button class="btn btn-secondary btn-sm" onclick="loadStats()">↻ Refresh</button>
+        <button class="btn btn-primary" id="btn-find" onclick="startFindJobs()">
+          ⚡ Find New Jobs
+        </button>
+      </div>
+    </div>
+
+    <!-- Find jobs panel -->
+    <div id="find-panel">
+      <div class="flex items-center justify-between mb-3">
+        <span class="text-mono text-sm text-dim" id="find-status-text">Initializing...</span>
+        <span class="text-mono text-xs text-dim" id="find-percent">0%</span>
+      </div>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar-fill" id="find-progress" style="width:0%"></div>
+      </div>
+      <div class="find-log" id="find-log"></div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid" id="stats-grid">
+      <div class="stat-card" style="--accent:var(--cyan);">
+        <div class="stat-icon">🔍</div>
+        <div class="stat-label">Jobs Found</div>
+        <div class="stat-value text-mono" id="stat-found">—</div>
+        <div class="stat-sub" id="stat-found-sub">Loading...</div>
+      </div>
+      <div class="stat-card" style="--accent:var(--purple);">
+        <div class="stat-icon">📨</div>
+        <div class="stat-label">Applied</div>
+        <div class="stat-value text-mono" id="stat-applied">—</div>
+        <div class="stat-sub" id="stat-applied-sub">applications sent</div>
+      </div>
+      <div class="stat-card" style="--accent:var(--yellow);">
+        <div class="stat-icon">💬</div>
+        <div class="stat-label">Interviewing</div>
+        <div class="stat-value text-mono" id="stat-interviewing">—</div>
+        <div class="stat-sub">active interviews</div>
+      </div>
+      <div class="stat-card" style="--accent:var(--green);">
+        <div class="stat-icon">🎯</div>
+        <div class="stat-label">Offers</div>
+        <div class="stat-value text-mono" id="stat-offers">—</div>
+        <div class="stat-sub" id="stat-offers-sub">received</div>
+      </div>
+    </div>
+
+    <div class="dash-grid">
+      <div class="dash-main">
+        <!-- Top opportunities -->
+        <div class="section-title">Top Opportunities</div>
+        <div id="top-jobs-list" class="top-jobs-list">
+          <div class="card" style="text-align:center;padding:40px;color:var(--text-3);font-family:var(--mono);font-size:13px;">
+            Loading top jobs...
+          </div>
+        </div>
+
+        <div class="divider mt-4"></div>
+
+        <div class="section-title mt-4">Recent Activity</div>
+        <div id="recent-activity" class="flex-col gap-2">
+          <div class="card" style="color:var(--text-3);font-family:var(--mono);font-size:12px;text-align:center;padding:24px;">
+            Loading recent activity...
+          </div>
+        </div>
+      </div>
+
+      <div class="dash-side">
+        <!-- Quick actions -->
+        <div class="card">
+          <div class="section-title">Quick Actions</div>
+          <div class="flex-col gap-2">
+            <button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="showPage('jobs', document.querySelector('[data-page=jobs]'))">
+              💼 Browse All Jobs
+            </button>
+            <button class="btn btn-secondary" style="width:100%;justify-content:center;" onclick="showPage('train', document.querySelector('[data-page=train]'))">
+              🧠 Practice Interview
+            </button>
+            <button class="btn btn-secondary" style="width:100%;justify-content:center;" onclick="showPage('links', document.querySelector('[data-page=links]'))">
+              🔗 Job Board Links
+            </button>
+            <button class="btn btn-ghost" style="width:100%;justify-content:center;" onclick="exportExcel()">
+              📊 Export to Excel
+            </button>
+          </div>
+        </div>
+
+        <!-- Score distribution -->
+        <div class="card">
+          <div class="section-title">Score Distribution</div>
+          <div id="score-dist" class="flex-col gap-2">
+            <div class="text-dim text-sm text-mono" style="text-align:center;padding:16px;">Loading...</div>
+          </div>
+        </div>
+
+        <!-- Profile card -->
+        <div class="card">
+          <div class="section-title">Profile</div>
+          <div class="flex-col gap-2" style="font-size:12px;">
+            <div class="flex justify-between">
+              <span class="text-dim">Name</span>
+              <span class="text-mono">Aman Patel</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-dim">College</span>
+              <span class="text-mono">LDCE, CGPA 8.0</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-dim">Current Offer</span>
+              <span class="text-green text-mono">TCS 7 LPA</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-dim">Target</span>
+              <span class="text-cyan text-mono">8–12 LPA</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-dim">Top Skills</span>
+              <span style="color:var(--purple);font-family:var(--mono);">React, Next.js</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════
+       JOBS
+  ══════════════════════════════════ -->
+  <section id="page-jobs" class="page">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Job <span>Board</span></div>
+        <div class="page-subtitle" id="jobs-count-label">// loading jobs...</div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="loadJobs(1)">↻ Refresh</button>
+    </div>
+
+    <div class="filter-bar">
+      <input type="text" class="filter-input" id="f-search" placeholder="Search title or company..." style="width:200px;"
+        oninput="debounceFilter()" />
+
+      <select class="filter-input" id="f-status" onchange="applyFilters()">
+        <option value="">All Statuses</option>
+        <option value="found">Found</option>
+        <option value="applied">Applied</option>
+        <option value="interviewing">Interviewing</option>
+        <option value="offer">Offer</option>
+        <option value="rejected">Rejected</option>
+        <option value="ghosted">Ghosted</option>
+        <option value="skipped">Skipped</option>
+      </select>
+
+      <select class="filter-input" id="f-source" onchange="applyFilters()">
+        <option value="">All Sources</option>
+        <option value="Internshala">Internshala</option>
+        <option value="Naukri">Naukri.com</option>
+        <option value="Jobicy">Jobicy</option>
+        <option value="Adzuna">Adzuna</option>
+      </select>
+
+      <div class="score-range-wrap">
+        <span class="filter-label">Min Score:</span>
+        <input type="range" id="f-score" min="0" max="90" step="5" value="0"
+          oninput="document.getElementById('f-score-val').textContent=this.value; debounceFilter()" />
+        <span class="filter-label text-mono" id="f-score-val">0</span>
+      </div>
+    </div>
+
+    <div id="jobs-grid" class="jobs-grid">
+      <!-- populated by JS -->
+    </div>
+
+    <div id="jobs-pagination" class="pagination"></div>
+  </section>
+
+  <!-- ══════════════════════════════════
+       APPLY
+  ══════════════════════════════════ -->
+  <section id="page-apply" class="page">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Apply <span>Wizard</span></div>
+        <div class="page-subtitle">// AI-generated CV + cover letter</div>
+      </div>
+    </div>
+
+    <div id="apply-empty-state">
+      <div class="apply-empty card">
+        <div class="emoji">✍️</div>
+        <p>Select a job and click <strong style="color:var(--green);">Apply</strong> to generate your tailored CV and cover letter.</p>
+        <button class="btn btn-primary" onclick="showPage('jobs', document.querySelector('[data-page=jobs]'))">
+          → Browse Jobs
+        </button>
+      </div>
+    </div>
+
+    <div id="apply-loading" style="display:none;">
+      <div class="card" style="text-align:center;padding:60px;">
+        <div class="spinner" style="width:32px;height:32px;border-width:3px;margin:0 auto 16px;"></div>
+        <div class="text-dim text-mono">Generating tailored CV and cover letter with AI...</div>
+        <div class="text-xs text-dim text-mono mt-2">This may take 15-30 seconds</div>
+      </div>
+    </div>
+
+    <div id="apply-job-info">
+      <div>
+        <!-- Job details -->
+        <div class="card mb-3">
+          <div class="apply-job-header">
+            <div id="apply-score-ring"></div>
+            <div>
+              <div class="font-600" id="apply-job-title" style="font-size:16px;margin-bottom:4px;"></div>
+              <div class="text-mono text-dim text-sm" id="apply-job-company"></div>
+            </div>
+          </div>
+          <div class="apply-meta-grid">
+            <div class="apply-meta-item">
+              <span class="apply-meta-label">Location</span>
+              <span class="apply-meta-value" id="apply-job-loc"></span>
+            </div>
+            <div class="apply-meta-item">
+              <span class="apply-meta-label">Salary</span>
+              <span class="apply-meta-value text-green" id="apply-job-sal"></span>
+            </div>
+            <div class="apply-meta-item">
+              <span class="apply-meta-label">Source</span>
+              <span class="apply-meta-value" id="apply-job-src"></span>
+            </div>
+            <div class="apply-meta-item">
+              <span class="apply-meta-label">Status</span>
+              <span id="apply-job-status"></span>
+            </div>
+          </div>
+          <div class="flex gap-2 mt-2">
+            <a id="apply-open-link" href="#" target="_blank" class="btn btn-primary btn-sm">
+              🔗 Open Apply Page
+            </a>
+            <button class="btn btn-secondary btn-sm" onclick="updateJobStatus(currentApplyJobId, 'applied')">
+              ✅ Mark Applied
+            </button>
+            <button class="btn btn-ghost btn-sm" onclick="updateJobStatus(currentApplyJobId, 'skipped')">
+              Skip
+            </button>
+          </div>
+        </div>
+
+        <!-- Cover letter -->
+        <div class="card">
+          <div class="section-title">Cover Letter</div>
+          <div class="cv-preview" id="apply-cover" style="max-height:280px;"></div>
+        </div>
+      </div>
+
+      <div>
+        <!-- CV -->
+        <div class="card" style="height:100%;">
+          <div class="flex justify-between items-center mb-3">
+            <div class="section-title" style="margin:0;">Tailored CV</div>
+            <button class="btn btn-ghost btn-xs" onclick="copyCV()">📋 Copy</button>
+          </div>
+          <div class="cv-preview" id="apply-cv" style="max-height:calc(100vh - 280px);"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════
+       TRAIN
+  ══════════════════════════════════ -->
+  <section id="page-train" class="page">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Interview <span>Coach</span></div>
+        <div class="page-subtitle">// AI-powered practice sessions</div>
+      </div>
+      <div class="flex gap-2 items-center">
+        <span class="text-dim text-xs text-mono">Avg Score:</span>
+        <span class="score-badge" id="train-avg-score">—</span>
+      </div>
+    </div>
+
+    <div class="train-grid">
+      <!-- Topic list -->
+      <div>
+        <div class="section-title">Topics</div>
+        <div class="topic-list" id="topic-list">
+          <!-- populated by JS -->
+        </div>
+      </div>
+
+      <!-- Chat panel -->
+      <div class="chat-panel">
+        <div class="chat-header">
+          <span class="chat-title" id="chat-title">Select a topic to begin →</span>
+          <div class="flex gap-2 items-center">
+            <span class="text-dim text-xs text-mono" id="chat-score-label" style="display:none;">Last: </span>
+            <span class="score-badge" id="chat-last-score" style="display:none;"></span>
+          </div>
+        </div>
+
+        <div class="chat-messages" id="chat-messages">
+          <div class="chat-empty">
+            <div class="chat-empty-icon">🧠</div>
+            <div>Pick a topic on the left to start your mock interview.</div>
+            <div class="text-xs mt-2">8 questions per session · scored /10 each</div>
+          </div>
+        </div>
+
+        <div class="chat-input-wrap">
+          <textarea class="chat-textarea" id="chat-input" placeholder="Type your answer... (Shift+Enter for newline, Enter to send)"
+            rows="1"
+            onkeydown="handleChatKey(event)"
+            oninput="autoResize(this)"
+            disabled></textarea>
+          <button class="btn btn-primary" id="chat-send-btn" onclick="sendChatMessage()" disabled>
+            Send →
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════
+       LINKS
+  ══════════════════════════════════ -->
+  <section id="page-links" class="page">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Job <span>Board Links</span></div>
+        <div class="page-subtitle">// curated platforms for Gujarat / remote jobs</div>
+      </div>
+    </div>
+
+    <div class="section-title">Quick Apply Platforms</div>
+    <div class="links-grid" id="links-grid">
+      <!-- populated by JS -->
+    </div>
+
+    <div class="divider mt-4 mb-4"></div>
+
+    <div class="section-title">Remote-First Job Boards</div>
+    <div class="links-grid">
+      <a href="https://jobicy.com/?s=react" target="_blank" class="link-card">
+        <div class="link-platform">🌐 Jobicy.com</div>
+        <div class="link-note">Remote jobs API — React, JavaScript, TypeScript roles worldwide</div>
+        <div class="link-url">jobicy.com/?s=react</div>
+      </a>
+      <a href="https://wellfound.com/jobs?role=frontend-engineer&remote=true" target="_blank" class="link-card">
+        <div class="link-platform">🚀 Wellfound (AngelList)</div>
+        <div class="link-note">Frontend Engineer — Remote startup roles, equity-included</div>
+        <div class="link-url">wellfound.com/jobs</div>
+      </a>
+      <a href="https://remoteok.com/remote-react-jobs" target="_blank" class="link-card">
+        <div class="link-platform">🏠 RemoteOK</div>
+        <div class="link-note">Remote React developer jobs — worldwide opportunities</div>
+        <div class="link-url">remoteok.com/remote-react-jobs</div>
+      </a>
+      <a href="https://weworkremotely.com/categories/remote-front-end-programming-jobs" target="_blank" class="link-card">
+        <div class="link-platform">💻 WeWorkRemotely</div>
+        <div class="link-note">Frontend remote jobs — established companies, global hiring</div>
+        <div class="link-url">weworkremotely.com</div>
+      </a>
+      <a href="https://cutshort.io/jobs/react-js?location=ahmedabad" target="_blank" class="link-card">
+        <div class="link-platform">✂️ Cutshort.io</div>
+        <div class="link-note">React.js — Ahmedabad on Cutshort — AI-matched profiles</div>
+        <div class="link-url">cutshort.io/jobs/react-js</div>
+      </a>
+      <a href="https://hirist.tech" target="_blank" class="link-card">
+        <div class="link-platform">⚡ Hirist.tech</div>
+        <div class="link-note">Tech-only job board for India — React, Node, Full Stack</div>
+        <div class="link-url">hirist.tech</div>
+      </a>
+    </div>
+  </section>
+
+</div><!-- /main -->
+
+<!-- TOAST CONTAINER -->
+<div id="toast-container"></div>
+
+<!-- STATUS UPDATE MODAL -->
+<div class="modal-overlay" id="status-modal">
+  <div class="modal">
+    <div class="modal-title">
+      Update Job Status
+      <button class="modal-close" onclick="closeModal('status-modal')">✕</button>
+    </div>
+    <div class="flex-col gap-2" id="status-modal-body">
+      <!-- populated by JS -->
+    </div>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════════════════ */
+let currentPage = 1;
+let totalJobs = 0;
+let filterTimeout = null;
+let currentApplyJobId = null;
+let trainSessionId = null;
+let trainScores = [];
+let activeTopic = null;
+let isFinding = false;
+
+/* ═══════════════════════════════════════════════════════════
+   NAVIGATION
+═══════════════════════════════════════════════════════════ */
+function showPage(name, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  if (btn) btn.classList.add('active');
+
+  if (name === 'dashboard') loadDashboard();
+  else if (name === 'jobs') loadJobs(1);
+  else if (name === 'train') loadTopics();
+  else if (name === 'links') loadLinks();
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SCORE RING SVG
+═══════════════════════════════════════════════════════════ */
+function scoreColor(score) {
+  if (score >= 85) return '#63ffb2';
+  if (score >= 70) return '#4ade80';
+  if (score >= 55) return '#fbbf24';
+  if (score >= 40) return '#f97316';
+  return '#f87171';
+}
+
+function makeScoreRing(score, size = 44) {
+  const r = (size - 6) / 2;
+  const circ = 2 * Math.PI * r;
+  const fill = (score / 100) * circ;
+  const color = scoreColor(score);
+  const fs = size < 40 ? 9 : 11;
+  return `<div class="score-ring-wrap" style="width:${size}px;height:${size}px;">
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="transform:rotate(-90deg)">
+      <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="3"/>
+      <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${color}" stroke-width="3"
+        stroke-dasharray="${fill} ${circ}" stroke-linecap="round"
+        style="filter:drop-shadow(0 0 4px ${color})"/>
+    </svg>
+    <span class="score-ring-label" style="font-size:${fs}px;color:${color};">${score}</span>
+  </div>`;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   STATUS PILL
+═══════════════════════════════════════════════════════════ */
+function statusPill(status) {
+  const s = (status || 'found').toLowerCase();
+  return `<span class="pill pill-${s}">${s}</span>`;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   STATS / DASHBOARD
+═══════════════════════════════════════════════════════════ */
+async function loadStats() {
+  try {
+    const r = await fetch('/api/stats');
+    const data = await r.json();
+
+    animateCounter('stat-found', data.total || 0);
+    animateCounter('stat-applied', data.applied || 0);
+    animateCounter('stat-interviewing', data.interviewing || 0);
+    animateCounter('stat-offers', data.offers || 0);
+
+    const topPct = data.total ? Math.round(((data.top_score_60_plus || 0) / data.total) * 100) : 0;
+    document.getElementById('stat-found-sub').textContent = `${data.top_score_60_plus || 0} high-score`;
+    document.getElementById('stat-applied-sub').textContent = data.response_rate
+      ? `${data.response_rate}% response rate` : 'applications sent';
+    document.getElementById('stat-offers-sub').textContent = data.top_opportunities
+      ? `${data.top_opportunities} new ready` : 'received';
+
+    renderScoreDist(data);
+    return data;
+  } catch(e) {
+    console.error('Stats error', e);
+  }
+}
+
+function renderScoreDist(data) {
+  const buckets = [
+    { label: '80–100', key: 'score_80_plus', color: 'var(--green)' },
+    { label: '60–79',  key: 'score_60_79',   color: 'var(--cyan)' },
+    { label: '40–59',  key: 'score_40_59',   color: 'var(--yellow)' },
+    { label: '0–39',   key: 'score_below_40', color: 'var(--red)' },
+  ];
+  const total = data.total || 1;
+  const html = buckets.map(b => {
+    const count = data[b.key] || 0;
+    const pct = Math.round((count / total) * 100);
+    return `<div>
+      <div class="flex justify-between mb-1">
+        <span class="text-xs text-mono" style="color:${b.color};">${b.label}</span>
+        <span class="text-xs text-mono text-dim">${count} jobs</span>
+      </div>
+      <div class="progress-bar-wrap" style="height:3px;">
+        <div class="progress-bar-fill" style="width:${pct}%;background:${b.color};box-shadow:0 0 4px ${b.color};"></div>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('score-dist').innerHTML = html;
+}
+
+async function loadTopJobs() {
+  try {
+    const r = await fetch('/api/jobs?min_score=65&per_page=5&status=found');
+    const data = await r.json();
+    const jobs = data.jobs || [];
+    const el = document.getElementById('top-jobs-list');
+
+    if (!jobs.length) {
+      el.innerHTML = `<div class="card" style="text-align:center;padding:32px;color:var(--text-3);font-family:var(--mono);font-size:13px;">
+        No high-score jobs yet. Click "Find New Jobs" to discover opportunities.
+      </div>`;
+      return;
+    }
+
+    el.innerHTML = jobs.map((j, i) => `
+      <div class="top-job-item" onclick="startApply('${j.id}')">
+        <span class="top-job-rank">#${i+1}</span>
+        ${makeScoreRing(j.score || 0, 40)}
+        <div class="top-job-text">
+          <div class="top-job-title">${esc(j.title)}</div>
+          <div class="top-job-company">${esc(j.company)} · ${esc(j.location || '')}</div>
+        </div>
+        <div class="flex gap-2 items-center">
+          ${statusPill(j.status)}
+          <span class="tag tag-src">${esc(j.source || '')}</span>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) {
+    console.error('Top jobs error', e);
+  }
+}
+
+async function loadRecentActivity() {
+  try {
+    const r = await fetch('/api/jobs?per_page=6');
+    const data = await r.json();
+    const jobs = (data.jobs || []).slice(0, 5);
+    const el = document.getElementById('recent-activity');
+    if (!jobs.length) {
+      el.innerHTML = `<div class="text-dim text-mono text-sm" style="text-align:center;padding:16px;">No activity yet.</div>`;
+      return;
+    }
+    el.innerHTML = jobs.map(j => `
+      <div class="flex items-center gap-3" style="padding:10px 0;border-bottom:1px solid var(--border);">
+        <span style="font-size:18px;">📌</span>
+        <div style="flex:1;min-width:0;">
+          <div class="truncate" style="font-size:13px;">${esc(j.title)}</div>
+          <div class="text-dim text-xs text-mono">${esc(j.company)} · ${(j.date_found||'').slice(0,10)}</div>
+        </div>
+        ${statusPill(j.status)}
+      </div>
+    `).join('');
+  } catch(e) {}
+}
+
+async function loadDashboard() {
+  await loadStats();
+  await loadTopJobs();
+  await loadRecentActivity();
+}
+
+function animateCounter(id, target) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const start = parseInt(el.textContent) || 0;
+  const duration = 600;
+  const startTime = performance.now();
+  function update(now) {
+    const t = Math.min((now - startTime) / duration, 1);
+    const ease = 1 - Math.pow(1 - t, 3);
+    el.textContent = Math.round(start + (target - start) * ease);
+    if (t < 1) requestAnimationFrame(update);
+  }
+  requestAnimationFrame(update);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   FIND JOBS (SSE)
+═══════════════════════════════════════════════════════════ */
+function startFindJobs() {
+  if (isFinding) return;
+  isFinding = true;
+
+  const panel = document.getElementById('find-panel');
+  const btn = document.getElementById('btn-find');
+  const log = document.getElementById('find-log');
+  const statusText = document.getElementById('find-status-text');
+  const progressEl = document.getElementById('find-progress');
+  const percentEl = document.getElementById('find-percent');
+
+  panel.classList.add('visible');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Finding...';
+  log.innerHTML = '';
+
+  function addLog(msg, cls = '') {
+    const now = new Date().toLocaleTimeString('en', { hour12: false });
+    const entry = document.createElement('div');
+    entry.className = `find-log-entry ${cls}`;
+    entry.innerHTML = `<span class="ts">${now}</span><span class="msg">${esc(msg)}</span>`;
+    log.appendChild(entry);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  const es = new EventSource('/api/find');
+
+  es.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    const pct = data.percent || 0;
+
+    progressEl.style.width = pct + '%';
+    percentEl.textContent = pct + '%';
+    statusText.textContent = data.message || '';
+
+    if (data.type === 'start') addLog(data.message);
+    else if (data.type === 'progress') addLog(data.message);
+    else if (data.type === 'done') {
+      addLog(data.message, 'done');
+      es.close();
+      isFinding = false;
+      btn.disabled = false;
+      btn.innerHTML = '⚡ Find New Jobs';
+      toast('success', '✅ ' + data.message);
+      setTimeout(() => {
+        loadDashboard();
+        panel.classList.remove('visible');
+      }, 2000);
+    } else if (data.type === 'error') {
+      addLog(data.message, 'err');
+      es.close();
+      isFinding = false;
+      btn.disabled = false;
+      btn.innerHTML = '⚡ Find New Jobs';
+      toast('error', '❌ ' + data.message);
+    }
+  };
+
+  es.onerror = () => {
+    es.close();
+    isFinding = false;
+    btn.disabled = false;
+    btn.innerHTML = '⚡ Find New Jobs';
+    addLog('Connection lost', 'err');
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════
+   JOBS PAGE
+═══════════════════════════════════════════════════════════ */
+async function loadJobs(page = 1) {
+  currentPage = page;
+  const search  = document.getElementById('f-search')?.value || '';
+  const status  = document.getElementById('f-status')?.value || '';
+  const source  = document.getElementById('f-source')?.value || '';
+  const minScore = document.getElementById('f-score')?.value || 0;
+
+  const params = new URLSearchParams({
+    page, per_page: 24,
+    search, status, source,
+    min_score: minScore,
+  });
+
+  const grid = document.getElementById('jobs-grid');
+  grid.innerHTML = Array(6).fill(0).map(() => `
+    <div class="card" style="height:180px;">
+      <div class="skeleton" style="width:40px;height:40px;border-radius:50%;margin-bottom:12px;"></div>
+      <div class="skeleton" style="width:80%;height:14px;margin-bottom:8px;"></div>
+      <div class="skeleton" style="width:50%;height:12px;margin-bottom:16px;"></div>
+      <div class="skeleton" style="width:100%;height:10px;"></div>
+    </div>
+  `).join('');
+
+  try {
+    const r = await fetch('/api/jobs?' + params);
+    const data = await r.json();
+    const jobs = data.jobs || [];
+    totalJobs = data.total || 0;
+
+    document.getElementById('jobs-count-label').textContent =
+      `// ${totalJobs} jobs found · page ${page}`;
+
+    if (!jobs.length) {
+      grid.innerHTML = `<div class="card" style="grid-column:1/-1;text-align:center;padding:60px;color:var(--text-3);font-family:var(--mono);">
+        No jobs match the current filters.
+      </div>`;
+      document.getElementById('jobs-pagination').innerHTML = '';
+      return;
+    }
+
+    grid.innerHTML = jobs.map(j => renderJobCard(j)).join('');
+    renderPagination(page, Math.ceil(totalJobs / 24));
+  } catch(e) {
+    grid.innerHTML = `<div class="card" style="grid-column:1/-1;text-align:center;padding:60px;color:var(--red);font-family:var(--mono);">
+      Failed to load jobs: ${esc(String(e))}
+    </div>`;
+  }
+}
+
+function renderJobCard(j) {
+  const score = j.score || 0;
+  const sal = j.salary && j.salary !== 'Not specified' ? j.salary : '';
+  const loc = j.location || '';
+  const src = j.source || '';
+  const reason = j.score_reason || '';
+
+  return `<div class="job-card" id="jcard-${j.id}">
+    <div class="job-card-top">
+      <div>${makeScoreRing(score, 44)}</div>
+      <div class="job-card-info">
+        <div class="job-title">${esc(j.title)}</div>
+        <div class="job-company">${esc(j.company)}</div>
+      </div>
+    </div>
+
+    <div class="job-meta">
+      ${loc ? `<span class="tag tag-loc">📍 ${esc(loc)}</span>` : ''}
+      ${sal ? `<span class="tag tag-sal">💰 ${esc(sal)}</span>` : ''}
+      ${src ? `<span class="tag tag-src">${esc(src)}</span>` : ''}
+      ${statusPill(j.status)}
+    </div>
+
+    ${reason ? `<div class="job-reason">${esc(reason)}</div>` : ''}
+
+    <div class="job-card-actions">
+      <button class="btn btn-primary btn-xs" onclick="startApply('${j.id}')">✍️ Apply</button>
+      <button class="btn btn-ghost btn-xs" onclick="openUpdateModal('${j.id}', '${esc(j.title)}')">⋯ Status</button>
+      ${j.url ? `<a href="${esc(j.url)}" target="_blank" class="btn btn-ghost btn-xs">🔗</a>` : ''}
+    </div>
+  </div>`;
+}
+
+function renderPagination(current, total) {
+  if (total <= 1) { document.getElementById('jobs-pagination').innerHTML = ''; return; }
+  let html = '';
+  for (let i = 1; i <= total; i++) {
+    if (i === 1 || i === total || Math.abs(i - current) <= 2) {
+      html += `<button class="page-num ${i === current ? 'active' : ''}" onclick="loadJobs(${i})">${i}</button>`;
+    } else if (Math.abs(i - current) === 3) {
+      html += `<span class="text-dim text-mono" style="padding:0 4px;">…</span>`;
+    }
+  }
+  document.getElementById('jobs-pagination').innerHTML = html;
+}
+
+function applyFilters() { loadJobs(1); }
+
+function debounceFilter() {
+  clearTimeout(filterTimeout);
+  filterTimeout = setTimeout(() => loadJobs(1), 400);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   APPLY WORKFLOW
+═══════════════════════════════════════════════════════════ */
+async function startApply(jobId) {
+  currentApplyJobId = jobId;
+
+  showPage('apply', document.querySelector('[data-page=apply]'));
+
+  document.getElementById('apply-empty-state').style.display = 'none';
+  document.getElementById('apply-loading').style.display = 'block';
+  document.getElementById('apply-job-info').classList.remove('visible');
+
+  try {
+    const r = await fetch(`/api/apply/${jobId}`, { method: 'POST' });
+    if (!r.ok) {
+      const err = await r.json();
+      throw new Error(err.error || 'Failed');
+    }
+    const data = await r.json();
+
+    document.getElementById('apply-loading').style.display = 'none';
+
+    // Load job details
+    const jr = await fetch(`/api/jobs/${jobId}`);
+    const job = await jr.json();
+
+    document.getElementById('apply-job-title').textContent = job.title || '';
+    document.getElementById('apply-job-company').textContent = job.company || '';
+    document.getElementById('apply-job-loc').textContent = job.location || 'N/A';
+    document.getElementById('apply-job-sal').textContent = job.salary || 'Not specified';
+    document.getElementById('apply-job-src').textContent = job.source || '';
+    document.getElementById('apply-job-status').innerHTML = statusPill(job.status || 'applied');
+    document.getElementById('apply-score-ring').innerHTML = makeScoreRing(job.score || 0, 56);
+
+    const link = document.getElementById('apply-open-link');
+    link.href = data.apply_url || job.url || '#';
+
+    document.getElementById('apply-cv').textContent = data.cv || '';
+    document.getElementById('apply-cover').textContent = data.cover_letter || '';
+
+    document.getElementById('apply-job-info').classList.add('visible');
+    toast('success', '✅ Application package ready!');
+  } catch(e) {
+    document.getElementById('apply-loading').style.display = 'none';
+    document.getElementById('apply-empty-state').style.display = 'block';
+    toast('error', '❌ ' + e.message);
+  }
+}
+
+async function updateJobStatus(jobId, status) {
+  if (!jobId) return;
+  try {
+    await fetch(`/api/update/${jobId}?status=${status}`, { method: 'POST' });
+    toast('success', `Status updated to "${status}"`);
+    if (document.getElementById('apply-job-status')) {
+      document.getElementById('apply-job-status').innerHTML = statusPill(status);
+    }
+    const card = document.getElementById(`jcard-${jobId}`);
+    if (card) {
+      const pill = card.querySelector('.pill');
+      if (pill) pill.outerHTML = statusPill(status);
+    }
+  } catch(e) {
+    toast('error', 'Failed to update status');
+  }
+}
+
+function copyCV() {
+  const text = document.getElementById('apply-cv')?.textContent || '';
+  navigator.clipboard.writeText(text).then(() => toast('info', 'CV copied to clipboard'));
+}
+
+/* ═══════════════════════════════════════════════════════════
+   STATUS UPDATE MODAL
+═══════════════════════════════════════════════════════════ */
+function openUpdateModal(jobId, jobTitle) {
+  const statuses = ['found', 'applied', 'interviewing', 'offer', 'rejected', 'ghosted', 'skipped'];
+  const body = document.getElementById('status-modal-body');
+  body.innerHTML = `
+    <p class="text-dim text-sm mb-3">${esc(jobTitle)}</p>
+    <div class="flex-col gap-2">
+      ${statuses.map(s => `
+        <button class="btn btn-secondary" style="justify-content:flex-start;gap:10px;"
+          onclick="updateJobStatus('${jobId}', '${s}'); closeModal('status-modal');">
+          ${statusPill(s)} <span>${s.charAt(0).toUpperCase() + s.slice(1)}</span>
+        </button>
+      `).join('')}
+    </div>
+  `;
+  document.getElementById('status-modal').classList.add('open');
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TRAINING
+═══════════════════════════════════════════════════════════ */
+const TOPIC_ICONS = {
+  '1': '⚛️',
+  '2': '🖥️',
+  '3': '📊',
+  '4': '🌲',
+  '5': '🏗️',
+  '6': '🤝',
+  '7': '📁',
+  '8': '💰',
+};
+
+const TOPIC_SUBS = {
+  '1': 'Hooks, SSR, TypeScript',
+  '2': 'REST API, Express, MongoDB',
+  '3': 'Arrays, Strings, Hash Maps',
+  '4': 'BST, BFS, DFS, Recursion',
+  '5': 'URL shortener, caching, CDN',
+  '6': 'STAR method, tell-me-about-yourself',
+  '7': 'DevEvents, GSAP Clone, Stock App',
+  '8': 'Negotiate above 7 LPA',
+};
+
+async function loadTopics() {
+  try {
+    const r = await fetch('/api/train/topics');
+    const topics = await r.json();
+    const list = document.getElementById('topic-list');
+    list.innerHTML = topics.map(t => `
+      <div class="topic-card ${activeTopic === t.key ? 'active' : ''}" onclick="selectTopic('${t.key}', '${esc(t.name)}')">
+        <span class="topic-icon">${TOPIC_ICONS[t.key] || '📝'}</span>
+        <div>
+          <div class="topic-name">${esc(t.name)}</div>
+          <div class="topic-sub">${TOPIC_SUBS[t.key] || ''}</div>
+        </div>
+      </div>
+    `).join('');
+
+    // Load progress
+    const pr = await fetch('/api/train/progress');
+    const progress = await pr.json();
+    if (progress.length > 0) {
+      const recent = progress[progress.length - 1];
+      const avg = recent.avg_score?.toFixed(1);
+      document.getElementById('train-avg-score').textContent = avg ? `${avg}/10` : '—';
+    }
+  } catch(e) {}
+}
+
+async function selectTopic(key, name) {
+  activeTopic = key;
+  trainScores = [];
+  trainSessionId = null;
+
+  document.querySelectorAll('.topic-card').forEach(c => c.classList.remove('active'));
+  document.querySelectorAll('.topic-card')[parseInt(key) - 1]?.classList.add('active');
+
+  const chatTitle = document.getElementById('chat-title');
+  const messagesEl = document.getElementById('chat-messages');
+  const inputEl = document.getElementById('chat-input');
+  const sendBtn = document.getElementById('chat-send-btn');
+
+  chatTitle.textContent = name;
+  messagesEl.innerHTML = `<div class="chat-empty"><div class="spinner" style="width:24px;height:24px;border-width:2px;"></div><div>Starting session...</div></div>`;
+  inputEl.disabled = true;
+  sendBtn.disabled = true;
+
+  try {
+    const r = await fetch(`/api/train/start?topic_key=${key}`, { method: 'POST' });
+    const data = await r.json();
+    if (data.error) throw new Error(data.error);
+    trainSessionId = data.session_id;
+
+    messagesEl.innerHTML = '';
+    addChatMsg('ai', data.message || '');
+
+    inputEl.disabled = false;
+    sendBtn.disabled = false;
+    inputEl.focus();
+  } catch(e) {
+    messagesEl.innerHTML = `<div class="chat-empty"><div>❌ Failed to start: ${esc(e.message)}</div></div>`;
+  }
+}
+
+async function sendChatMessage() {
+  if (!trainSessionId) return;
+  const inputEl = document.getElementById('chat-input');
+  const msg = inputEl.value.trim();
+  if (!msg) return;
+
+  inputEl.value = '';
+  inputEl.style.height = 'auto';
+  addChatMsg('user', msg);
+
+  const sendBtn = document.getElementById('chat-send-btn');
+  inputEl.disabled = true;
+  sendBtn.disabled = true;
+
+  const loadingId = 'loading-' + Date.now();
+  const messagesEl = document.getElementById('chat-messages');
+  messagesEl.innerHTML += `<div id="${loadingId}" class="chat-msg ai">
+    <span class="spinner" style="width:14px;height:14px;border-width:1.5px;"></span>
+  </div>`;
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  try {
+    const r = await fetch(`/api/train/chat?session_id=${trainSessionId}&message=${encodeURIComponent(msg)}`, { method: 'POST' });
+    const data = await r.json();
+    if (data.error) throw new Error(data.error);
+
+    document.getElementById(loadingId)?.remove();
+    addChatMsg('ai', data.message || '', data.score);
+
+    if (data.score) {
+      trainScores.push(data.score);
+      const avg = trainScores.reduce((a, b) => a + b, 0) / trainScores.length;
+      document.getElementById('train-avg-score').textContent = avg.toFixed(1) + '/10';
+      document.getElementById('chat-last-score').textContent = data.score + '/10';
+      document.getElementById('chat-last-score').style.display = 'inline';
+      document.getElementById('chat-score-label').style.display = 'inline';
+    }
+  } catch(e) {
+    document.getElementById(loadingId)?.remove();
+    addChatMsg('ai', '⚠️ Error: ' + e.message);
+  }
+
+  inputEl.disabled = false;
+  sendBtn.disabled = false;
+  inputEl.focus();
+}
+
+function addChatMsg(role, text, score = null) {
+  const messagesEl = document.getElementById('chat-messages');
+  const el = document.createElement('div');
+  el.className = `chat-msg ${role}`;
+
+  // Render basic markdown
+  const html = text
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`(.+?)`/g, '<code style="background:rgba(255,255,255,0.08);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:11px;">$1</code>')
+    .replace(/^#{1,3}\s+(.+)$/gm, '<strong style="color:var(--green);">$1</strong>')
+    .replace(/\n/g, '<br>');
+
+  el.innerHTML = html;
+
+  if (score && role === 'ai') {
+    const scoreEl = document.createElement('div');
+    scoreEl.className = 'chat-score';
+    const color = score >= 7 ? 'var(--green)' : score >= 5 ? 'var(--yellow)' : 'var(--red)';
+    scoreEl.innerHTML = `Score: <span style="color:${color};font-weight:600;">${score}/10</span>`;
+    el.appendChild(scoreEl);
+  }
+
+  messagesEl.appendChild(el);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function handleChatKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendChatMessage();
+  }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LINKS PAGE
+═══════════════════════════════════════════════════════════ */
+async function loadLinks() {
+  const linkData = [
+    { platform: 'Naukri.com', icon: '🏢', url: 'https://www.naukri.com/react-developer-jobs-in-ahmedabad?jobAge=7', note: 'React Developer — Ahmedabad, last 7 days. Primary Indian job board.' },
+    { platform: 'LinkedIn', icon: '💼', url: 'https://www.linkedin.com/jobs/search/?keywords=React%20Developer&location=Ahmedabad%2C%20Gujarat&f_E=1', note: 'React — Ahmedabad, Entry Level. Recruiter messages come here.' },
+    { platform: 'Internshala', icon: '🎓', url: 'https://internshala.com/jobs/react-js-jobs-in-ahmedabad/', note: 'React jobs in Ahmedabad. Best for fresher roles with no experience bar.' },
+    { platform: 'Indeed India', icon: '🔍', url: 'https://in.indeed.com/jobs?q=react+developer+fresher&l=Ahmedabad%2C+Gujarat', note: 'React fresher — Ahmedabad. Often has small companies not on Naukri.' },
+    { platform: 'Glassdoor', icon: '🔮', url: 'https://www.glassdoor.co.in/Job/ahmedabad-react-developer-jobs-SRCH_IL.0,9_IC2940658_KO10,25.htm', note: 'React Developer — Ahmedabad. Check company reviews before applying.' },
+    { platform: 'Cutshort.io', icon: '✂️', url: 'https://cutshort.io/jobs/react-js?location=ahmedabad', note: 'React.js — Ahmedabad on Cutshort. AI-matched, good startup density.' },
+    { platform: 'Wellfound', icon: '🚀', url: 'https://wellfound.com/jobs?role=frontend-engineer&remote=true', note: 'Frontend Engineer — Remote startups with equity. AngelList parent.' },
+  ];
+
+  const grid = document.getElementById('links-grid');
+  grid.innerHTML = linkData.map(l => `
+    <a href="${esc(l.url)}" target="_blank" class="link-card">
+      <div class="link-platform">${l.icon} ${esc(l.platform)}</div>
+      <div class="link-note">${esc(l.note)}</div>
+      <div class="link-url">${esc(l.url.replace('https://', ''))}</div>
+    </a>
+  `).join('');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   EXPORT
+═══════════════════════════════════════════════════════════ */
+async function exportExcel() {
+  toast('info', '📊 Generating Excel export...');
+  window.location.href = '/api/export';
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TOAST NOTIFICATIONS
+═══════════════════════════════════════════════════════════ */
+function toast(type, msg) {
+  const container = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  const icons = { success: '✅', error: '❌', info: 'ℹ️' };
+  el.innerHTML = `<span>${icons[type] || ''}</span><span>${esc(msg)}</span>`;
+  container.appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   HELPERS
+═══════════════════════════════════════════════════════════ */
+function esc(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', () => {
+  loadDashboard();
+});
+
+// Close modal on overlay click
+document.getElementById('status-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal('status-modal');
+});
+</script>
+</body>
+</html>

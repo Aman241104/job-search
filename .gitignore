@@ -1,0 +1,32 @@
+# Secrets — never commit
+.env
+.env.local
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Generated output (CVs/covers as PDFs, exported spreadsheets) — regenerated on demand
+output/*.pdf
+output/*.xlsx
+
+# Local SQLite (superseded by Postgres in deployed environments; kept locally as a fallback)
+data/applications.db
+data/found_jobs.json
+
+# Session/tool state — not meant to be shared
+.claude/
+.agents/
+data/skills/
+
+# Next.js frontend
+web/node_modules/
+web/.next/
+web/out/
+web/.vercel
+web/*.tsbuildinfo
+web/next-env.d.ts
+
+# OS
+.DS_Store
