@@ -9,5 +9,5 @@ uvicorn[standard]>=0.23.0
 aiofiles>=23.0.0
 python-multipart>=0.0.6
 markdown>=3.5
-playwright==1.60.0
+weasyprint>=69.0
 psycopg2-binary>=2.9

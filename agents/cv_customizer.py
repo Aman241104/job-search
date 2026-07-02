@@ -7,7 +7,7 @@ from config import DATA_DIR, OUTPUT_DIR
 from claude_client import ask_ai
 from rich.console import Console
 import markdown as md_lib
-from playwright.sync_api import sync_playwright
+from weasyprint import HTML
 
 console = Console()
 
@@ -148,14 +148,15 @@ Output ONLY the cover letter body paragraphs, no subject line needed."""
         return result if result else "Cover letter generation failed — please retry."
 
     def _markdown_to_pdf(self, markdown_text: str, output_path: Path):
+        # WeasyPrint instead of a full browser (Playwright/Chromium) — a headless
+        # Chromium launch was measured at ~591MB RSS for a single PDF render,
+        # already over Render's entire 512MB free-tier limit on its own (confirmed
+        # via a real OOM crash in production). WeasyPrint renders HTML/CSS to PDF
+        # directly with no browser process at all — same output for a document
+        # this simple (no JS, no complex layout), a fraction of the memory.
         html_body = md_lib.markdown(markdown_text, extensions=["extra"])
         full_html = f"<html><head><meta charset='utf-8'>{RESUME_CSS}</head><body>{html_body}</body></html>"
-        with sync_playwright() as p:
-            browser = p.chromium.launch()
-            page = browser.new_page()
-            page.set_content(full_html)
-            page.pdf(path=str(output_path), format="A4", print_background=True)
-            browser.close()
+        HTML(string=full_html).write_pdf(str(output_path))
 
     def save_tailored_cv(self, job_id: str, cv_markdown: str) -> str:
         path = Path(OUTPUT_DIR) / f"cv_{job_id}.pdf"
