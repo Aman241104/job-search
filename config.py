@@ -67,3 +67,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 AGENTS_DIR = os.path.join(BASE_DIR, "agents")
+
+# Generated PDFs inside OUTPUT_DIR are gitignored, and git doesn't track empty
+# directories — so OUTPUT_DIR itself never existed in a fresh clone/deploy,
+# only ever appearing to work locally because it already existed on disk from
+# earlier runs. Caused a real production 500 (FileNotFoundError) on first
+# real PDF generation on Render. Don't assume it exists — create it.
+os.makedirs(OUTPUT_DIR, exist_ok=True)
