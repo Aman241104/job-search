@@ -202,9 +202,17 @@ class TrackerAgent:
                     filename TEXT,
                     page_count INTEGER DEFAULT 0,
                     current_page INTEGER DEFAULT 1,
-                    uploaded_at TEXT
+                    uploaded_at TEXT,
+                    cloudinary_url TEXT
                 )
             """)
+            if _pg_pool:
+                conn.execute("ALTER TABLE learning_books ADD COLUMN IF NOT EXISTS cloudinary_url TEXT")
+            else:
+                try:
+                    conn.execute("ALTER TABLE learning_books ADD COLUMN cloudinary_url TEXT")
+                except Exception:
+                    pass
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS learning_book_pages (
                     id TEXT PRIMARY KEY,
@@ -748,15 +756,16 @@ class TrackerAgent:
         return bool(new_val)
 
     # ── Book/PDF library (upload -> extracted text per page, stored in the DB
-    # so it survives a Render restart even though the raw file might not) ────
+    # so it survives a Render restart; the raw PDF itself lives on Cloudinary
+    # via cloudinary_url, for the same restart-safety plus a download link) ──
 
-    def add_book(self, title: str, filename: str, page_texts: list) -> str:
-        book_id = str(uuid.uuid4())
+    def add_book(self, title: str, filename: str, page_texts: list, cloudinary_url: str = "", book_id: str = "") -> str:
+        book_id = book_id or str(uuid.uuid4())
         now = datetime.now().isoformat()
         with self._get_conn() as conn:
             conn.execute(
-                "INSERT INTO learning_books (id, title, filename, page_count, current_page, uploaded_at) VALUES (?, ?, ?, ?, 1, ?)",
-                (book_id, title, filename, len(page_texts), now),
+                "INSERT INTO learning_books (id, title, filename, page_count, current_page, uploaded_at, cloudinary_url) VALUES (?, ?, ?, ?, 1, ?, ?)",
+                (book_id, title, filename, len(page_texts), now, cloudinary_url),
             )
             for i, text in enumerate(page_texts, start=1):
                 conn.execute(

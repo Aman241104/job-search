@@ -47,6 +47,14 @@ SMTP_PORT = 587
 ADZUNA_APP_ID = os.getenv("ADZUNA_APP_ID", "")
 ADZUNA_APP_KEY = os.getenv("ADZUNA_APP_KEY", "")
 
+# Cloudinary — persistent storage for uploaded book PDFs (Render's free-tier
+# local disk is ephemeral and doesn't survive a restart/redeploy; the raw
+# file matters here since the extracted text alone can't reproduce it for a
+# "download the original" link). Free tier, no card needed.
+CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME", "")
+CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY", "")
+CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET", "")
+
 # Telegram push for jobs that need a manual apply (no direct recruiter email —
 # most of them). Sends the job link/details + generated CV/cover-letter PDFs
 # so applying from a phone is just opening the link and attaching the files.

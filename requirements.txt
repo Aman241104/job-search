@@ -12,3 +12,4 @@ markdown>=3.5
 weasyprint>=69.0
 psycopg2-binary>=2.9
 pypdf>=6.0
+cloudinary>=1.40

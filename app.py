@@ -985,21 +985,21 @@ async def upload_book(file: UploadFile = File(...)):
     def _extract_and_store():
         import pypdf
         import io
+        from agents.cloudinary_storage import upload_pdf
         reader = pypdf.PdfReader(io.BytesIO(raw))
         page_texts = [(p.extract_text() or '') for p in reader.pages]
         if not any(t.strip() for t in page_texts):
             return None, 0
-        book_id = TrackerAgent().add_book(
-            title=file.filename.rsplit('.', 1)[0], filename=file.filename, page_texts=page_texts,
+        # Pre-generate the id so the Cloudinary public_id and the DB row's
+        # book_id match — upload is best-effort (empty string on any failure/
+        # missing config just means no download link; reading/summary/chat
+        # never depend on it, they use the extracted text stored below).
+        book_id = str(uuid.uuid4())
+        cloudinary_url = upload_pdf(raw, book_id)
+        TrackerAgent().add_book(
+            title=file.filename.rsplit('.', 1)[0], filename=file.filename,
+            page_texts=page_texts, cloudinary_url=cloudinary_url, book_id=book_id,
         )
-        # best-effort save of the raw PDF too — nice to have (download link),
-        # not load-bearing for reading/summary/chat, which use the DB text above
-        try:
-            books_dir = Path(OUTPUT_DIR) / 'books'
-            books_dir.mkdir(parents=True, exist_ok=True)
-            (books_dir / f"{book_id}.pdf").write_bytes(raw)
-        except Exception:
-            pass
         return book_id, len(page_texts)
 
     loop = asyncio.get_event_loop()

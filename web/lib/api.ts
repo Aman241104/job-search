@@ -107,6 +107,7 @@ export interface LearningBook {
   page_count: number;
   current_page: number;
   uploaded_at: string;
+  cloudinary_url?: string;
 }
 
 export interface BookPage {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Sparkles, Send, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Sparkles, Send, Loader2, Download } from 'lucide-react';
 import { api, LearningBook, BookPage } from '@/lib/api';
 import { useToast } from './Toast';
 
@@ -98,6 +98,17 @@ export default function BookReader({ book }: BookReaderProps) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {book.cloudinary_url && (
+            <a
+              href={book.cloudinary_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Download original PDF"
+              className="p-1.5 rounded-lg border border-border text-white/50 hover:text-white/80"
+            >
+              <Download size={14} />
+            </a>
+          )}
           <button
             onClick={() => setPageNum((p) => Math.max(1, p - 1))}
             disabled={pageNum <= 1}
