@@ -54,6 +54,36 @@ class CVCustomizerAgent:
         scored.sort(key=lambda x: x[0], reverse=True)
         return [p for _, p in scored[:top_n]] + [self.projects_detailed["gallery"]]
 
+    def _refine(self, draft: str, job: dict, doc_type: str, extra_checks: str, max_tokens: int) -> str:
+        """
+        Self-critique pass: review the first draft against the job description
+        and rewrite it if there's a real issue, otherwise return it unchanged.
+        Affordable now that a second AI call per document isn't rationing a
+        scarce quota (previously Gemini's 20/day smart-model limit). Falls
+        back to the original draft untouched if this call fails — the first
+        draft is already a complete, valid document on its own, this is a
+        quality pass, not a required step.
+        """
+        prompt = f"""Review this draft {doc_type} against the target job below. If you find real issues, rewrite it. If it's already good, return it unchanged — don't rewrite for the sake of rewriting.
+
+TARGET JOB:
+Title: {job['title']}
+Company: {job['company']}
+Description: {job['description'][:2000]}
+
+DRAFT:
+{draft}
+
+Check for:
+- Generic filler language or JD-mirroring boilerplate
+- Invented achievements/skills not grounded in the draft's own real details (do NOT add anything not already present in the draft)
+- Weak keyword alignment with the job description
+- {extra_checks}
+
+Output ONLY the final {doc_type} text (improved or unchanged) — no explanation of what you checked or changed."""
+        refined = ask_ai(prompt, max_tokens=max_tokens)
+        return refined if refined else draft
+
     def customize_for_job(self, job: dict) -> str:
         console.print(f"[cyan]Customizing CV for: {job['title']} at {job['company']}[/cyan]")
 
@@ -112,7 +142,13 @@ etc.
 ...
 """
         result = ask_ai(prompt, max_tokens=2000)
-        return result if result else "# Aman Patel\n\n*CV generation failed — please retry.*"
+        if not result:
+            return "# Aman Patel\n\n*CV generation failed — please retry.*"
+        return self._refine(
+            result, job, "resume",
+            extra_checks="ATS-friendliness (clean headers, no tables/columns, standard section names)",
+            max_tokens=2000,
+        )
 
     def generate_cover_letter(self, job: dict) -> str:
         console.print(f"[cyan]Writing cover letter for: {job['title']} at {job['company']}[/cyan]")
@@ -149,7 +185,13 @@ REQUIREMENTS:
 Output ONLY the cover letter body paragraphs — no greeting, no sign-off, no subject line."""
 
         result = ask_ai(prompt, max_tokens=600)
-        return result if result else "Cover letter generation failed — please retry."
+        if not result:
+            return "Cover letter generation failed — please retry."
+        return self._refine(
+            result, job, "cover letter",
+            extra_checks="3-short-paragraph structure, no greeting/sign-off, no placeholder brackets like \"[Hiring Manager Name]\"",
+            max_tokens=600,
+        )
 
     def _markdown_to_pdf(self, markdown_text: str, output_path: Path):
         # WeasyPrint instead of a full browser (Playwright/Chromium) — a headless

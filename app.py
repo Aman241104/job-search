@@ -20,7 +20,8 @@ from agents.tracker import TrackerAgent
 from agents.job_finder import JobFinderAgent
 from agents.cv_customizer import CVCustomizerAgent
 from agents.job_applier import JobApplierAgent, extract_email_from_description
-from config import OUTPUT_DIR, DATA_DIR
+from agents.telegram_notifier import TelegramNotifierAgent
+from config import OUTPUT_DIR, DATA_DIR, MIN_APPLY_SCORE
 from claude_client import GeminiChat, ask_gemini
 from agents.trainer import TRAINING_TOPICS, SYSTEM_PROMPTS
 
@@ -353,6 +354,38 @@ async def find_jobs_stream():
             }) + '\n\n'
             await asyncio.sleep(0.1)
 
+            # Push the best new finds to Telegram for manual apply-from-phone —
+            # capped at 5/run so a big scrape doesn't spam the same phone with
+            # dozens of messages at once. No-ops silently if Telegram isn't
+            # configured (checked once via .enabled, not per-job).
+            notifier = TelegramNotifierAgent()
+            if notifier.enabled:
+                yield 'data: ' + json.dumps({
+                    'type': 'progress',
+                    'message': 'Pushing top new finds to Telegram...',
+                    'percent': 85,
+                }) + '\n\n'
+
+                def notify_top():
+                    top_new = sorted(
+                        [j for j in jobs if j.get('score', 0) >= 70], key=lambda x: x['score'], reverse=True
+                    )[:5]
+                    tracker = TrackerAgent()
+                    cv_agent = CVCustomizerAgent()
+                    sent_count = 0
+                    for j in top_new:
+                        try:
+                            package = cv_agent.prepare_full_package(j)
+                            if notifier.send_job_alert(j, package['cv_path'], package['cover_letter_path'], package['cv_markdown']):
+                                tracker.update_status(j['id'], 'found', notes='Telegram alert sent',
+                                                       cv_path=package['cv_path'], cover_path=package['cover_letter_path'])
+                                sent_count += 1
+                        except Exception:
+                            continue
+                    return sent_count
+
+                await loop.run_in_executor(None, notify_top)
+
             stats = TrackerAgent().get_stats()
             top5 = sorted(jobs, key=lambda x: x.get('score', 0), reverse=True)[:5]
             yield 'data: ' + json.dumps({
@@ -377,7 +410,7 @@ async def find_jobs_stream():
 # ── Apply ──────────────────────────────────────────────────────────────────────
 
 @app.post('/api/apply/{job_id}')
-async def generate_application(job_id: str):
+async def generate_application(job_id: str, force: bool = Query(default=False)):
     import sqlite3
     tracker = TrackerAgent()
     with tracker._get_conn() as conn:
@@ -388,6 +421,11 @@ async def generate_application(job_id: str):
     if not row:
         return JSONResponse({'error': 'Job not found'}, status_code=404)
     job = dict(row)
+    if (job.get('score') or 0) < MIN_APPLY_SCORE and not force:
+        return JSONResponse({
+            'error': f"Score {job.get('score', 0)} is below your quality gate ({MIN_APPLY_SCORE}). "
+                     f"Pass ?force=true to generate anyway."
+        }, status_code=400)
     loop = asyncio.get_event_loop()
     package = await loop.run_in_executor(None, lambda: CVCustomizerAgent().prepare_full_package(job))
     tracker = TrackerAgent()
@@ -406,7 +444,7 @@ async def generate_application(job_id: str):
 
 
 @app.post('/api/email-apply/{job_id}')
-async def email_apply(job_id: str, to_email: str = Query(default='')):
+async def email_apply(job_id: str, to_email: str = Query(default=''), force: bool = Query(default=False)):
     """Send the tailored CV+cover letter (as PDF attachments) directly to a
     recruiter's email via the SMTP sender in job_applier.py. If to_email isn't
     supplied, tries to auto-detect one from the job's own description text."""
@@ -418,6 +456,11 @@ async def email_apply(job_id: str, to_email: str = Query(default='')):
     if not row:
         return JSONResponse({'error': 'Job not found'}, status_code=404)
     job = dict(row)
+    if (job.get('score') or 0) < MIN_APPLY_SCORE and not force:
+        return JSONResponse({
+            'error': f"Score {job.get('score', 0)} is below your quality gate ({MIN_APPLY_SCORE}). "
+                     f"Pass ?force=true to send anyway."
+        }, status_code=400)
 
     email = to_email or extract_email_from_description(job.get('description', ''))
     if not email:
@@ -436,6 +479,49 @@ async def email_apply(job_id: str, to_email: str = Query(default='')):
     if not sent:
         return JSONResponse({'error': 'Email failed to send — check SMTP_PASSWORD in .env.'}, status_code=502)
     return {'ok': True, 'sent_to': email}
+
+
+@app.post('/api/telegram-notify/{job_id}')
+async def telegram_notify(job_id: str, force: bool = Query(default=False)):
+    """For listings with no direct recruiter email (the majority) — generates
+    the tailored CV/cover-letter and pushes job link + details + both PDFs to
+    Telegram, so applying by hand can happen from a phone whenever there's a
+    free moment, instead of needing this dashboard open."""
+    import sqlite3
+    tracker = TrackerAgent()
+    notifier = TelegramNotifierAgent()
+    if not notifier.enabled:
+        return JSONResponse(
+            {'error': 'Telegram not configured — set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env.'},
+            status_code=400,
+        )
+
+    with tracker._get_conn() as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    if not row:
+        return JSONResponse({'error': 'Job not found'}, status_code=404)
+    job = dict(row)
+    if (job.get('score') or 0) < MIN_APPLY_SCORE and not force:
+        return JSONResponse({
+            'error': f"Score {job.get('score', 0)} is below your quality gate ({MIN_APPLY_SCORE}). "
+                     f"Pass ?force=true to notify anyway."
+        }, status_code=400)
+
+    loop = asyncio.get_event_loop()
+    package = await loop.run_in_executor(None, lambda: CVCustomizerAgent().prepare_full_package(job))
+    if 'generation failed' in package.get('cv_markdown', ''):
+        return JSONResponse({'error': 'CV generation failed, not notifying — try again.'}, status_code=502)
+
+    sent = await loop.run_in_executor(
+        None, lambda: notifier.send_job_alert(job, package['cv_path'], package['cover_letter_path'], package['cv_markdown'])
+    )
+    if not sent:
+        return JSONResponse({'error': 'Telegram send failed — check TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID.'}, status_code=502)
+
+    tracker.update_status(job_id, 'found', notes='Telegram alert sent',
+                           cv_path=package['cv_path'], cover_path=package['cover_letter_path'])
+    return {'ok': True}
 
 
 @app.post('/api/update/{job_id}')
@@ -803,6 +889,26 @@ async def get_followups():
             ORDER BY a.date_applied ASC
         """, (cutoff,)).fetchall()
     return {'jobs': [dict(r) for r in rows]}
+
+
+@app.post('/api/followups/notify')
+async def notify_followups():
+    """Push the current follow-up list (applications 7+ days old, no status
+    update) to Telegram — same data /api/followups shows the dashboard, just
+    pushed somewhere that doesn't require remembering to check."""
+    followups = await get_followups()
+    jobs = followups['jobs']
+    notifier = TelegramNotifierAgent()
+    if not notifier.enabled:
+        return JSONResponse(
+            {'error': 'Telegram not configured — set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env.'},
+            status_code=400,
+        )
+    loop = asyncio.get_event_loop()
+    sent = await loop.run_in_executor(None, lambda: notifier.send_followup_digest(jobs))
+    if not sent:
+        return JSONResponse({'error': 'Telegram send failed.'}, status_code=502)
+    return {'ok': True, 'count': len(jobs)}
 
 
 # ── Blacklist ──────────────────────────────────────────────────────────────────

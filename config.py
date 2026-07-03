@@ -14,6 +14,22 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL   = "gemini-3.1-flash-lite"  # cheap/high-quota — 500/day
 GEMINI_MODEL_FALLBACK = "gemini-2.5-flash"  # smarter/low-quota — only 20/day
 
+# NVIDIA NIM (build.nvidia.com) — free tier, OpenAI-compatible endpoint.
+# claude_client.py now tries this BEFORE Gemini everywhere quality_first used to
+# matter: free tier is ~40 RPM shared across models (upgradable to ~200 RPM),
+# which dwarfs Gemini's 20/day quota on the smart model above. Gemini remains
+# as the fallback if this key is ever unset/rate-limited, not removed.
+# NOTE: "nvidia/llama-3.1-nemotron-70b-instruct" is listed in /v1/models but
+# 404s ("Function not found for account") on this key — some catalog models
+# aren't actually provisioned per-account. Verified working via a live test
+# call on 2026-07-03: nvidia/llama-3.3-nemotron-super-49b-v1 (NVIDIA's
+# "balance accuracy/compute" tier) and meta/llama-3.1-8b-instruct /
+# nvidia/llama-3.1-nemotron-nano-8b-v1 (fast tier). meta/llama-3.3-70b-instruct
+# timed out repeatedly — avoid it. Re-verify with a live call before changing
+# this default, don't assume a catalog listing means it actually works.
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "")
+NVIDIA_MODEL = os.getenv("NVIDIA_MODEL", "nvidia/llama-3.3-nemotron-super-49b-v1")
+
 # AI_PROVIDER controls CV/cover-letter generation only (agents/cv_customizer.py).
 # "claude_code" shells out to the local `claude` CLI, using the existing `claude login`
 # OAuth session (Pro/Max subscription usage, not metered API billing) instead of Gemini.
@@ -31,11 +47,25 @@ SMTP_PORT = 587
 ADZUNA_APP_ID = os.getenv("ADZUNA_APP_ID", "")
 ADZUNA_APP_KEY = os.getenv("ADZUNA_APP_KEY", "")
 
+# Telegram push for jobs that need a manual apply (no direct recruiter email —
+# most of them). Sends the job link/details + generated CV/cover-letter PDFs
+# so applying from a phone is just opening the link and attaching the files.
+# Optional — feature no-ops if either var is unset. Get TELEGRAM_BOT_TOKEN from
+# @BotFather (/newbot), get TELEGRAM_CHAT_ID by messaging your new bot once and
+# then hitting https://api.telegram.org/bot<TOKEN>/getUpdates.
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+
+# Quality gate (ROADMAP.md Phase 1 item, previously never built): don't
+# tailor a CV/cover letter for a job scoring below this without an explicit
+# override. /api/apply, /api/email-apply, /api/telegram-notify all check this.
+MIN_APPLY_SCORE = int(os.getenv("MIN_APPLY_SCORE", "40"))
+
 USER_PROFILE = {
     "name": "Aman Patel",
     "email": "patelaman0241@gmail.com",
     "phone": "+919558009550",
-    "linkedin": "linkedin.com/in/aman-patel",
+    "linkedin": "linkedin.com/in/aman-patel-88847a265",
     "github": "github.com/Aman241104",
     "portfolio": "portfolio-1byaman.vercel.app",
     "location": "Ahmedabad, India",

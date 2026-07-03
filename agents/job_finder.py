@@ -1,4 +1,5 @@
 import json
+import time
 import uuid
 import requests
 from datetime import datetime
@@ -7,7 +8,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import DATA_DIR, ADZUNA_APP_ID, ADZUNA_APP_KEY
-from claude_client import ask_claude_json, score_jobs_batch
+from claude_client import ask_claude_json, score_job_single
 from bs4 import BeautifulSoup
 from rich.console import Console
 from rich.progress import track
@@ -774,16 +775,18 @@ class JobFinderAgent:
                 uncertain.append(job)
                 uncertain_idx.append(i)
 
-        # Phase 2: Gemini re-scores only uncertain jobs (batches of 10)
+        # Phase 2: AI re-scores only uncertain jobs, individually. Used to
+        # batch 10-per-call to conserve Gemini's 20/day smart-model quota —
+        # NVIDIA's ~40 RPM headroom removes that constraint, so each job now
+        # gets the model's full attention instead of sharing a prompt with 9
+        # others (should score more accurately). The 1.5s pacing keeps this
+        # comfortably under NVIDIA's shared-across-models RPM cap.
         if uncertain:
-            console.print(f'  [dim]AI re-scoring {len(uncertain)} uncertain jobs...[/dim]')
-            batch_size = 10
-            ai_results = []
-            for i in range(0, len(uncertain), batch_size):
-                batch = uncertain[i:i + batch_size]
-                ai_results.extend(score_jobs_batch(batch, self.PROFILE))
-            for idx, ai_result in zip(uncertain_idx, ai_results):
-                results[idx] = ai_result
+            console.print(f'  [dim]AI re-scoring {len(uncertain)} uncertain jobs (individually)...[/dim]')
+            for i, (idx, job) in enumerate(zip(uncertain_idx, uncertain)):
+                results[idx] = score_job_single(job, self.PROFILE)
+                if i < len(uncertain) - 1:
+                    time.sleep(1.5)
 
         return results
 

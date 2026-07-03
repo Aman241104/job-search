@@ -52,7 +52,11 @@ Score /10. Give model answer framework. Cover: tell me about yourself, biggest c
 why this company, strengths/weaknesses.""",
 
     "portfolio": """You are a hiring manager. Aman Patel will walk you through their projects.
-Ask probing questions about: DevEvents (Next.js event discovery app), Awwwards Clone (GSAP animations), SaaS Landing Page, Stock App (TypeScript).
+Ask probing questions about their real flagship work: a multi-tenant WhatsApp Business AI SaaS (Next.js, Supabase,
+Groq LLM, row-level-security tenant isolation, booking state machine), this very job-search automation platform
+(FastAPI, Next.js, Postgres, 12-source scraper, hybrid keyword+LLM scoring pipeline, deployed on Render/Vercel),
+a luxury event-management platform (Next.js, GSAP/Lenis animation, client portal + admin CMS), and a gym-tracker
+app with an algorithmic progressive-overload coach.
 Ask: why did you build this? what was the hardest part? how would you scale it? what would you do differently?
 Score their explanation /10.""",
 
@@ -114,7 +118,7 @@ class TrainerAgent:
             "Type your answers. Commands: 'quit' to end, 'skip' to skip question.",
             expand=False
         ))
-        console.print("[dim]Powered by Gemini AI[/dim]\n")
+        console.print("[dim]Powered by NVIDIA NIM (falls back to Gemini)[/dim]\n")
 
         chat = GeminiChat(system=system_prompt, temperature=0.8)
         scores = []
@@ -125,7 +129,7 @@ class TrainerAgent:
         # First question
         first_q = chat.send("Start the interview. Greet me briefly and ask your first question.")
         if not first_q:
-            console.print("[red]Gemini not responding. Check your GEMINI_API_KEY in .env[/red]")
+            console.print("[red]AI not responding. Check your NVIDIA_API_KEY / GEMINI_API_KEY in .env[/red]")
             return
 
         console.print(Panel(Markdown(first_q), title="[bold blue]Interviewer[/bold blue]", border_style="blue"))

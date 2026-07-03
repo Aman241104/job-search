@@ -20,7 +20,13 @@ def _cfg():
     return GEMINI_API_KEY, GEMINI_MODEL, GEMINI_MODEL_FALLBACK
 
 
+def _nvidia_cfg():
+    from config import NVIDIA_API_KEY, NVIDIA_MODEL
+    return NVIDIA_API_KEY, NVIDIA_MODEL
+
+
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
 # Per-model cooldown timestamps, persisted to disk so a Render restart (or a
 # fresh local process) doesn't forget a model was rate-limited today and waste
@@ -165,6 +171,68 @@ def ask_gemini(prompt: str, system: str = "", model: str = "",
     return _keyword_fallback(prompt)
 
 
+def ask_nvidia(prompt: str, system: str = "", model: str = "",
+               history: list = None, max_tokens: int = 1000,
+               temperature: float = 0.7, retries: int = 2) -> str:
+    """
+    Call NVIDIA NIM's OpenAI-compatible chat completions endpoint
+    (build.nvidia.com, free tier ~40 RPM shared across models — dwarfs
+    Gemini's 20/day quota on its smart model). This is now the first choice
+    everywhere quality_first used to matter; Gemini is the fallback, not
+    removed, in case this key is ever unset/rate-limited.
+
+    history = [{"role": "user"|"assistant", "content": "..."}, ...] (OpenAI
+    format — different from ask_gemini's "model"/"parts" format).
+
+    Returns "" on any failure (no key, network error, non-200) so callers can
+    fall back to Gemini/keyword scoring, same contract as ask_gemini.
+    """
+    api_key, default_model = _nvidia_cfg()
+    if not api_key:
+        return ""
+
+    chosen_model = model or default_model
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    if history:
+        messages.extend(history)
+    messages.append({"role": "user", "content": prompt})
+
+    body = {
+        "model": chosen_model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "stream": False,
+    }
+
+    for attempt in range(retries):
+        try:
+            resp = _requests.post(
+                NVIDIA_URL,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+                json=body,
+                timeout=60,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return data["choices"][0]["message"]["content"].strip()
+            if resp.status_code == 429 and attempt < retries - 1:
+                time.sleep(5 * (attempt + 1))
+                continue
+            break
+        except Exception:
+            if attempt < retries - 1:
+                time.sleep(3)
+            continue
+    return ""
+
+
 def _keyword_fallback(prompt: str) -> str:
     """
     Zero-AI fallback: if prompt looks like a scoring request, return a
@@ -216,17 +284,21 @@ def ask_claude_code(prompt: str, system: str = "") -> str:
 
 def ask_ai(prompt: str, system: str = "", max_tokens: int = 1000, temperature: float = 0.7) -> str:
     """
-    Provider-agnostic entry point for CV/cover-letter generation. Routes to the
-    local Claude Code CLI when AI_PROVIDER=claude_code, otherwise (or on any
-    Claude Code failure) uses Gemini. Fails OPEN to Gemini, never closed —
-    even a stray AI_PROVIDER=claude_code on a deployed host is harmless, since
-    the CLI simply won't be there and ask_claude_code() returns "".
+    Provider-agnostic entry point for CV/cover-letter generation. Order:
+    Claude Code CLI (if AI_PROVIDER=claude_code) -> NVIDIA NIM -> Gemini ->
+    keyword fallback (inside ask_gemini). Fails OPEN at every step, never
+    closed — a stray AI_PROVIDER=claude_code or missing NVIDIA_API_KEY on a
+    deployed host is harmless, each provider just returns "" and the next one
+    is tried.
     """
     from config import AI_PROVIDER
     if AI_PROVIDER == "claude_code":
         result = ask_claude_code(prompt, system=system)
         if result:
             return result
+    result = ask_nvidia(prompt, system=system, max_tokens=max_tokens, temperature=temperature)
+    if result:
+        return result
     return ask_gemini(prompt, system=system, max_tokens=max_tokens, temperature=temperature,
                        quality_first=True)
 
@@ -252,32 +324,27 @@ def ask_claude_json(prompt: str, system: str = "", timeout: int = 60) -> dict:
     return {}
 
 
-# ── Batch scorer — 10 jobs per API call instead of 1 ─────────────────────────
+# ── Single-job scorer ──────────────────────────────────────────────────────
+# Previously batched 10 jobs per call to conserve Gemini's 20/day smart-model
+# quota. NVIDIA's ~40 RPM (shared across models, no meaningful daily cap for
+# this project's volume) removes that constraint, so each uncertain job now
+# gets the model's full attention in its own prompt instead of sharing
+# context with 9 others — should score more accurately, at the cost of one
+# call per job instead of one per 10 (fine, since calls are no longer scarce).
 
-def score_jobs_batch(jobs: list, profile_summary: str) -> list[dict]:
+def score_job_single(job: dict, profile_summary: str) -> dict:
     """
-    Score up to 10 jobs in a single Gemini call.
-    Returns list of {"score": int, "reason": str} in the same order.
+    Score a single job. Returns {"score": int, "reason": str}.
+    NVIDIA first, Gemini fallback, keyword fallback if both fail — same
+    provider chain as everywhere else in this module.
     """
-    if not jobs:
-        return []
-
-    lines = []
-    for i, j in enumerate(jobs):
-        loc = j.get("location", "")
-        lines.append(
-            f'{i+1}. "{j["title"]}" @ {j["company"]} | {loc} | '
-            f'Salary: {j.get("salary","?")} | '
-            f'Desc: {j.get("description","")[:200]}'
-        )
-
-    prompt = f"""Score each job 0-100 for this candidate. Return ONLY a JSON array of objects in order:
-[{{"score": <int>, "reason": "<10 words max>"}}, ...]
+    loc = job.get("location", "")
+    prompt = f"""Score this job 0-100 for this candidate. Return ONLY a JSON object:
+{{"score": <int>, "reason": "<10 words max>"}}
 
 Candidate: {profile_summary}
 
-Jobs to score:
-{chr(10).join(lines)}
+Job: "{job['title']}" @ {job['company']} | {loc} | Salary: {job.get('salary','?')} | Desc: {job.get('description','')[:300]}
 
 Rules:
 - 80-100: React/Next.js/frontend, fresher-friendly, remote or Gujarat/Ahmedabad
@@ -287,56 +354,67 @@ Rules:
 - Penalise 15pts if onsite in Bangalore/Mumbai/Delhi/Pune (far from Ahmedabad)
 - Bonus 10pts if location says Remote/WFH/Anywhere
 
-Return ONLY the JSON array, nothing else."""
+Return ONLY the JSON object, nothing else."""
 
-    # Volume here is tiny (~10-20 batches/day even at full backlog), so the
-    # smarter/lower-quota model costs a fraction of a cent either way — use it
-    # first for better scoring accuracy, same as CV/cover-letter generation.
-    raw = ask_gemini(prompt, max_tokens=800, temperature=0.2, quality_first=True)
+    raw = ask_nvidia(prompt, max_tokens=100, temperature=0.2)
     if not raw:
-        # fallback: score individually
-        results = []
-        for j in jobs:
-            fb = _keyword_fallback(j.get("title","") + " " + j.get("description","")[:200])
-            d  = json.loads(fb) if fb else {"score": 40, "reason": "fallback"}
-            results.append(d)
-        return results
+        raw = ask_gemini(prompt, max_tokens=100, temperature=0.2, quality_first=True)
+    if not raw:
+        fb = _keyword_fallback(job.get("title", "") + " " + job.get("description", "")[:200])
+        return json.loads(fb) if fb else {"score": 40, "reason": "fallback"}
 
-    # parse array
-    arr_match = re.search(r'\[.*\]', raw, re.DOTALL)
-    if arr_match:
+    obj_match = re.search(r'\{.*\}', raw, re.DOTALL)
+    if obj_match:
         try:
-            arr = json.loads(arr_match.group())
-            if isinstance(arr, list) and len(arr) == len(jobs):
-                return [{"score": int(x.get("score", 40)), "reason": x.get("reason", "")} for x in arr]
+            obj = json.loads(obj_match.group())
+            return {"score": int(obj.get("score", 40)), "reason": obj.get("reason", "")}
         except Exception:
             pass
 
-    # partial parse failure — return fallback scores
-    return [{"score": 40, "reason": "parse error"} for _ in jobs]
+    return {"score": 40, "reason": "parse error"}
 
 
 # ── Multi-turn conversation for trainer ──────────────────────────────────────
 
 class GeminiChat:
-    """Stateful multi-turn chat using Gemini's native conversation history."""
+    """
+    Stateful multi-turn chat for the interview trainer. Despite the name (kept
+    for backward compat — trainer.py and app.py both import `GeminiChat`
+    directly), tries NVIDIA first each turn and only falls back to Gemini if
+    NVIDIA is unavailable/rate-limited. History is kept in OpenAI format
+    (role: user/assistant) since that's NVIDIA's native format; converted to
+    Gemini's (role: user/model, parts:[{text}]) only on the fallback path.
+    """
 
     def __init__(self, system: str = "", temperature: float = 0.8):
         self.system      = system
         self.temperature = temperature
-        self.history: list = []
+        self.history: list = []   # [{"role": "user"|"assistant", "content": "..."}]
 
     def send(self, message: str, max_tokens: int = 600) -> str:
-        response = ask_gemini(
+        response = ask_nvidia(
             message,
             system=self.system,
             history=self.history,
             max_tokens=max_tokens,
             temperature=self.temperature,
         )
+        if not response:
+            gemini_history = [
+                {"role": "user" if m["role"] == "user" else "model",
+                 "parts": [{"text": m["content"]}]}
+                for m in self.history
+            ]
+            response = ask_gemini(
+                message,
+                system=self.system,
+                history=gemini_history,
+                max_tokens=max_tokens,
+                temperature=self.temperature,
+            )
         if response:
-            self.history.append({"role": "user",  "parts": [{"text": message}]})
-            self.history.append({"role": "model", "parts": [{"text": response}]})
+            self.history.append({"role": "user", "content": message})
+            self.history.append({"role": "assistant", "content": response})
         return response
 
     def reset(self):
