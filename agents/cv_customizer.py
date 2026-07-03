@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import DATA_DIR, OUTPUT_DIR
+from config import DATA_DIR, OUTPUT_DIR, USER_PROFILE
 from claude_client import ask_ai
 from rich.console import Console
 import markdown as md_lib
@@ -82,6 +82,8 @@ INSTRUCTIONS:
 4. Keep summary focused on what this company wants
 5. Do NOT add fake experience or skills the candidate doesn't have
 6. Output a clean, professional Markdown resume
+7. Avoid generic filler language ("eager to collaborate on cutting-edge projects", "fast-paced environment", "passionate about technology") — keep the summary specific and grounded in the candidate's real experience, not JD-mirroring boilerplate
+8. Keep each bullet a clean, standalone achievement statement. Do NOT bolt on generic justification clauses that just restate a JD phrase (e.g. don't end a bullet about a multi-tenant SaaS with "...demonstrating strong understanding of HTML and CSS") — reword for relevant keywords using only the real details given, without padding
 
 Keep total output under ~700 words.
 
@@ -136,13 +138,15 @@ Description: {job['description'][:2000]}
 
 REQUIREMENTS:
 - 3 short paragraphs max
+- Do NOT include a greeting/salutation line (no "Dear ..." of any kind) — a salutation is added separately afterward
+- Do NOT include placeholder brackets like "[Hiring Manager Name]" anywhere — if you don't know a name, just skip greetings entirely as instructed above
 - Opening: specific hook mentioning the company or role (not "I am writing to apply")
 - Middle: pick 2 of the pre-selected projects above that are most relevant, explain what they demonstrate — use only real details from the `description`/`highlights` given, don't invent functionality
 - Closing: brief, confident, clear CTA
 - Tone: professional but human, not robotic
 - Keep under 300 words
 
-Output ONLY the cover letter body paragraphs, no subject line needed."""
+Output ONLY the cover letter body paragraphs — no greeting, no sign-off, no subject line."""
 
         result = ask_ai(prompt, max_tokens=600)
         return result if result else "Cover letter generation failed — please retry."
@@ -164,8 +168,22 @@ Output ONLY the cover letter body paragraphs, no subject line needed."""
         return str(path)
 
     def save_cover_letter(self, job_id: str, cover_letter: str) -> str:
+        # job_applier.py wraps `cover_letter` with a greeting/sign-off for the
+        # *emailed* body text, but that wrap never touched the PDF file itself
+        # — anyone opening the attachment directly (not just reading the email)
+        # saw a bare paragraph with no salutation or signature. Add the same
+        # wrap here, PDF-only, so the standalone document reads as a complete
+        # cover letter on its own.
+        full_letter = f"""Dear Hiring Team,
+
+{cover_letter}
+
+Best regards,
+{USER_PROFILE['name']}
+{USER_PROFILE['phone']} | {USER_PROFILE['email']}
+Portfolio: {USER_PROFILE['portfolio']} | GitHub: {USER_PROFILE['github']}"""
         path = Path(OUTPUT_DIR) / f"cover_{job_id}.pdf"
-        self._markdown_to_pdf(cover_letter, path)
+        self._markdown_to_pdf(full_letter, path)
         return str(path)
 
     def prepare_full_package(self, job: dict) -> dict:

@@ -28,24 +28,25 @@
       "id": "job-serach",
       "name": "Job Search Automation Platform (this app)",
       "tier": "S",
-      "tech_stack": ["Python", "FastAPI", "Next.js 14", "Postgres", "Gemini API", "Playwright", "SSE"],
-      "live_url": null,
-      "github_url": null,
-      "deployed": false,
-      "description": "Self-built multi-agent job-search system: scrapes 9 job sources concurrently, scores every listing against a candidate profile via LLM + keyword heuristics, generates tailored ATS-friendly PDF CVs and cover letters per job, tracks the full application pipeline, and includes an AI-driven mock interview trainer with scored feedback.",
+      "tech_stack": ["Python", "FastAPI", "Next.js 14", "Supabase (Postgres)", "Gemini API", "Playwright", "SSE", "Docker"],
+      "live_url": "https://job-search-zeta-ten.vercel.app",
+      "github_url": "https://github.com/Aman241104/job-search",
+      "deployed": true,
+      "description": "Self-built, fully deployed multi-agent job-search system: scrapes 12 job sources concurrently, scores every listing against a candidate profile via LLM + keyword heuristics, generates tailored ATS-friendly PDF CVs and cover letters per job, tracks the full application pipeline, and includes an AI-driven mock interview trainer with scored feedback. FastAPI backend on Render, Next.js frontend on Vercel, shared Supabase Postgres database.",
       "highlights": [
-        "9-source job scraper (Internshala, LinkedIn, WeWorkRemotely, Remotive, RemoteOK, Jobicy, Arbeitnow, Remote.co, Adzuna) unified into one pipeline",
+        "12-source job scraper (Internshala, LinkedIn, WeWorkRemotely, Remotive, RemoteOK, Jobicy, Arbeitnow, Remote.co, TheMuse, Himalayas, HN \"Who is Hiring\", Adzuna) unified into one pipeline",
         "Two-stage scoring: cheap keyword heuristic first, LLM batch-scoring only for uncertain (35-65) matches — keeps API usage low",
         "Per-job CV/cover-letter tailoring: relevance-ranks the candidate's own project portfolio by keyword overlap with the job description before generating",
         "Server-Sent-Events streaming for live scrape progress in the UI",
-        "Pluggable AI provider layer: Gemini for scoring/production, an optional local Claude Code CLI path for higher-quality CV writing during development"
+        "Pluggable AI provider layer: Gemini for scoring/production, an optional local Claude Code CLI path for higher-quality CV writing during development",
+        "Deployed as a real hybrid architecture (Render + Vercel + Supabase), not just a local script"
       ],
       "bullets": [
-        "Built a multi-agent job-search platform (FastAPI, Next.js, Postgres) that scrapes 9 job boards, scores listings via a hybrid keyword+LLM pipeline, and auto-generates tailored PDF CVs per application",
-        "Designed a provider-agnostic AI abstraction supporting both a cloud LLM API and a local CLI-based model, with automatic fail-open fallback",
+        "Built and deployed a multi-agent job-search platform (FastAPI on Render, Next.js on Vercel, Supabase Postgres) that scrapes 12 job boards, scores listings via a hybrid keyword+LLM pipeline, and auto-generates tailored PDF CVs per application",
+        "Designed a provider-agnostic AI abstraction supporting both a cloud LLM API and a local CLI-based model, with automatic fail-open fallback and rate-limit-aware model cascading",
         "Implemented an AI mock-interview trainer with scored, topic-based feedback sessions"
       ],
-      "keywords": ["python", "fastapi", "automation", "scraping", "llm", "gemini", "agent", "postgres", "sse", "multi-agent", "ai", "pipeline"]
+      "keywords": ["python", "fastapi", "automation", "scraping", "llm", "gemini", "agent", "postgres", "supabase", "sse", "multi-agent", "ai", "pipeline", "docker", "deployment", "render", "vercel"]
     },
     {
       "id": "outreach-automation",

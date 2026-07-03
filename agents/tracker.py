@@ -194,22 +194,38 @@ class TrackerAgent:
         insert_or = "INSERT" if _pg_pool else "INSERT OR IGNORE"
         try:
             with self._get_conn() as conn:
-                conn.execute(f"""
+                # RETURNING id gives us the row actually written — nothing comes
+                # back when ON CONFLICT DO NOTHING / INSERT OR IGNORE skipped the
+                # insert (same URL already scraped under a different generated
+                # UUID by another source/run). Using job["id"] unconditionally
+                # here used to violate applications_job_id_fkey for every such
+                # duplicate, since that UUID was never actually in `jobs`.
+                cursor = conn.execute(f"""
                     {insert_or} INTO jobs
                     (id, title, company, description, url, source, location, salary, date_found, tags, score, score_reason)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     {ignore_clause}
+                    RETURNING id
                 """, (
                     job["id"], job["title"], job["company"], job.get("description", ""),
                     job["url"], job.get("source", ""), job.get("location", ""),
                     job.get("salary", ""), job.get("date_found", datetime.now().isoformat()),
                     json.dumps(job.get("tags", [])), job.get("score", 0), job.get("score_reason", "")
                 ))
+                row = cursor.fetchone()
+                job_id = row[0] if row else None
+
+                if job_id is None:
+                    existing = conn.execute("SELECT id FROM jobs WHERE url = ?", (job["url"],)).fetchone()
+                    if not existing:
+                        return False
+                    job_id = existing[0]
+
                 conn.execute(f"""
                     {insert_or} INTO applications (id, job_id, status, last_updated)
                     VALUES (?, ?, 'found', ?)
                     {ignore_clause}
-                """, (str(uuid.uuid4()), job["id"], datetime.now().isoformat()))
+                """, (str(uuid.uuid4()), job_id, datetime.now().isoformat()))
                 conn.commit()
             return True
         except Exception as e:

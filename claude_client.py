@@ -21,23 +21,66 @@ def _cfg():
 
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-_rate_limited_until = 0   # global cooldown timestamp
+
+# Per-model cooldown timestamps, persisted to disk so a Render restart (or a
+# fresh local process) doesn't forget a model was rate-limited today and waste
+# a call re-discovering it.
+_COOLDOWN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "gemini_cooldowns.json")
+
+
+def _load_cooldowns() -> dict:
+    try:
+        with open(_COOLDOWN_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+_rate_limited_until = _load_cooldowns()   # {model_name: unix_ts}
+
+
+def _cooldown_remaining(model: str) -> float:
+    return _rate_limited_until.get(model, 0) - time.time()
+
+
+def _set_cooldown(model: str, until_ts: float) -> None:
+    _rate_limited_until[model] = until_ts
+    try:
+        os.makedirs(os.path.dirname(_COOLDOWN_FILE), exist_ok=True)
+        with open(_COOLDOWN_FILE, "w") as f:
+            json.dump(_rate_limited_until, f)
+    except Exception:
+        pass
 
 
 def ask_gemini(prompt: str, system: str = "", model: str = "",
                history: list = None, max_tokens: int = 1000,
-               temperature: float = 0.7, retries: int = 3) -> str:
+               temperature: float = 0.7, retries: int = 3,
+               quality_first: bool = False) -> str:
     """
     Call Gemini API. Returns response text or "" on failure.
     history = [{"role": "user"|"model", "parts": [{"text": "..."}]}, ...]
+
+    quality_first: try the smarter/lower-quota model first and drop to the
+    cheap/high-quota model only once the smart one is rate-limited. Default
+    (False) is cheap-first, for high-volume low-stakes calls like batch job
+    scoring where the cheap model's answer is good enough and the point is
+    quota, not quality.
     """
-    global _rate_limited_until
     api_key, default_model, fallback_model = _cfg()
 
     if not api_key:
         return _keyword_fallback(prompt)
 
-    chosen_model = model or default_model
+    if model:
+        models_order = [model]
+    elif quality_first:
+        models_order = [fallback_model, default_model]
+    else:
+        models_order = [default_model, fallback_model]
+
+    model_idx = 0
+    chosen_model = models_order[0]
 
     # Build contents
     contents = []
@@ -61,8 +104,12 @@ def ask_gemini(prompt: str, system: str = "", model: str = "",
         body["system_instruction"] = {"parts": [{"text": system}]}
 
     for attempt in range(retries):
-        # honour cooldown
-        wait = _rate_limited_until - time.time()
+        # skip straight past any model we already know is cooling down today
+        while _cooldown_remaining(chosen_model) > 0 and model_idx < len(models_order) - 1:
+            model_idx += 1
+            chosen_model = models_order[model_idx]
+
+        wait = _cooldown_remaining(chosen_model)
         if wait > 0:
             time.sleep(min(wait, 30))
 
@@ -88,21 +135,23 @@ def ask_gemini(prompt: str, system: str = "", model: str = "",
                 # extract retry delay from message if present
                 delay_match = re.search(r"retry in ([\d.]+)s", err_msg)
                 delay = float(delay_match.group(1)) if delay_match else 30
-                _rate_limited_until = time.time() + delay + 2
+                _set_cooldown(chosen_model, time.time() + delay + 2)
+                if model_idx < len(models_order) - 1:
+                    model_idx += 1
+                    chosen_model = models_order[model_idx]
+                    continue
                 if attempt < retries - 1:
                     time.sleep(min(delay + 2, 60))
-                    # try fallback model on second attempt
-                    if attempt == 1:
-                        chosen_model = fallback_model
                     continue
 
             if err_code in (503, 500) and attempt < retries - 1:
                 time.sleep(5 * (attempt + 1))
                 continue
 
-            # model not found → try fallback once
-            if err_code == 404 and chosen_model != fallback_model:
-                chosen_model = fallback_model
+            # model not found → try the next one in the order, if any
+            if err_code == 404 and model_idx < len(models_order) - 1:
+                model_idx += 1
+                chosen_model = models_order[model_idx]
                 continue
 
             break   # unrecoverable error
@@ -178,7 +227,8 @@ def ask_ai(prompt: str, system: str = "", max_tokens: int = 1000, temperature: f
         result = ask_claude_code(prompt, system=system)
         if result:
             return result
-    return ask_gemini(prompt, system=system, max_tokens=max_tokens, temperature=temperature)
+    return ask_gemini(prompt, system=system, max_tokens=max_tokens, temperature=temperature,
+                       quality_first=True)
 
 
 # ── Convenience wrappers (same interface as before) ───────────────────────────
@@ -239,7 +289,10 @@ Rules:
 
 Return ONLY the JSON array, nothing else."""
 
-    raw = ask_gemini(prompt, max_tokens=800, temperature=0.2)
+    # Volume here is tiny (~10-20 batches/day even at full backlog), so the
+    # smarter/lower-quota model costs a fraction of a cent either way — use it
+    # first for better scoring accuracy, same as CV/cover-letter generation.
+    raw = ask_gemini(prompt, max_tokens=800, temperature=0.2, quality_first=True)
     if not raw:
         # fallback: score individually
         results = []

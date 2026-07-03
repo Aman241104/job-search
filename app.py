@@ -342,7 +342,7 @@ async def find_jobs_stream():
 
             yield 'data: ' + json.dumps({
                 'type': 'progress',
-                'message': 'Scraping 9 sources: Internshala, LinkedIn, Jobicy, WWR, Arbeitnow, Remotive, RemoteOK, Remote.co, Adzuna...',
+                'message': 'Scraping 12 sources: Internshala, LinkedIn, Jobicy, WWR, Arbeitnow, Remotive, RemoteOK, Remote.co, TheMuse, Himalayas, HN Who\'s Hiring, Adzuna...',
                 'percent': 10,
             }) + '\n\n'
             jobs, added = await loop.run_in_executor(None, run_finder)

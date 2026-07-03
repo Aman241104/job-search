@@ -22,7 +22,14 @@ console = Console()
 # to hr@company.com" — many company-posted (non-platform-form) listings include
 # one directly in the text. Platform listings (Internshala's own apply flow,
 # LinkedIn Easy Apply, etc.) generally don't, so this simply won't match there.
-EMAIL_RE = re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+")
+#
+# TLD is bounded to 2-24 letters (unbounded `[a-zA-Z0-9-.]+` previously let the
+# match run on past the real TLD into the next word whenever job_finder.py's
+# HTML-to-text conversion glued two paragraphs together with no space —
+# produced real garbage like "ryan@vitalize.careStack" from "vitalize.care"
+# + "Stack is hiring...". Root cause fixed at the source (get_text(separator=" ")
+# in job_finder.py); this bound is defense-in-depth, not the primary fix.
+EMAIL_RE = re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,24}")
 
 
 def extract_email_from_description(description: str) -> str | None:

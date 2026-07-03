@@ -176,7 +176,7 @@ class JobFinderAgent:
                         continue
                     seen.add(url)
                     desc_el = item.find("description")
-                    desc = BeautifulSoup(desc_el.get_text(), "html.parser").get_text()[:2000] if desc_el else ""
+                    desc = BeautifulSoup(desc_el.get_text(), "html.parser").get_text(separator=" ")[:2000] if desc_el else ""
                     region_el = item.find("region")
                     location = region_el.get_text().strip() if region_el else "Remote"
                     pub = item.find("pubDate")
@@ -319,7 +319,7 @@ class JobFinderAgent:
                         continue
                     seen.add(url)
                     desc_raw = j.get("description", "")
-                    desc = BeautifulSoup(desc_raw, "html.parser").get_text()[:2000] if desc_raw else ""
+                    desc = BeautifulSoup(desc_raw, "html.parser").get_text(separator=" ")[:2000] if desc_raw else ""
                     jobs.append({
                         "id": str(uuid.uuid4()),
                         "title": j.get("title", ""),
@@ -365,7 +365,7 @@ class JobFinderAgent:
                         continue
                     seen.add(url)
                     desc_raw = j.get("description", "")
-                    desc = BeautifulSoup(desc_raw, "html.parser").get_text()[:2000] if desc_raw else ""
+                    desc = BeautifulSoup(desc_raw, "html.parser").get_text(separator=" ")[:2000] if desc_raw else ""
                     jobs.append({
                         "id": str(uuid.uuid4()),
                         "title": j.get("position", ""),
@@ -417,7 +417,7 @@ class JobFinderAgent:
                     seen.add(url)
                     locs = j.get("locations", [])
                     location = locs[0]["name"] if locs else "Remote"
-                    desc = BeautifulSoup(j.get("contents", ""), "html.parser").get_text()[:2000]
+                    desc = BeautifulSoup(j.get("contents", ""), "html.parser").get_text(separator=" ")[:2000]
                     jobs.append({
                         "id": str(uuid.uuid4()),
                         "title": j.get("name", ""),
@@ -460,7 +460,7 @@ class JobFinderAgent:
                     if not url or url in seen or not title:
                         continue
                     seen.add(url)
-                    desc = BeautifulSoup(desc_el.get_text(), "html.parser").get_text()[:2000] if desc_el else ""
+                    desc = BeautifulSoup(desc_el.get_text(), "html.parser").get_text(separator=" ")[:2000] if desc_el else ""
                     # title format: "Job Title at Company"
                     company = ""
                     if " at " in title:
@@ -485,6 +485,134 @@ class JobFinderAgent:
             return jobs
         except Exception as e:
             console.print(f"[yellow]Remote.co RSS failed: {e}[/yellow]")
+            return []
+
+    # ── Source: Himalayas (free API — remote-first job board) ────────────────
+    # Cloudflare-protected: this endpoint 403s a JS-challenge page consistently
+    # when hit via Python `requests` (tested repeatedly), even though the same
+    # URL works fine from plain curl — a TLS/client-fingerprint block, not a
+    # header problem. Left in as best-effort since it fails safe to [] and
+    # Render's IP reputation may differ from this test environment's, but
+    # don't expect real results from it without a browser-based fetch.
+
+    HIMALAYAS_TECH_KW = {
+        "react", "javascript", "typescript", "frontend", "front-end", "full stack",
+        "fullstack", "next.js", "nextjs", "node", "software engineer", "web developer",
+        "ui developer",
+    }
+
+    def _fetch_himalayas(self) -> list:
+        try:
+            r = requests.get(
+                "https://himalayas.app/jobs/api",
+                params={"limit": 60},
+                headers=HEADERS, timeout=15,
+            )
+            r.raise_for_status()
+            jobs = []
+            for j in r.json().get("jobs", []):
+                title = j.get("title", "")
+                title_lower = title.lower()
+                if not any(kw in title_lower for kw in self.HIMALAYAS_TECH_KW):
+                    continue
+                if self._is_senior(title):
+                    continue
+                restrictions = j.get("locationRestrictions") or []
+                # keep worldwide-open roles, or roles that explicitly allow India
+                if restrictions and "India" not in restrictions:
+                    continue
+                seniority = j.get("seniority") or []
+                salary = ""
+                if j.get("minSalary"):
+                    salary = f"{j['minSalary']}-{j.get('maxSalary', '')} {j.get('currency', '')}".strip()
+                jobs.append({
+                    "id": str(uuid.uuid4()),
+                    "title": title,
+                    "company": j.get("companyName", ""),
+                    "description": BeautifulSoup(j.get("description") or j.get("excerpt", ""), "html.parser").get_text(separator=" ")[:2000],
+                    "url": j.get("applicationLink") or j.get("guid", ""),
+                    "source": "Himalayas",
+                    "location": "Remote (Worldwide)" if not restrictions else f"Remote ({', '.join(restrictions[:3])})",
+                    "salary": salary,
+                    "date_posted": str(j.get("pubDate", "")),
+                    "tags": seniority,
+                    "score": 0, "score_reason": "",
+                    "date_found": datetime.now().isoformat(),
+                })
+            return jobs
+        except Exception as e:
+            console.print(f"[yellow]Himalayas failed: {e}[/yellow]")
+            return []
+
+    # ── Source: Hacker News "Who is hiring" (monthly thread, real startups) ──
+
+    HN_TECH_KW = {
+        "react", "javascript", "typescript", "frontend", "front-end", "full stack",
+        "fullstack", "next.js", "nextjs", "node", "software engineer", "web developer",
+        "ui developer", "junior", "entry level", "entry-level", "new grad",
+    }
+    HN_JUNIOR_OVERRIDE_KW = {"junior", "entry level", "entry-level", "new grad", "no experience"}
+
+    def _fetch_hn_hiring(self) -> list:
+        try:
+            search = requests.get(
+                "https://hn.algolia.com/api/v1/search_by_date",
+                params={"tags": "story,author_whoishiring", "query": "Who is hiring"},
+                headers=HEADERS, timeout=15,
+            )
+            search.raise_for_status()
+            hits = search.json().get("hits", [])
+            thread = next(
+                (h for h in hits if (h.get("title") or "").lower().startswith("ask hn: who is hiring")),
+                None,
+            )
+            if not thread:
+                return []
+
+            r = requests.get(
+                f"https://hn.algolia.com/api/v1/items/{thread['objectID']}",
+                headers=HEADERS, timeout=20,
+            )
+            r.raise_for_status()
+
+            jobs = []
+            for c in r.json().get("children", []) or []:
+                raw = c.get("text") or ""
+                if not raw or c.get("dead") or c.get("deleted"):
+                    continue
+
+                split_idx = raw.find("<p>")
+                header_html = raw if split_idx == -1 else raw[:split_idx]
+                body_html   = "" if split_idx == -1 else raw[split_idx:]
+                header = BeautifulSoup(header_html, "html.parser").get_text(separator=" ").strip()
+                body   = BeautifulSoup(body_html, "html.parser").get_text(separator=" ").strip()
+                combined_lower = (header + " " + body).lower()
+
+                if "remote" not in combined_lower:
+                    continue
+                if not any(kw in combined_lower for kw in self.HN_TECH_KW):
+                    continue
+                if self._is_senior(header) and not any(kw in combined_lower for kw in self.HN_JUNIOR_OVERRIDE_KW):
+                    continue
+
+                company = header.split("|")[0].strip() if "|" in header else ""
+                jobs.append({
+                    "id": str(uuid.uuid4()),
+                    "title": header[:150] or "Remote Software Role",
+                    "company": company,
+                    "description": (body or header)[:2000],
+                    "url": f"https://news.ycombinator.com/item?id={c.get('id')}",
+                    "source": "HN Who's Hiring",
+                    "location": "Remote",
+                    "salary": "",
+                    "date_posted": thread.get("created_at", ""),
+                    "tags": [],
+                    "score": 0, "score_reason": "",
+                    "date_found": datetime.now().isoformat(),
+                })
+            return jobs
+        except Exception as e:
+            console.print(f"[yellow]HN Who's Hiring failed: {e}[/yellow]")
             return []
 
     # ── Source 3: Adzuna (optional, needs free API key) ───────────────────────
@@ -717,7 +845,7 @@ class JobFinderAgent:
 
     # ── Main entry point ──────────────────────────────────────────────────────
 
-    def find_jobs(self, keywords: list = None, limit: int = 60) -> list:
+    def find_jobs(self, keywords: list = None, limit: int = 500) -> list:
         all_jobs: list = []
         console.print("[bold cyan]Fetching jobs from multiple sources...[/bold cyan]")
 
@@ -763,6 +891,18 @@ class JobFinderAgent:
         console.print("  [dim]Remote.co: vetted remote developer jobs[/dim]")
         all_jobs.extend(self._fetch_remoteco())
 
+        # ── The Muse (entry-level engineering jobs API) ──
+        console.print("  [dim]TheMuse: entry-level engineering jobs[/dim]")
+        all_jobs.extend(self._fetch_themuse())
+
+        # ── Himalayas (remote-first job board, India-eligible filter) ──
+        console.print("  [dim]Himalayas: remote-first jobs[/dim]")
+        all_jobs.extend(self._fetch_himalayas())
+
+        # ── HN "Who is hiring" (monthly thread, real startups posting directly) ──
+        console.print("  [dim]HN Who's Hiring: this month's thread[/dim]")
+        all_jobs.extend(self._fetch_hn_hiring())
+
         # ── Deduplicate + filter ──
         seen_urls:    set  = set()
         company_count: dict = {}
@@ -783,6 +923,14 @@ class JobFinderAgent:
 
         console.print(f"\n[green]Found {len(unique_jobs)} new jobs. Scoring with Gemini (batched)...[/green]")
 
+        # `limit` used to silently starve scoring for whichever source is
+        # fetched last (HN Who's Hiring, currently) on any run finding more
+        # unique jobs than the cap — those jobs kept their scrape-time
+        # score:0 placeholder forever, since score_jobs()'s own two-phase
+        # filter (cheap keyword scoring for everyone, Gemini only for the
+        # 35-65 "uncertain" subset) already bounds real API cost regardless
+        # of how many jobs are passed in. Raised the default well above any
+        # realistic single-run volume rather than truncating silently.
         to_score = unique_jobs[:limit]
         scores   = self.score_jobs(to_score)
         for job, result in zip(to_score, scores):

@@ -4,8 +4,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL   = "gemini-3.1-flash-lite"  # primary — no thinking-token overhead, 500/day quota
-GEMINI_MODEL_FALLBACK = "gemini-2.5-flash"  # fallback if primary rate-limited (only 20/day)
+# Named "MODEL"/"MODEL_FALLBACK" for historical reasons, but claude_client.py's
+# `quality_first` flag controls which one goes first per call site: job scoring
+# and CV/cover-letter generation both use quality_first=True (try the smarter
+# gemini-2.5-flash first, drop to flash-lite only once 2.5-flash is rate
+# limited) since call volume is low enough that the smarter model costs
+# fractions of a cent either way. quality_first=False (cheap-first) is only
+# the default for the unused ask_claude/ask_claude_json/GeminiChat wrappers.
+GEMINI_MODEL   = "gemini-3.1-flash-lite"  # cheap/high-quota — 500/day
+GEMINI_MODEL_FALLBACK = "gemini-2.5-flash"  # smarter/low-quota — only 20/day
 
 # AI_PROVIDER controls CV/cover-letter generation only (agents/cv_customizer.py).
 # "claude_code" shells out to the local `claude` CLI, using the existing `claude login`

@@ -14,6 +14,7 @@ output/*.xlsx
 # Local SQLite (superseded by Postgres in deployed environments; kept locally as a fallback)
 data/applications.db
 data/found_jobs.json
+data/gemini_cooldowns.json
 
 # Session/tool state — not meant to be shared
 .claude/
