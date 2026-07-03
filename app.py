@@ -1,8 +1,10 @@
 """FastAPI backend for the Job Search Dashboard."""
 import asyncio
+import html
 import json
 import math
 import os
+import re
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -21,7 +23,7 @@ from agents.job_finder import JobFinderAgent
 from agents.cv_customizer import CVCustomizerAgent
 from agents.job_applier import JobApplierAgent, extract_email_from_description
 from agents.telegram_notifier import TelegramNotifierAgent
-from config import OUTPUT_DIR, DATA_DIR, MIN_APPLY_SCORE
+from config import OUTPUT_DIR, DATA_DIR, MIN_APPLY_SCORE, LEARNING_TRACK, TELEGRAM_WEBHOOK_SECRET, TELEGRAM_CHAT_ID
 from claude_client import GeminiChat, ask_gemini
 from agents.trainer import TRAINING_TOPICS, SYSTEM_PROMPTS
 
@@ -169,7 +171,6 @@ async def get_jobs(
     if min_lpa > 0:
         def extract_lpa(job):
             salary = (job.get('salary') or '').lower()
-            import re
             m = re.search(r'(\d+(?:\.\d+)?)\s*(?:lpa|lakh|l\.p\.a)', salary)
             if m:
                 return float(m.group(1))
@@ -524,6 +525,110 @@ async def telegram_notify(job_id: str, force: bool = Query(default=False)):
     return {'ok': True}
 
 
+EMAIL_RE = re.compile(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}')
+
+
+def _resolve_job_from_telegram_text(tracker: 'TrackerAgent', text: str, reply_to_message_id) -> dict | None:
+    """Reply-to-a-specific-alert is the reliable path (message_id was recorded
+    when that alert was sent). Falls back to matching the message text against
+    recently-found job titles/companies for when the user just types a plain
+    message instead of replying to a specific alert."""
+    import sqlite3
+    if reply_to_message_id:
+        job_id = tracker.get_job_id_by_telegram_message(reply_to_message_id)
+        if job_id:
+            with tracker._get_conn() as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+            if row:
+                return dict(row)
+
+    text_lower = text.lower()
+    with tracker._get_conn() as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT * FROM jobs ORDER BY date_found DESC LIMIT 200"
+        ).fetchall()
+    for row in rows:
+        job = dict(row)
+        company = (job.get('company') or '').lower()
+        title = (job.get('title') or '').lower()
+        if company and company in text_lower:
+            return job
+        if title and len(title) > 6 and title in text_lower:
+            return job
+    return None
+
+
+@app.post('/api/telegram/webhook')
+async def telegram_webhook(request: Request):
+    """Receives inbound Telegram messages so applying can happen entirely
+    from the phone: reply "applied" or "emailed x@company.com" to a job
+    alert (or just mention the company/title in a plain message) and the
+    tracker updates without opening the dashboard.
+
+    Auth: Telegram attaches the secret configured via setWebhook's
+    secret_token param as this header on every real callback — the only
+    protection this public, unauthenticated-by-default endpoint has.
+    """
+    if TELEGRAM_WEBHOOK_SECRET:
+        if request.headers.get('X-Telegram-Bot-Api-Secret-Token', '') != TELEGRAM_WEBHOOK_SECRET:
+            return JSONResponse({'error': 'unauthorized'}, status_code=403)
+
+    try:
+        update = await request.json()
+    except Exception:
+        return {'ok': True}  # malformed body — ack anyway, nothing to retry
+
+    message = update.get('message') or update.get('edited_message')
+    if not message:
+        return {'ok': True}  # non-message update (e.g. a bot command menu event) — nothing to do
+
+    chat_id = str(message.get('chat', {}).get('id', ''))
+    if not TELEGRAM_CHAT_ID or chat_id != str(TELEGRAM_CHAT_ID):
+        return {'ok': True}  # ignore messages from anyone but the configured owner chat
+
+    text = (message.get('text') or '').strip()
+    if not text:
+        return {'ok': True}
+
+    reply_to = message.get('reply_to_message', {}).get('message_id')
+    tracker = TrackerAgent()
+    notifier = TelegramNotifierAgent()
+
+    loop = asyncio.get_event_loop()
+    job = await loop.run_in_executor(None, lambda: _resolve_job_from_telegram_text(tracker, text, reply_to))
+
+    if not job:
+        await loop.run_in_executor(
+            None, lambda: notifier._send_message(
+                "🤔 Couldn't match that to a job — reply directly to a job alert message, "
+                "or mention the company/title clearly."
+            )
+        )
+        return {'ok': True}
+
+    text_lower = text.lower()
+    email_match = EMAIL_RE.search(text)
+
+    if email_match:
+        status, note = 'applied', f"Applied — email sent to {email_match.group()} (via Telegram)"
+    elif any(w in text_lower for w in ('applied', 'submitted', 'done')):
+        status, note = 'applied', 'Applied (marked via Telegram)'
+    elif any(w in text_lower for w in ('skip', 'skipping', 'pass', 'not applying', "won't apply")):
+        status, note = 'skipped', 'Skipped (marked via Telegram)'
+    else:
+        status, note = 'applied', f'Applied — note: {text} (via Telegram)'
+
+    await loop.run_in_executor(None, lambda: tracker.update_status(job['id'], status, notes=note))
+    await loop.run_in_executor(
+        None, lambda: notifier._send_message(
+            f"✅ Marked <b>{html.escape(job.get('title',''))}</b> @ {html.escape(job.get('company',''))} as <b>{status}</b>."
+        )
+    )
+    return {'ok': True}
+
+
 @app.post('/api/update/{job_id}')
 async def update_job(job_id: str, status: str, notes: str = ''):
     TrackerAgent().update_status(job_id, status, notes=notes)
@@ -614,11 +719,12 @@ def _rehydrate_chat_session(session_id: str) -> dict | None:
     system = SYSTEM_PROMPTS.get(topic_id, SYSTEM_PROMPTS['behavioral'])
     chat = GeminiChat(system=system, temperature=0.8)
     messages = row.get('messages', [])
+    # GeminiChat.history is OpenAI-format ({"role": "user"/"assistant", "content": ...})
+    # since the NVIDIA-first rewrite — NOT Gemini-native {"role":"model","parts":[...]}.
+    # Using the old format here would silently corrupt every rehydrated (post-restart)
+    # session's history sent to the API.
     chat.history = [
-        {
-            'role': 'model' if m['role'] == 'assistant' else 'user',
-            'parts': [{'text': m.get('content', '')}],
-        }
+        {'role': 'assistant' if m['role'] == 'assistant' else 'user', 'content': m.get('content', '')}
         for m in messages
     ]
     scores = [m['score'] for m in messages if m.get('score')]
@@ -633,7 +739,6 @@ def _rehydrate_chat_session(session_id: str) -> dict | None:
 
 @app.post('/api/train/chat')
 async def training_chat(session_id: str, message: str):
-    import re
     if session_id not in _chat_sessions:
         rehydrated = await asyncio.get_event_loop().run_in_executor(
             None, lambda: _rehydrate_chat_session(session_id)
@@ -695,6 +800,99 @@ async def training_progress():
             except Exception:
                 pass
     return progress
+
+
+# ── Learning track (ROADMAP.md's curated list — progress tracking + an AI tutor
+# chat per item, deliberately NOT a curriculum-generation platform, no PDF/book
+# upload) ────────────────────────────────────────────────────────────────────
+
+_learning_sessions: dict = {}
+
+LEARNING_SYSTEM_PROMPT_TEMPLATE = (
+    'You are a patient, knowledgeable tutor teaching "{title}" to a self-taught '
+    "full-stack/AI engineer preparing for AI-engineering interviews. Explain "
+    "concepts clearly with concrete, practical examples grounded in real code "
+    "where relevant. Answer questions directly, FAQ-style — no filler, no "
+    "restating the question back. If asked for an overview, give a numbered "
+    "breakdown of the key topics/chapters in this specific book or course."
+)
+
+
+@app.get('/api/learning/topics')
+async def get_learning_topics():
+    tracker = TrackerAgent()
+    tracker.seed_learning_items(LEARNING_TRACK)
+    return tracker.get_learning_items()
+
+
+@app.post('/api/learning/{item_id}/status')
+async def set_learning_status(item_id: str, status: str, notes: str = Query(default='')):
+    if not any(i['id'] == item_id for i in LEARNING_TRACK):
+        return JSONResponse({'error': 'Unknown learning item'}, status_code=404)
+    TrackerAgent().update_learning_status(item_id, status, notes)
+    return {'ok': True}
+
+
+def _rehydrate_learning_session(item_id: str, title: str) -> dict | None:
+    row = TrackerAgent().get_training_session(f"learning_{item_id}")
+    if not row:
+        return None
+    chat = GeminiChat(system=LEARNING_SYSTEM_PROMPT_TEMPLATE.format(title=title), temperature=0.6)
+    messages = row.get('messages', [])
+    chat.history = [
+        {'role': 'assistant' if m['role'] == 'assistant' else 'user', 'content': m.get('content', '')}
+        for m in messages
+    ]
+    return {'chat': chat, 'title': title, 'messages': messages}
+
+
+@app.post('/api/learning/{item_id}/chat')
+async def learning_chat(item_id: str, message: str = Query(default='')):
+    item = next((i for i in LEARNING_TRACK if i['id'] == item_id), None)
+    if not item:
+        return JSONResponse({'error': 'Unknown learning item'}, status_code=404)
+    title = item['title']
+    loop = asyncio.get_event_loop()
+
+    if item_id not in _learning_sessions:
+        rehydrated = await loop.run_in_executor(None, lambda: _rehydrate_learning_session(item_id, title))
+        if rehydrated:
+            _learning_sessions[item_id] = rehydrated
+        else:
+            _learning_sessions[item_id] = {
+                'chat': GeminiChat(system=LEARNING_SYSTEM_PROMPT_TEMPLATE.format(title=title), temperature=0.6),
+                'title': title,
+                'messages': [],
+            }
+            if not message:
+                # first time this item is opened — kick off with a topic breakdown
+                message = (
+                    f'Give me a numbered breakdown of the key topics/chapters in "{title}" — '
+                    f"just the list with a one-line description of each, so I know what to ask about next."
+                )
+
+    if not message:
+        return JSONResponse({'error': 'message is required'}, status_code=400)
+
+    session = _learning_sessions[item_id]
+    chat: GeminiChat = session['chat']
+    session['messages'].append({'role': 'user', 'content': message})
+    response = await loop.run_in_executor(None, lambda: chat.send(message, max_tokens=700))
+    session['messages'].append({'role': 'assistant', 'content': response or ''})
+
+    try:
+        TrackerAgent().save_training_session(
+            session_id=f"learning_{item_id}", topic_key=f"learning_{item_id}",
+            topic_name=title, messages=session['messages'], avg_score=0,
+        )
+        # first real exchange on an untouched item — bump it to in_progress
+        items = {i['id']: i for i in TrackerAgent().get_learning_items()}
+        if items.get(item_id, {}).get('status') == 'not_started':
+            TrackerAgent().update_learning_status(item_id, 'in_progress')
+    except Exception:
+        pass
+
+    return {'response': response or '', 'item_id': item_id}
 
 
 # ── Analytics ──────────────────────────────────────────────────────────────────

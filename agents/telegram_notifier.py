@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import time
+from typing import Optional
 import requests
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
@@ -63,14 +64,18 @@ class TelegramNotifierAgent:
         resp.raise_for_status()
         return resp
 
-    def _send_message(self, text: str, disable_preview: bool = True) -> None:
-        self._post_with_retry(self._api("sendMessage"), data={
+    def _send_message(self, text: str, disable_preview: bool = True) -> Optional[int]:
+        resp = self._post_with_retry(self._api("sendMessage"), data={
             "chat_id": TELEGRAM_CHAT_ID,
             "text": text,
             "parse_mode": "HTML",
             "disable_web_page_preview": disable_preview,
         }, timeout=15)
         time.sleep(0.7)  # stay well under Telegram's per-chat rate limit across a big batch
+        try:
+            return resp.json()["result"]["message_id"]
+        except Exception:
+            return None
 
     def send_job_alert(self, job: dict, cv_path: str = "", cover_path: str = "", cv_markdown: str = "") -> bool:
         if not self.enabled:
@@ -85,9 +90,16 @@ class TelegramNotifierAgent:
                 f"💰 Salary: {_esc(job.get('salary') or 'Not specified')}\n"
                 f"🔗 Source: {_esc(job.get('source', ''))}\n\n"
                 f"👉 {job.get('url', '')}\n\n"
-                f"Apply using the link above — CV text next, then CV + cover letter PDFs below."
+                f"Apply using the link above — CV text next, then CV + cover letter PDFs below.\n\n"
+                f"💬 Reply to THIS message with \"applied\" or \"emailed you@company.com\" to update the tracker."
             )
-            self._send_message(job_msg, disable_preview=False)
+            alert_message_id = self._send_message(job_msg, disable_preview=False)
+            if alert_message_id and job.get("id"):
+                try:
+                    from agents.tracker import TrackerAgent
+                    TrackerAgent().record_telegram_alert(alert_message_id, job["id"])
+                except Exception:
+                    pass  # non-fatal — reply-matching just falls back to text search
 
             if cv_markdown:
                 plain_cv = _esc(_strip_markdown(cv_markdown))

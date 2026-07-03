@@ -165,6 +165,26 @@ class TrackerAgent:
                     FOREIGN KEY (job_id) REFERENCES jobs(id)
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS learning_items (
+                    id TEXT PRIMARY KEY,
+                    title TEXT,
+                    item_type TEXT,
+                    phase INTEGER,
+                    order_index INTEGER,
+                    status TEXT DEFAULT 'not_started',
+                    notes TEXT,
+                    updated_at TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS telegram_alerts (
+                    message_id TEXT PRIMARY KEY,
+                    job_id TEXT,
+                    sent_at TEXT,
+                    FOREIGN KEY (job_id) REFERENCES jobs(id)
+                )
+            """)
             if _pg_pool:
                 # Postgres supports IF NOT EXISTS on ADD COLUMN directly — no need
                 # for the try/except dance, and a failed statement would otherwise
@@ -598,3 +618,70 @@ class TrackerAgent:
                     j.get("id", "")[:8] + "..."
                 )
             console.print(t2)
+
+    # ── Learning track (ROADMAP.md Learning Core Track — no new scope beyond
+    # tracking status + an AI tutor chat per item; no PDF/book upload) ─────────
+
+    def seed_learning_items(self, items: list):
+        """Insert each seed item if it doesn't already exist — never overwrites
+        a status the user has already set, safe to call on every startup."""
+        now = datetime.now().isoformat()
+        with self._get_conn() as conn:
+            for item in items:
+                if _pg_pool:
+                    conn.execute("""
+                        INSERT INTO learning_items (id, title, item_type, phase, order_index, status, updated_at)
+                        VALUES (?, ?, ?, ?, ?, 'not_started', ?)
+                        ON CONFLICT (id) DO NOTHING
+                    """, (item["id"], item["title"], item["type"], item["phase"], item["order"], now))
+                else:
+                    conn.execute("""
+                        INSERT OR IGNORE INTO learning_items (id, title, item_type, phase, order_index, status, updated_at)
+                        VALUES (?, ?, ?, ?, ?, 'not_started', ?)
+                    """, (item["id"], item["title"], item["type"], item["phase"], item["order"], now))
+            conn.commit()
+
+    def get_learning_items(self) -> list:
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM learning_items ORDER BY phase ASC, order_index ASC"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def update_learning_status(self, item_id: str, status: str, notes: str = "") -> bool:
+        now = datetime.now().isoformat()
+        with self._get_conn() as conn:
+            conn.execute(
+                "UPDATE learning_items SET status=?, notes=?, updated_at=? WHERE id=?",
+                (status, notes, now, item_id),
+            )
+            conn.commit()
+        return True
+
+    # ── Telegram inbound (message_id -> job_id, so a reply to a job alert can
+    # be matched back to the job it's about) ──────────────────────────────────
+
+    def record_telegram_alert(self, message_id: str, job_id: str):
+        now = datetime.now().isoformat()
+        with self._get_conn() as conn:
+            if _pg_pool:
+                conn.execute("""
+                    INSERT INTO telegram_alerts (message_id, job_id, sent_at) VALUES (?, ?, ?)
+                    ON CONFLICT (message_id) DO UPDATE SET job_id = EXCLUDED.job_id
+                """, (str(message_id), job_id, now))
+            else:
+                conn.execute(
+                    "INSERT OR REPLACE INTO telegram_alerts (message_id, job_id, sent_at) VALUES (?, ?, ?)",
+                    (str(message_id), job_id, now),
+                )
+            conn.commit()
+
+    def get_job_id_by_telegram_message(self, message_id: str) -> str | None:
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT job_id FROM telegram_alerts WHERE message_id = ?", (str(message_id),)
+            ).fetchone()
+        if not row:
+            return None
+        return row[0] if not isinstance(row, dict) else row["job_id"]

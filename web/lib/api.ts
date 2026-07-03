@@ -78,6 +78,22 @@ export interface TrainProgress {
   total_messages: number;
 }
 
+export interface LearningItem {
+  id: string;
+  title: string;
+  item_type: 'book' | 'course';
+  phase: number;
+  order_index: number;
+  status: 'not_started' | 'in_progress' | 'done';
+  notes?: string;
+  updated_at?: string;
+}
+
+export interface LearningMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface InterviewRound {
   id: string;
   job_id: string;
@@ -182,6 +198,26 @@ export const api = {
   trainProgress: (): Promise<TrainProgress> =>
     fetch(`${API}/api/train/progress`).then((r) => {
       if (!r.ok) throw new Error(`Progress failed: ${r.status}`);
+      return r.json();
+    }),
+
+  learningTopics: (): Promise<LearningItem[]> =>
+    fetch(`${API}/api/learning/topics`).then((r) => {
+      if (!r.ok) throw new Error(`Learning topics failed: ${r.status}`);
+      return r.json();
+    }),
+
+  setLearningStatus: (itemId: string, status: string): Promise<{ ok: boolean }> =>
+    fetch(`${API}/api/learning/${itemId}/status?status=${status}`, { method: 'POST' }).then((r) => {
+      if (!r.ok) throw new Error(`Learning status update failed: ${r.status}`);
+      return r.json();
+    }),
+
+  learningChat: (itemId: string, message: string): Promise<{ response: string }> =>
+    fetch(`${API}/api/learning/${itemId}/chat?message=${encodeURIComponent(message)}`, {
+      method: 'POST',
+    }).then((r) => {
+      if (!r.ok) throw new Error(`Learning chat failed: ${r.status}`);
       return r.json();
     }),
 

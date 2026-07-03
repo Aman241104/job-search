@@ -55,11 +55,32 @@ ADZUNA_APP_KEY = os.getenv("ADZUNA_APP_KEY", "")
 # then hitting https://api.telegram.org/bot<TOKEN>/getUpdates.
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+# Telegram sets this as the X-Telegram-Bot-Api-Secret-Token header on every
+# webhook callback when set via setWebhook's secret_token param — the only
+# real auth the public /api/telegram/webhook endpoint has, since anyone who
+# finds the URL could otherwise POST arbitrary fake "applied" updates.
+TELEGRAM_WEBHOOK_SECRET = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
 
 # Quality gate (ROADMAP.md Phase 1 item, previously never built): don't
 # tailor a CV/cover letter for a job scoring below this without an explicit
 # override. /api/apply, /api/email-apply, /api/telegram-notify all check this.
 MIN_APPLY_SCORE = int(os.getenv("MIN_APPLY_SCORE", "40"))
+
+# Learning track — the exact curated list from ~/personal-project/next-18-months/ROADMAP.md's
+# "Learning Core Track" section. Deliberately NOT a new curriculum, book library, or PDF
+# ingestion pipeline — this just tracks progress + gives each item an AI tutor chat.
+# Order matches the roadmap's stated reading order; don't reorder without updating that file too.
+LEARNING_TRACK = [
+    {"id": "pragmatic-programmer", "title": "The Pragmatic Programmer — Hunt & Thomas", "type": "book", "phase": 2, "order": 1},
+    {"id": "hands-on-llms", "title": "Hands-On Large Language Models — Alammar & Grootendorst", "type": "book", "phase": 2, "order": 2},
+    {"id": "learning-langchain", "title": "Learning LangChain — Oshin & Campos", "type": "book", "phase": 2, "order": 3},
+    {"id": "gpt4-chatgpt-apps", "title": "Developing Apps with GPT-4 and ChatGPT, 2nd Ed — Caelen & Blete", "type": "book", "phase": 2, "order": 4},
+    {"id": "prompt-engineering-llms", "title": "Prompt Engineering for LLMs — Berryman & Ziegler", "type": "book", "phase": 2, "order": 5},
+    {"id": "agentic-ai-course", "title": "Course: The Complete Agentic AI Engineering Course (2025)", "type": "course", "phase": 2, "order": 6},
+    {"id": "ai-agents-n8n-course", "title": "Course: The Complete AI Agents & AI Automation Course (n8n) (2025)", "type": "course", "phase": 2, "order": 7},
+    {"id": "ml-interviews", "title": "Machine Learning Interviews — Shu", "type": "book", "phase": 3, "order": 8},
+    {"id": "systems-book-pick-one", "title": "Pick one: SICP, Computer Systems: A Programmer's Perspective, or Code (Petzold)", "type": "book", "phase": 3, "order": 9},
+]
 
 USER_PROFILE = {
     "name": "Aman Patel",
