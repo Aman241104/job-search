@@ -185,6 +185,38 @@ class TrackerAgent:
                     FOREIGN KEY (job_id) REFERENCES jobs(id)
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS learning_topics (
+                    id TEXT PRIMARY KEY,
+                    item_id TEXT,
+                    topic_name TEXT,
+                    order_index INTEGER,
+                    covered INTEGER DEFAULT 0,
+                    FOREIGN KEY (item_id) REFERENCES learning_items(id)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS learning_books (
+                    id TEXT PRIMARY KEY,
+                    title TEXT,
+                    filename TEXT,
+                    page_count INTEGER DEFAULT 0,
+                    current_page INTEGER DEFAULT 1,
+                    uploaded_at TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS learning_book_pages (
+                    id TEXT PRIMARY KEY,
+                    book_id TEXT,
+                    page_num INTEGER,
+                    text TEXT,
+                    summary TEXT,
+                    FOREIGN KEY (book_id) REFERENCES learning_books(id)
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_learning_topics_item ON learning_topics(item_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_book_pages_book ON learning_book_pages(book_id)")
             if _pg_pool:
                 # Postgres supports IF NOT EXISTS on ADD COLUMN directly — no need
                 # for the try/except dance, and a failed statement would otherwise
@@ -658,6 +690,114 @@ class TrackerAgent:
             )
             conn.commit()
         return True
+
+    def add_custom_learning_item(self, item_id: str, title: str) -> None:
+        now = datetime.now().isoformat()
+        with self._get_conn() as conn:
+            if _pg_pool:
+                conn.execute("""
+                    INSERT INTO learning_items (id, title, item_type, phase, order_index, status, updated_at)
+                    VALUES (?, ?, 'skill', 0, 0, 'not_started', ?)
+                    ON CONFLICT (id) DO NOTHING
+                """, (item_id, title, now))
+            else:
+                conn.execute("""
+                    INSERT OR IGNORE INTO learning_items (id, title, item_type, phase, order_index, status, updated_at)
+                    VALUES (?, ?, 'skill', 0, 0, 'not_started', ?)
+                """, (item_id, title, now))
+            conn.commit()
+
+    # ── Topic checklists (per learning item — curated book/course OR custom
+    # skill — an AI-generated zero-to-hero breakdown, checked off manually for
+    # a real 0-100 coverage score rather than fragile auto-detection) ────────
+
+    def save_learning_topics(self, item_id: str, topic_names: list) -> None:
+        """Only inserts if this item has no topics yet — never regenerates
+        over a checklist the user has already started checking off."""
+        with self._get_conn() as conn:
+            existing = conn.execute(
+                "SELECT COUNT(*) FROM learning_topics WHERE item_id = ?", (item_id,)
+            ).fetchone()
+            count = existing[0] if not isinstance(existing, dict) else existing['count']
+            if count and count > 0:
+                return
+            for i, name in enumerate(topic_names):
+                conn.execute(
+                    "INSERT INTO learning_topics (id, item_id, topic_name, order_index, covered) VALUES (?, ?, ?, ?, 0)",
+                    (str(uuid.uuid4()), item_id, name, i),
+                )
+            conn.commit()
+
+    def get_learning_topics(self, item_id: str) -> list:
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM learning_topics WHERE item_id = ? ORDER BY order_index ASC", (item_id,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def toggle_learning_topic(self, topic_id: str) -> bool:
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT covered FROM learning_topics WHERE id = ?", (topic_id,)).fetchone()
+            if not row:
+                return False
+            new_val = 0 if dict(row)['covered'] else 1
+            conn.execute("UPDATE learning_topics SET covered = ? WHERE id = ?", (new_val, topic_id))
+            conn.commit()
+        return bool(new_val)
+
+    # ── Book/PDF library (upload -> extracted text per page, stored in the DB
+    # so it survives a Render restart even though the raw file might not) ────
+
+    def add_book(self, title: str, filename: str, page_texts: list) -> str:
+        book_id = str(uuid.uuid4())
+        now = datetime.now().isoformat()
+        with self._get_conn() as conn:
+            conn.execute(
+                "INSERT INTO learning_books (id, title, filename, page_count, current_page, uploaded_at) VALUES (?, ?, ?, ?, 1, ?)",
+                (book_id, title, filename, len(page_texts), now),
+            )
+            for i, text in enumerate(page_texts, start=1):
+                conn.execute(
+                    "INSERT INTO learning_book_pages (id, book_id, page_num, text, summary) VALUES (?, ?, ?, ?, NULL)",
+                    (str(uuid.uuid4()), book_id, i, text),
+                )
+            conn.commit()
+        return book_id
+
+    def get_books(self) -> list:
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT * FROM learning_books ORDER BY uploaded_at DESC").fetchall()
+        return [dict(r) for r in rows]
+
+    def get_book(self, book_id: str) -> dict | None:
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM learning_books WHERE id = ?", (book_id,)).fetchone()
+        return dict(row) if row else None
+
+    def get_book_page(self, book_id: str, page_num: int) -> dict | None:
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM learning_book_pages WHERE book_id = ? AND page_num = ?", (book_id, page_num)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def save_page_summary(self, book_id: str, page_num: int, summary: str) -> None:
+        with self._get_conn() as conn:
+            conn.execute(
+                "UPDATE learning_book_pages SET summary = ? WHERE book_id = ? AND page_num = ?",
+                (summary, book_id, page_num),
+            )
+            conn.commit()
+
+    def update_book_current_page(self, book_id: str, page_num: int) -> None:
+        with self._get_conn() as conn:
+            conn.execute("UPDATE learning_books SET current_page = ? WHERE id = ?", (page_num, book_id))
+            conn.commit()
 
     # ── Telegram inbound (message_id -> job_id, so a reply to a job alert can
     # be matched back to the job it's about) ──────────────────────────────────

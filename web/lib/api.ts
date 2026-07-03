@@ -81,12 +81,40 @@ export interface TrainProgress {
 export interface LearningItem {
   id: string;
   title: string;
-  item_type: 'book' | 'course';
+  item_type: 'book' | 'course' | 'skill';
   phase: number;
   order_index: number;
   status: 'not_started' | 'in_progress' | 'done';
   notes?: string;
   updated_at?: string;
+  topic_count?: number;
+  topics_covered?: number;
+  coverage_score?: number | null;
+}
+
+export interface LearningTopic {
+  id: string;
+  item_id: string;
+  topic_name: string;
+  order_index: number;
+  covered: number | boolean;
+}
+
+export interface LearningBook {
+  id: string;
+  title: string;
+  filename: string;
+  page_count: number;
+  current_page: number;
+  uploaded_at: string;
+}
+
+export interface BookPage {
+  id: string;
+  book_id: string;
+  page_num: number;
+  text: string;
+  summary?: string | null;
 }
 
 export interface LearningMessage {
@@ -218,6 +246,60 @@ export const api = {
       method: 'POST',
     }).then((r) => {
       if (!r.ok) throw new Error(`Learning chat failed: ${r.status}`);
+      return r.json();
+    }),
+
+  addLearningSkill: (title: string): Promise<{ ok: boolean; item_id: string }> =>
+    fetch(`${API}/api/learning/skills?title=${encodeURIComponent(title)}`, { method: 'POST' }).then((r) => {
+      if (!r.ok) throw new Error(`Add skill failed: ${r.status}`);
+      return r.json();
+    }),
+
+  getItemTopics: (itemId: string): Promise<LearningTopic[]> =>
+    fetch(`${API}/api/learning/${itemId}/topics`).then((r) => {
+      if (!r.ok) throw new Error(`Get topics failed: ${r.status}`);
+      return r.json();
+    }),
+
+  toggleTopic: (topicId: string): Promise<{ ok: boolean; covered: boolean }> =>
+    fetch(`${API}/api/learning/topics/${topicId}/toggle`, { method: 'POST' }).then((r) => {
+      if (!r.ok) throw new Error(`Toggle topic failed: ${r.status}`);
+      return r.json();
+    }),
+
+  uploadBook: (file: File): Promise<{ ok: boolean; book_id: string; page_count: number }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return fetch(`${API}/api/learning/books/upload`, { method: 'POST', body: formData }).then((r) => {
+      if (!r.ok) throw new Error(`Book upload failed: ${r.status}`);
+      return r.json();
+    });
+  },
+
+  listBooks: (): Promise<LearningBook[]> =>
+    fetch(`${API}/api/learning/books`).then((r) => {
+      if (!r.ok) throw new Error(`List books failed: ${r.status}`);
+      return r.json();
+    }),
+
+  getBookPage: (bookId: string, pageNum: number): Promise<BookPage> =>
+    fetch(`${API}/api/learning/books/${bookId}/page/${pageNum}`).then((r) => {
+      if (!r.ok) throw new Error(`Get page failed: ${r.status}`);
+      return r.json();
+    }),
+
+  summarizeBookPage: (bookId: string, pageNum: number): Promise<{ summary: string; cached: boolean }> =>
+    fetch(`${API}/api/learning/books/${bookId}/page/${pageNum}/summary`, { method: 'POST' }).then((r) => {
+      if (!r.ok) throw new Error(`Summarize page failed: ${r.status}`);
+      return r.json();
+    }),
+
+  bookChat: (bookId: string, pageNum: number, message: string): Promise<{ response: string }> =>
+    fetch(
+      `${API}/api/learning/books/${bookId}/chat?page_num=${pageNum}&message=${encodeURIComponent(message)}`,
+      { method: 'POST' }
+    ).then((r) => {
+      if (!r.ok) throw new Error(`Book chat failed: ${r.status}`);
       return r.json();
     }),
 

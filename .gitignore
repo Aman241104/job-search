@@ -10,6 +10,7 @@ __pycache__/
 # Generated output (CVs/covers as PDFs, exported spreadsheets) — regenerated on demand
 output/*.pdf
 output/*.xlsx
+output/books/*.pdf
 
 # Local SQLite (superseded by Postgres in deployed environments; kept locally as a fallback)
 data/applications.db

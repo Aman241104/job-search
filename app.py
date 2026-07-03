@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, Query, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -24,7 +24,7 @@ from agents.cv_customizer import CVCustomizerAgent
 from agents.job_applier import JobApplierAgent, extract_email_from_description
 from agents.telegram_notifier import TelegramNotifierAgent
 from config import OUTPUT_DIR, DATA_DIR, MIN_APPLY_SCORE, LEARNING_TRACK, TELEGRAM_WEBHOOK_SECRET, TELEGRAM_CHAT_ID
-from claude_client import GeminiChat, ask_gemini
+from claude_client import GeminiChat, ask_gemini, ask_ai
 from agents.trainer import TRAINING_TOPICS, SYSTEM_PROMPTS
 
 app = FastAPI(title='Job Search AI', version='1.0.0')
@@ -802,11 +802,15 @@ async def training_progress():
     return progress
 
 
-# ── Learning track (ROADMAP.md's curated list — progress tracking + an AI tutor
-# chat per item, deliberately NOT a curriculum-generation platform, no PDF/book
-# upload) ────────────────────────────────────────────────────────────────────
+# ── Learning track: ROADMAP.md's curated list + user-added custom skills,
+# progress tracking, an AI tutor chat per item, an AI-generated zero-to-hero
+# topic checklist per item (a real 0-100 coverage score, checked off manually
+# rather than fragile auto-detection from conversation), and a PDF/book
+# library with page-by-page reading + AI page summaries grounded in the
+# book's actual extracted text. ─────────────────────────────────────────────
 
 _learning_sessions: dict = {}
+_book_sessions: dict = {}
 
 LEARNING_SYSTEM_PROMPT_TEMPLATE = (
     'You are a patient, knowledgeable tutor teaching "{title}" to a self-taught '
@@ -822,12 +826,79 @@ LEARNING_SYSTEM_PROMPT_TEMPLATE = (
 async def get_learning_topics():
     tracker = TrackerAgent()
     tracker.seed_learning_items(LEARNING_TRACK)
-    return tracker.get_learning_items()
+    items = tracker.get_learning_items()
+    for item in items:
+        topics = tracker.get_learning_topics(item['id'])
+        item['topic_count'] = len(topics)
+        item['topics_covered'] = sum(1 for t in topics if t.get('covered'))
+        item['coverage_score'] = (
+            round(item['topics_covered'] / item['topic_count'] * 100) if topics else None
+        )
+    return items
+
+
+def _get_learning_item(item_id: str) -> dict | None:
+    return next((i for i in TrackerAgent().get_learning_items() if i['id'] == item_id), None)
+
+
+@app.post('/api/learning/skills')
+async def add_learning_skill(title: str):
+    """User-added "zero to hero" skill, not limited to the curated ROADMAP.md
+    list — any skill name works. Gets its own AI-generated topic checklist
+    immediately, same as curated items."""
+    item_id = re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')[:60] or str(uuid.uuid4())[:8]
+    tracker = TrackerAgent()
+    tracker.add_custom_learning_item(item_id, title)
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, lambda: _ensure_learning_topics(item_id, title))
+    return {'ok': True, 'item_id': item_id}
+
+
+def _ensure_learning_topics(item_id: str, title: str) -> list:
+    """Generates a zero-to-hero topic breakdown via AI the first time it's
+    needed for this item, then reuses it (save_learning_topics no-ops if
+    topics already exist) — so re-opening an item never regenerates over
+    checkboxes the user already ticked."""
+    tracker = TrackerAgent()
+    existing = tracker.get_learning_topics(item_id)
+    if existing:
+        return existing
+    prompt = (
+        f'Give a "zero to hero" breakdown of "{title}" as a numbered list of 8-12 concrete, '
+        "learnable topics, ordered from fundamentals to advanced. One topic per line, just "
+        "the topic name (a few words each), no descriptions. Example:\n1. Topic name\n2. Topic name"
+    )
+    raw = ask_ai(prompt, max_tokens=400) or ""
+    topic_names = []
+    for line in raw.splitlines():
+        m = re.match(r'^\s*\d+[\.\)]\s*(.+)$', line.strip())
+        if m:
+            topic_names.append(m.group(1).strip().strip('*').strip())
+    if not topic_names:
+        topic_names = ["Fundamentals", "Core concepts", "Practical application", "Advanced topics"]
+    tracker.save_learning_topics(item_id, topic_names[:12])
+    return tracker.get_learning_topics(item_id)
+
+
+@app.get('/api/learning/{item_id}/topics')
+async def get_item_topics(item_id: str):
+    item = _get_learning_item(item_id)
+    if not item:
+        return JSONResponse({'error': 'Unknown learning item'}, status_code=404)
+    loop = asyncio.get_event_loop()
+    topics = await loop.run_in_executor(None, lambda: _ensure_learning_topics(item_id, item['title']))
+    return topics
+
+
+@app.post('/api/learning/topics/{topic_id}/toggle')
+async def toggle_topic(topic_id: str):
+    covered = TrackerAgent().toggle_learning_topic(topic_id)
+    return {'ok': True, 'covered': covered}
 
 
 @app.post('/api/learning/{item_id}/status')
 async def set_learning_status(item_id: str, status: str, notes: str = Query(default='')):
-    if not any(i['id'] == item_id for i in LEARNING_TRACK):
+    if not _get_learning_item(item_id):
         return JSONResponse({'error': 'Unknown learning item'}, status_code=404)
     TrackerAgent().update_learning_status(item_id, status, notes)
     return {'ok': True}
@@ -848,7 +919,7 @@ def _rehydrate_learning_session(item_id: str, title: str) -> dict | None:
 
 @app.post('/api/learning/{item_id}/chat')
 async def learning_chat(item_id: str, message: str = Query(default='')):
-    item = next((i for i in LEARNING_TRACK if i['id'] == item_id), None)
+    item = _get_learning_item(item_id)
     if not item:
         return JSONResponse({'error': 'Unknown learning item'}, status_code=404)
     title = item['title']
@@ -886,13 +957,114 @@ async def learning_chat(item_id: str, message: str = Query(default='')):
             topic_name=title, messages=session['messages'], avg_score=0,
         )
         # first real exchange on an untouched item — bump it to in_progress
-        items = {i['id']: i for i in TrackerAgent().get_learning_items()}
-        if items.get(item_id, {}).get('status') == 'not_started':
+        if item.get('status') == 'not_started':
             TrackerAgent().update_learning_status(item_id, 'in_progress')
     except Exception:
         pass
 
     return {'response': response or '', 'item_id': item_id}
+
+
+# ── Book/PDF library — upload, page-by-page reading, AI page summaries
+# grounded in the book's own extracted text (not the AI's general knowledge),
+# and a tutor chat scoped to a page range. NOTE: the raw uploaded PDF itself
+# is stored on local disk (OUTPUT_DIR) and may NOT survive a Render restart
+# on the free tier (ephemeral disk) — the extracted TEXT is stored in
+# Postgres and survives regardless, which is what page reading/summary/chat
+# actually depend on. ────────────────────────────────────────────────────────
+
+@app.post('/api/learning/books/upload')
+async def upload_book(file: UploadFile = File(...)):
+    if not file.filename or not file.filename.lower().endswith('.pdf'):
+        return JSONResponse({'error': 'Only PDF files are supported'}, status_code=400)
+
+    raw = await file.read()
+    if len(raw) > 30 * 1024 * 1024:  # 30MB — generous for a text-based book, guards against accidental huge uploads
+        return JSONResponse({'error': 'File too large (30MB max)'}, status_code=400)
+
+    def _extract_and_store():
+        import pypdf
+        import io
+        reader = pypdf.PdfReader(io.BytesIO(raw))
+        page_texts = [(p.extract_text() or '') for p in reader.pages]
+        if not any(t.strip() for t in page_texts):
+            return None, 0
+        book_id = TrackerAgent().add_book(
+            title=file.filename.rsplit('.', 1)[0], filename=file.filename, page_texts=page_texts,
+        )
+        # best-effort save of the raw PDF too — nice to have (download link),
+        # not load-bearing for reading/summary/chat, which use the DB text above
+        try:
+            books_dir = Path(OUTPUT_DIR) / 'books'
+            books_dir.mkdir(parents=True, exist_ok=True)
+            (books_dir / f"{book_id}.pdf").write_bytes(raw)
+        except Exception:
+            pass
+        return book_id, len(page_texts)
+
+    loop = asyncio.get_event_loop()
+    book_id, page_count = await loop.run_in_executor(None, _extract_and_store)
+    if not book_id:
+        return JSONResponse({'error': 'No extractable text found — this may be a scanned/image-only PDF'}, status_code=400)
+    return {'ok': True, 'book_id': book_id, 'page_count': page_count}
+
+
+@app.get('/api/learning/books')
+async def list_books():
+    return TrackerAgent().get_books()
+
+
+@app.get('/api/learning/books/{book_id}/page/{page_num}')
+async def get_book_page(book_id: str, page_num: int):
+    page = TrackerAgent().get_book_page(book_id, page_num)
+    if not page:
+        return JSONResponse({'error': 'Page not found'}, status_code=404)
+    TrackerAgent().update_book_current_page(book_id, page_num)
+    return page
+
+
+@app.post('/api/learning/books/{book_id}/page/{page_num}/summary')
+async def summarize_book_page(book_id: str, page_num: int):
+    page = TrackerAgent().get_book_page(book_id, page_num)
+    if not page:
+        return JSONResponse({'error': 'Page not found'}, status_code=404)
+    if page.get('summary'):
+        return {'summary': page['summary'], 'cached': True}
+    text = (page.get('text') or '').strip()
+    if not text:
+        return {'summary': '(This page has no extractable text — likely a scanned image page.)', 'cached': False}
+    loop = asyncio.get_event_loop()
+    prompt = f"Summarize this book page clearly and concisely (3-5 sentences), grounded only in the text given:\n\n{text[:6000]}"
+    summary = await loop.run_in_executor(None, lambda: ask_ai(prompt, max_tokens=300))
+    summary = summary or "Summary generation failed — try again."
+    TrackerAgent().save_page_summary(book_id, page_num, summary)
+    return {'summary': summary, 'cached': False}
+
+
+@app.post('/api/learning/books/{book_id}/chat')
+async def book_chat(book_id: str, page_num: int, message: str = Query(default='')):
+    book = TrackerAgent().get_book(book_id)
+    if not book:
+        return JSONResponse({'error': 'Book not found'}, status_code=404)
+    page = TrackerAgent().get_book_page(book_id, page_num)
+    if not page:
+        return JSONResponse({'error': 'Page not found'}, status_code=404)
+    if not message:
+        return JSONResponse({'error': 'message is required'}, status_code=400)
+
+    session_key = f"{book_id}_{page_num}"
+    if session_key not in _book_sessions:
+        system = (
+            f'You are a tutor helping the user understand page {page_num} of "{book["title"]}". '
+            f"Answer only using the actual page text given below — if the answer isn't in this "
+            f"page, say so rather than guessing from general knowledge.\n\nPAGE TEXT:\n{(page.get('text') or '')[:6000]}"
+        )
+        _book_sessions[session_key] = GeminiChat(system=system, temperature=0.4)
+
+    chat: GeminiChat = _book_sessions[session_key]
+    loop = asyncio.get_event_loop()
+    response = await loop.run_in_executor(None, lambda: chat.send(message, max_tokens=600))
+    return {'response': response or ''}
 
 
 # ── Analytics ──────────────────────────────────────────────────────────────────
