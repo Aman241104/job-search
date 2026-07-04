@@ -123,6 +123,19 @@ export interface LearningMessage {
   content: string;
 }
 
+export interface Story {
+  id: string;
+  situation: string;
+  task: string;
+  action: string;
+  result: string;
+  reflection: string;
+  tags: string[];
+  source_job_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface InterviewRound {
   id: string;
   job_id: string;
@@ -150,6 +163,18 @@ export const api = {
   job: (id: string): Promise<Job> =>
     fetch(`${API}/api/jobs/${id}`).then((r) => {
       if (!r.ok) throw new Error(`Job failed: ${r.status}`);
+      return r.json();
+    }),
+
+  jobLegitimacy: (id: string): Promise<{ score: number | null; flags: string[] }> =>
+    fetch(`${API}/api/jobs/${id}/legitimacy`).then((r) => {
+      if (!r.ok) throw new Error(`Legitimacy check failed: ${r.status}`);
+      return r.json();
+    }),
+
+  jobContact: (id: string): Promise<{ search_query: string; search_url: string; message_draft: string }> =>
+    fetch(`${API}/api/jobs/${id}/contact`, { method: 'POST' }).then((r) => {
+      if (!r.ok) throw new Error(`Contact discovery failed: ${r.status}`);
       return r.json();
     }),
 
@@ -301,6 +326,50 @@ export const api = {
       { method: 'POST' }
     ).then((r) => {
       if (!r.ok) throw new Error(`Book chat failed: ${r.status}`);
+      return r.json();
+    }),
+
+  stories: (): Promise<Story[]> =>
+    fetch(`${API}/api/stories`).then((r) => {
+      if (!r.ok) throw new Error(`Stories fetch failed: ${r.status}`);
+      return r.json();
+    }),
+
+  draftStory: (notes: string): Promise<Omit<Story, 'id' | 'source_job_id' | 'created_at' | 'updated_at'>> =>
+    fetch(`${API}/api/stories/draft?notes=${encodeURIComponent(notes)}`, { method: 'POST' }).then((r) => {
+      if (!r.ok) throw new Error(`Draft story failed: ${r.status}`);
+      return r.json();
+    }),
+
+  addStory: (story: {
+    situation: string; task: string; action: string; result: string; reflection: string; tags: string[];
+  }): Promise<{ ok: boolean; id: string }> => {
+    const params = new URLSearchParams({
+      situation: story.situation, task: story.task, action: story.action,
+      result: story.result, reflection: story.reflection, tags: story.tags.join(','),
+    });
+    return fetch(`${API}/api/stories?${params.toString()}`, { method: 'POST' }).then((r) => {
+      if (!r.ok) throw new Error(`Add story failed: ${r.status}`);
+      return r.json();
+    });
+  },
+
+  updateStory: (id: string, story: {
+    situation: string; task: string; action: string; result: string; reflection: string; tags: string[];
+  }): Promise<{ ok: boolean }> => {
+    const params = new URLSearchParams({
+      situation: story.situation, task: story.task, action: story.action,
+      result: story.result, reflection: story.reflection, tags: story.tags.join(','),
+    });
+    return fetch(`${API}/api/stories/${id}?${params.toString()}`, { method: 'PUT' }).then((r) => {
+      if (!r.ok) throw new Error(`Update story failed: ${r.status}`);
+      return r.json();
+    });
+  },
+
+  deleteStory: (id: string): Promise<{ ok: boolean }> =>
+    fetch(`${API}/api/stories/${id}`, { method: 'DELETE' }).then((r) => {
+      if (!r.ok) throw new Error(`Delete story failed: ${r.status}`);
       return r.json();
     }),
 

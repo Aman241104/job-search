@@ -24,7 +24,8 @@ from agents.cv_customizer import CVCustomizerAgent
 from agents.job_applier import JobApplierAgent, extract_email_from_description
 from agents.telegram_notifier import TelegramNotifierAgent
 from config import OUTPUT_DIR, DATA_DIR, MIN_APPLY_SCORE, LEARNING_TRACK, TELEGRAM_WEBHOOK_SECRET, TELEGRAM_CHAT_ID
-from claude_client import GeminiChat, ask_gemini, ask_ai
+from claude_client import GeminiChat, ask_gemini, ask_ai, check_legitimacy, draft_star_story
+from agents.contact_finder import draft_contact_outreach
 from agents.trainer import TRAINING_TOPICS, SYSTEM_PROMPTS
 
 app = FastAPI(title='Job Search AI', version='1.0.0')
@@ -225,6 +226,48 @@ async def get_job(job_id: str):
 async def star_job(job_id: str):
     starred = TrackerAgent().toggle_star(job_id)
     return {'starred': starred}
+
+
+@app.get('/api/jobs/{job_id}/legitimacy')
+async def get_job_legitimacy(job_id: str):
+    """Lazy compute-and-cache — only spends an AI call the first time a job's
+    detail view is opened, not for every scraped job in bulk."""
+    import sqlite3
+    tracker = TrackerAgent()
+    cached = tracker.get_legitimacy(job_id)
+    if cached:
+        return cached
+
+    with tracker._get_conn() as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    if not row:
+        return JSONResponse({'error': 'Job not found'}, status_code=404)
+    job = dict(row)
+
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, lambda: check_legitimacy(job))
+    if result.get('score') is not None:
+        tracker.save_legitimacy(job_id, result['score'], result['flags'])
+    return result
+
+
+@app.post('/api/jobs/{job_id}/contact')
+async def find_job_contact(job_id: str):
+    """Search-assist + message-draft, not automated LinkedIn scraping (see
+    agents/contact_finder.py) — on-demand, not run in bulk."""
+    import sqlite3
+    tracker = TrackerAgent()
+    with tracker._get_conn() as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    if not row:
+        return JSONResponse({'error': 'Job not found'}, status_code=404)
+    job = dict(row)
+
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, lambda: draft_contact_outreach(job))
+    return result
 
 
 @app.post('/api/jobs/{job_id}/blacklist')
@@ -988,6 +1031,25 @@ async def upload_book(file: UploadFile = File(...)):
         from agents.cloudinary_storage import upload_pdf
         reader = pypdf.PdfReader(io.BytesIO(raw))
         page_texts = [(p.extract_text() or '') for p in reader.pages]
+
+        # OCR fallback for pages pypdf couldn't extract text from (scanned/
+        # image-only pages) — tesseract is lightweight (not a browser), safe
+        # on Render's free tier unlike the Playwright/Chromium path this repo
+        # already ruled out for PDF generation (see Dockerfile comment).
+        empty_pages = [i for i, t in enumerate(page_texts) if not t.strip()]
+        if empty_pages:
+            import pytesseract
+            from pdf2image import convert_from_bytes
+            for i in empty_pages:
+                try:
+                    images = convert_from_bytes(raw, first_page=i + 1, last_page=i + 1, dpi=200)
+                    if images:
+                        ocr_text = pytesseract.image_to_string(images[0])
+                        if ocr_text.strip():
+                            page_texts[i] = ocr_text
+                except Exception:
+                    continue  # this page stays empty — not fatal for the rest of the book
+
         if not any(t.strip() for t in page_texts):
             return None, 0
         # Pre-generate the id so the Cloudinary public_id and the DB row's
@@ -1065,6 +1127,46 @@ async def book_chat(book_id: str, page_num: int, message: str = Query(default=''
     loop = asyncio.get_event_loop()
     response = await loop.run_in_executor(None, lambda: chat.send(message, max_tokens=600))
     return {'response': response or ''}
+
+
+# ── Interview Story Bank (STAR + Reflection) ────────────────────────────────────
+
+@app.get('/api/stories')
+async def get_stories():
+    return TrackerAgent().get_stories()
+
+
+@app.post('/api/stories')
+async def add_story(situation: str, task: str, action: str, result: str,
+                     reflection: str, tags: str = Query(default=''), source_job_id: str = Query(default='')):
+    """tags is a comma-separated string over the query string; stored as a JSON list."""
+    tag_list = [t.strip() for t in tags.split(',') if t.strip()]
+    story_id = TrackerAgent().add_story(situation, task, action, result, reflection, tag_list, source_job_id)
+    return {'ok': True, 'id': story_id}
+
+
+@app.post('/api/stories/draft')
+async def draft_story(notes: str):
+    """AI-assist: paste rough notes about a past experience, get back a
+    structured STAR+Reflection draft (not saved yet — the user reviews/edits
+    before POSTing to /api/stories)."""
+    loop = asyncio.get_event_loop()
+    draft = await loop.run_in_executor(None, lambda: draft_star_story(notes))
+    return draft
+
+
+@app.put('/api/stories/{story_id}')
+async def update_story(story_id: str, situation: str, task: str, action: str,
+                        result: str, reflection: str, tags: str = Query(default='')):
+    tag_list = [t.strip() for t in tags.split(',') if t.strip()]
+    TrackerAgent().update_story(story_id, situation, task, action, result, reflection, tag_list)
+    return {'ok': True}
+
+
+@app.delete('/api/stories/{story_id}')
+async def delete_story(story_id: str):
+    TrackerAgent().delete_story(story_id)
+    return {'ok': True}
 
 
 # ── Analytics ──────────────────────────────────────────────────────────────────

@@ -374,6 +374,102 @@ Return ONLY the JSON object, nothing else."""
     return {"score": 40, "reason": "parse error"}
 
 
+def check_legitimacy(job: dict) -> dict:
+    """
+    Text-based posting-legitimacy check (inspired by career-ops's "Block G"),
+    scoped down from that project's version — no live re-navigation/liveness
+    recheck, purely analyzing the JD text and metadata already in our DB.
+    Returns {"score": int (0-100, higher = more likely a real, well-formed
+    posting), "flags": [str, ...]} — flags are neutral observations, not
+    accusations (a posting can legitimately be missing salary, etc.).
+    """
+    prompt = f"""Analyze this job posting for signals of legitimacy — is it a real, well-specified opening, or does it look generic/low-effort/potentially fake? Return ONLY a JSON object:
+{{"score": <int 0-100>, "flags": ["<short flag>", ...]}}
+
+Job: "{job.get('title','')}" @ {job.get('company','')} | {job.get('location','')} | Salary: {job.get('salary') or 'not specified'}
+Description: {job.get('description','')[:2000]}
+
+Check for (add a flag only when the signal is actually present, don't force-fit unrelated ones):
+- Generic boilerplate ratio (JD reads like a template vs describes real day-to-day work)
+- Specific technologies/tools named vs vague buzzwords only
+- Realistic experience requirements (years asked vs how long the named tech has existed)
+- Internal contradictions (e.g. entry-level title paired with staff/lead-level asks)
+- Salary/compensation mentioned or not
+- Clear scope for the role vs a vague catch-all description
+
+Score 80-100: specific, consistent, well-scoped posting. 50-79: some genuine content but generic in places. 0-49: mostly boilerplate, vague, or contradictory.
+Return ONLY the JSON object, nothing else."""
+
+    raw = ask_nvidia(prompt, max_tokens=250, temperature=0.2)
+    if not raw:
+        raw = ask_gemini(prompt, max_tokens=250, temperature=0.2, quality_first=True)
+    if not raw:
+        return {"score": None, "flags": []}
+
+    obj_match = re.search(r'\{.*\}', raw, re.DOTALL)
+    if obj_match:
+        try:
+            obj = json.loads(obj_match.group())
+            flags = obj.get("flags", [])
+            return {
+                "score": int(obj.get("score", 50)),
+                "flags": [str(f) for f in flags] if isinstance(flags, list) else [],
+            }
+        except Exception:
+            pass
+
+    return {"score": None, "flags": []}
+
+
+def draft_star_story(rough_notes: str) -> dict:
+    """
+    Structures a rough, informally-described experience into a STAR+Reflection
+    story for the interview story bank (career-ops's "Story Bank" idea) — the
+    Reflection field (what was learned / what would be done differently) is
+    what separates a senior-sounding answer from a junior one.
+    Returns {"situation": str, "task": str, "action": str, "result": str,
+    "reflection": str, "tags": [str, ...]}, or empty strings on failure.
+    """
+    prompt = f"""Structure this rough description of a past experience into a STAR+Reflection interview story. Return ONLY a JSON object:
+{{"situation": "...", "task": "...", "action": "...", "result": "...", "reflection": "...", "tags": ["...", ...]}}
+
+Rough notes from the candidate:
+{rough_notes[:2000]}
+
+Guidance:
+- Situation: brief context, 1-2 sentences
+- Task: what specifically needed to be done/decided
+- Action: what the candidate concretely did (first person, specific — not vague)
+- Result: the concrete outcome, with a number/metric if the notes mention one
+- Reflection: what was learned or what would be done differently — this is what signals seniority, don't skip it
+- tags: 2-4 short competency tags (e.g. "leadership", "conflict resolution", "technical challenge", "failure recovery", "ownership")
+- Use ONLY details present in the rough notes — do not invent facts, numbers, or outcomes not mentioned
+
+Return ONLY the JSON object, nothing else."""
+
+    raw = ask_ai(prompt, max_tokens=500)
+    if not raw:
+        return {"situation": "", "task": "", "action": "", "result": "", "reflection": "", "tags": []}
+
+    obj_match = re.search(r'\{.*\}', raw, re.DOTALL)
+    if obj_match:
+        try:
+            obj = json.loads(obj_match.group())
+            tags = obj.get("tags", [])
+            return {
+                "situation": obj.get("situation", ""),
+                "task": obj.get("task", ""),
+                "action": obj.get("action", ""),
+                "result": obj.get("result", ""),
+                "reflection": obj.get("reflection", ""),
+                "tags": [str(t) for t in tags] if isinstance(tags, list) else [],
+            }
+        except Exception:
+            pass
+
+    return {"situation": "", "task": "", "action": "", "result": "", "reflection": "", "tags": []}
+
+
 # ── Multi-turn conversation for trainer ──────────────────────────────────────
 
 class GeminiChat:

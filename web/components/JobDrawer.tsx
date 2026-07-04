@@ -6,7 +6,7 @@ import clsx from 'clsx';
 import {
   X, MapPin, DollarSign, ExternalLink, Star, Copy, Check,
   Loader2, ChevronDown, Calendar, Ban, Download, ChevronRight,
-  Plus, FileText, Mail,
+  Plus, FileText, Mail, ShieldCheck, UserSearch,
 } from 'lucide-react';
 import ScoreRing from './ScoreRing';
 import { api, Job, InterviewRound } from '@/lib/api';
@@ -517,6 +517,10 @@ export default function JobDrawer({ jobId, onClose, onStatusChange, onStarChange
   const [isBlacklisted, setIsBlacklisted] = useState(false);
   const [blacklisting, setBlacklisting] = useState(false);
   const [tab, setTab] = useState<DrawerTab>('overview');
+  const [legitimacy, setLegitimacy] = useState<{ score: number | null; flags: string[] } | null>(null);
+  const [checkingLegitimacy, setCheckingLegitimacy] = useState(false);
+  const [contact, setContact] = useState<{ search_query: string; search_url: string; message_draft: string } | null>(null);
+  const [findingContact, setFindingContact] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -525,6 +529,8 @@ export default function JobDrawer({ jobId, onClose, onStatusChange, onStarChange
     setJob(null);
     setIsBlacklisted(false);
     setTab('overview');
+    setLegitimacy(null);
+    setContact(null);
     api.job(jobId).then((j) => {
       setJob(j);
       setStarred(Boolean(j.starred));
@@ -557,6 +563,26 @@ export default function JobDrawer({ jobId, onClose, onStatusChange, onStarChange
       setStarred(res.starred);
       onStarChange?.(job.id, res.starred);
     } catch { toast('Failed to star job', 'error'); }
+  };
+
+  const handleCheckLegitimacy = async () => {
+    if (!job || checkingLegitimacy) return;
+    setCheckingLegitimacy(true);
+    try {
+      const res = await api.jobLegitimacy(job.id);
+      setLegitimacy(res);
+    } catch { toast('Failed to check legitimacy', 'error'); }
+    finally { setCheckingLegitimacy(false); }
+  };
+
+  const handleFindContact = async () => {
+    if (!job || findingContact) return;
+    setFindingContact(true);
+    try {
+      const res = await api.jobContact(job.id);
+      setContact(res);
+    } catch { toast('Failed to find contact', 'error'); }
+    finally { setFindingContact(false); }
   };
 
   const handleStatusChange = async (status: Job['status']) => {
@@ -756,6 +782,72 @@ export default function JobDrawer({ jobId, onClose, onStatusChange, onStarChange
                     <div className="bg-bg-2 border border-border rounded-xl px-4 py-3">
                       <p className="text-xs text-white/30 uppercase tracking-wider mb-1">AI Match Reason</p>
                       <p className="text-sm text-white/60 italic leading-relaxed">{job.score_reason}</p>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={handleCheckLegitimacy}
+                      disabled={checkingLegitimacy}
+                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-accent-cyan/10 border border-accent-cyan/25 text-accent-cyan hover:bg-accent-cyan/15 transition-all disabled:opacity-50"
+                    >
+                      {checkingLegitimacy ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={12} />}
+                      Check Legitimacy
+                    </button>
+                    <button
+                      onClick={handleFindContact}
+                      disabled={findingContact}
+                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-accent-purple/10 border border-accent-purple/25 text-accent-purple hover:bg-accent-purple/15 transition-all disabled:opacity-50"
+                    >
+                      {findingContact ? <Loader2 size={12} className="animate-spin" /> : <UserSearch size={12} />}
+                      Find Contact
+                    </button>
+                  </div>
+
+                  {legitimacy && (
+                    <div className="bg-bg-2 border border-border rounded-xl px-4 py-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs text-white/30 uppercase tracking-wider">Posting Legitimacy</p>
+                        {legitimacy.score !== null && (
+                          <span
+                            className={clsx(
+                              'font-mono text-sm font-bold',
+                              legitimacy.score >= 80 ? 'text-accent-green' : legitimacy.score >= 50 ? 'text-accent-yellow' : 'text-red-400'
+                            )}
+                          >
+                            {legitimacy.score}/100
+                          </span>
+                        )}
+                      </div>
+                      {legitimacy.flags.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {legitimacy.flags.map((f, i) => (
+                            <span key={i} className="text-[11px] px-2 py-1 rounded-md bg-white/5 border border-white/10 text-white/50">
+                              {f}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-white/30">No specific signals detected.</p>
+                      )}
+                    </div>
+                  )}
+
+                  {contact && (
+                    <div className="bg-bg-2 border border-border rounded-xl px-4 py-3 space-y-2">
+                      <p className="text-xs text-white/30 uppercase tracking-wider">Contact Search</p>
+                      <a
+                        href={contact.search_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 text-xs text-accent-cyan hover:underline"
+                      >
+                        <ExternalLink size={11} /> {contact.search_query}
+                      </a>
+                      <div>
+                        <p className="text-xs text-white/30 uppercase tracking-wider mb-1 mt-2">Draft Message</p>
+                        <p className="text-sm text-white/60 leading-relaxed whitespace-pre-line">{contact.message_draft}</p>
+                      </div>
                     </div>
                   )}
 

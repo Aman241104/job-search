@@ -16,6 +16,7 @@ import {
   Search,
   MoreHorizontal,
   GraduationCap,
+  BookMarked,
   X as CloseIcon,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -28,6 +29,7 @@ const navItems = [
   { href: '/analytics', icon: BarChart2, label: 'Analytics' },
   { href: '/train', icon: Brain, label: 'Train' },
   { href: '/learning', icon: GraduationCap, label: 'Learning' },
+  { href: '/stories', icon: BookMarked, label: 'Story Bank' },
   { href: '/resume', icon: FileText, label: 'Resume' },
   { href: '/profile', icon: User, label: 'Profile' },
   { href: '/links', icon: Link2, label: 'Job Boards' },

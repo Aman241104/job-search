@@ -223,6 +223,20 @@ class TrackerAgent:
                     FOREIGN KEY (book_id) REFERENCES learning_books(id)
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS story_bank (
+                    id TEXT PRIMARY KEY,
+                    situation TEXT,
+                    task TEXT,
+                    action TEXT,
+                    result TEXT,
+                    reflection TEXT,
+                    tags TEXT,
+                    source_job_id TEXT,
+                    created_at TEXT,
+                    updated_at TEXT
+                )
+            """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_learning_topics_item ON learning_topics(item_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_book_pages_book ON learning_book_pages(book_id)")
             if _pg_pool:
@@ -230,9 +244,19 @@ class TrackerAgent:
                 # for the try/except dance, and a failed statement would otherwise
                 # poison the rest of this transaction (unlike SQLite).
                 conn.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS starred INTEGER DEFAULT 0")
+                conn.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS legitimacy_score INTEGER")
+                conn.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS legitimacy_flags TEXT")
             else:
                 try:
                     conn.execute("ALTER TABLE jobs ADD COLUMN starred INTEGER DEFAULT 0")
+                except Exception:
+                    pass
+                try:
+                    conn.execute("ALTER TABLE jobs ADD COLUMN legitimacy_score INTEGER")
+                except Exception:
+                    pass
+                try:
+                    conn.execute("ALTER TABLE jobs ADD COLUMN legitimacy_flags TEXT")
                 except Exception:
                     pass
             # Indexes for performance
@@ -319,6 +343,74 @@ class TrackerAgent:
             conn.commit()
             row = conn.execute("SELECT starred FROM jobs WHERE id = ?", (job_id,)).fetchone()
             return bool(row[0]) if row else False
+
+    def get_legitimacy(self, job_id: str) -> dict | None:
+        """Returns None if never computed (caller should compute + save)."""
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT legitimacy_score, legitimacy_flags FROM jobs WHERE id = ?", (job_id,)
+            ).fetchone()
+        if not row or row[0] is None:
+            return None
+        try:
+            flags = json.loads(row[1]) if row[1] else []
+        except Exception:
+            flags = []
+        return {"score": row[0], "flags": flags}
+
+    def save_legitimacy(self, job_id: str, score: int, flags: list) -> None:
+        with self._get_conn() as conn:
+            conn.execute(
+                "UPDATE jobs SET legitimacy_score = ?, legitimacy_flags = ? WHERE id = ?",
+                (score, json.dumps(flags), job_id),
+            )
+            conn.commit()
+
+    # ── Interview Story Bank (STAR + Reflection) ────────────────────────────────
+
+    def add_story(self, situation: str, task: str, action: str, result: str,
+                  reflection: str, tags: list, source_job_id: str = "") -> str:
+        story_id = str(uuid.uuid4())
+        now = datetime.now().isoformat()
+        with self._get_conn() as conn:
+            conn.execute("""
+                INSERT INTO story_bank
+                (id, situation, task, action, result, reflection, tags, source_job_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (story_id, situation, task, action, result, reflection,
+                  json.dumps(tags), source_job_id or None, now, now))
+            conn.commit()
+        return story_id
+
+    def get_stories(self) -> list:
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT * FROM story_bank ORDER BY updated_at DESC").fetchall()
+        stories = []
+        for row in rows:
+            d = dict(row)
+            try:
+                d['tags'] = json.loads(d['tags']) if d.get('tags') else []
+            except Exception:
+                d['tags'] = []
+            stories.append(d)
+        return stories
+
+    def update_story(self, story_id: str, situation: str, task: str, action: str,
+                      result: str, reflection: str, tags: list) -> None:
+        now = datetime.now().isoformat()
+        with self._get_conn() as conn:
+            conn.execute("""
+                UPDATE story_bank
+                SET situation=?, task=?, action=?, result=?, reflection=?, tags=?, updated_at=?
+                WHERE id=?
+            """, (situation, task, action, result, reflection, json.dumps(tags), now, story_id))
+            conn.commit()
+
+    def delete_story(self, story_id: str) -> None:
+        with self._get_conn() as conn:
+            conn.execute("DELETE FROM story_bank WHERE id = ?", (story_id,))
+            conn.commit()
 
     # ── Training Sessions ──────────────────────────────────────────────────────
 
