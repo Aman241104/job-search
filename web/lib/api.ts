@@ -147,6 +147,33 @@ export interface InterviewRound {
   created_at: string;
 }
 
+export interface BatchItem {
+  id: string;
+  batch_id: string;
+  job_id: string;
+  title: string;
+  company: string;
+  score: number;
+  email?: string;
+  cv_path?: string;
+  cover_path?: string;
+  screenshot_url?: string;
+  fields_filled?: string;
+  fields_missing?: string;
+  approved: number;
+  status: string;
+  error?: string;
+}
+
+export interface Batch {
+  id: string;
+  mode: 'automatic' | 'review';
+  channel: 'email' | 'telegram' | 'browser';
+  status: string;
+  created_at: string;
+  items: BatchItem[];
+}
+
 export const api = {
   stats: (): Promise<Stats> =>
     fetch(`${API}/api/stats`).then((r) => {
@@ -455,6 +482,46 @@ export const api = {
   followups: (): Promise<{ jobs: Job[] }> =>
     fetch(`${API}/api/followups`).then((r) => {
       if (!r.ok) throw new Error(`Followups failed: ${r.status}`);
+      return r.json();
+    }),
+
+  getAutoApplyMode: (): Promise<{ mode: 'automatic' | 'review' }> =>
+    fetch(`${API}/api/settings/auto-apply-mode`).then((r) => {
+      if (!r.ok) throw new Error(`Get mode failed: ${r.status}`);
+      return r.json();
+    }),
+
+  setAutoApplyMode: (mode: 'automatic' | 'review'): Promise<{ ok: boolean; mode: string }> =>
+    fetch(`${API}/api/settings/auto-apply-mode?mode=${mode}`, { method: 'POST' }).then((r) => {
+      if (!r.ok) throw new Error(`Set mode failed: ${r.status}`);
+      return r.json();
+    }),
+
+  runBatch: (channel: 'email' | 'telegram' | 'browser', jobIds: string[], mode?: string, force?: boolean): Promise<Batch> => {
+    const params = new URLSearchParams({ channel, job_ids: jobIds.join(',') });
+    if (mode) params.set('mode', mode);
+    if (force) params.set('force', 'true');
+    return fetch(`${API}/api/batch/run?${params.toString()}`, { method: 'POST' }).then((r) => {
+      if (!r.ok) throw new Error(`Run batch failed: ${r.status}`);
+      return r.json();
+    });
+  },
+
+  getBatch: (batchId: string): Promise<Batch> =>
+    fetch(`${API}/api/batch/${batchId}`).then((r) => {
+      if (!r.ok) throw new Error(`Get batch failed: ${r.status}`);
+      return r.json();
+    }),
+
+  setBatchItemApproval: (batchId: string, itemId: string, approved: boolean): Promise<{ ok: boolean }> =>
+    fetch(`${API}/api/batch/${batchId}/items/${itemId}/approval?approved=${approved}`, { method: 'POST' }).then((r) => {
+      if (!r.ok) throw new Error(`Approval update failed: ${r.status}`);
+      return r.json();
+    }),
+
+  sendBatch: (batchId: string): Promise<Batch> =>
+    fetch(`${API}/api/batch/${batchId}/send`, { method: 'POST' }).then((r) => {
+      if (!r.ok) throw new Error(`Send batch failed: ${r.status}`);
       return r.json();
     }),
 

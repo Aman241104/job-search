@@ -1383,6 +1383,74 @@ async def notify_followups():
     return {'ok': True, 'count': len(jobs)}
 
 
+# ── Batch apply (email/telegram/browser, automatic or review-then-send) ────────
+
+@app.get('/api/settings/auto-apply-mode')
+async def get_auto_apply_mode():
+    return {'mode': TrackerAgent().get_setting('auto_apply_mode', 'review')}
+
+
+@app.post('/api/settings/auto-apply-mode')
+async def set_auto_apply_mode(mode: str):
+    if mode not in ('automatic', 'review'):
+        return JSONResponse({'error': 'mode must be "automatic" or "review"'}, status_code=400)
+    TrackerAgent().set_setting('auto_apply_mode', mode)
+    return {'ok': True, 'mode': mode}
+
+
+@app.post('/api/batch/run')
+async def run_batch(channel: str, job_ids: str = Query(...), mode: str = Query(default=''), force: bool = Query(default=False)):
+    """job_ids: comma-separated. mode defaults to the persisted auto-apply-mode
+    setting if not passed explicitly. channel: email | telegram | browser."""
+    ids = [j.strip() for j in job_ids.split(',') if j.strip()]
+    if not ids:
+        return JSONResponse({'error': 'job_ids is required'}, status_code=400)
+    if channel not in ('email', 'telegram', 'browser'):
+        return JSONResponse({'error': 'channel must be email, telegram, or browser'}, status_code=400)
+
+    tracker = TrackerAgent()
+    effective_mode = mode or tracker.get_setting('auto_apply_mode', 'review')
+
+    loop = asyncio.get_event_loop()
+    if channel == 'email':
+        from agents.batch_applier import run_email_batch
+        result = await loop.run_in_executor(None, lambda: run_email_batch(ids, effective_mode, force))
+    elif channel == 'telegram':
+        from agents.batch_applier import run_telegram_batch
+        result = await loop.run_in_executor(None, lambda: run_telegram_batch(ids, force))
+    else:  # browser — always review, never auto-submits regardless of mode
+        from agents.batch_applier import run_browser_batch
+        result = await loop.run_in_executor(None, lambda: run_browser_batch(ids, force))
+    return result
+
+
+@app.get('/api/batch/{batch_id}')
+async def get_batch(batch_id: str):
+    batch = TrackerAgent().get_batch(batch_id)
+    if not batch:
+        return JSONResponse({'error': 'Batch not found'}, status_code=404)
+    return batch
+
+
+@app.post('/api/batch/{batch_id}/items/{item_id}/approval')
+async def set_batch_item_approval(batch_id: str, item_id: str, approved: bool):
+    TrackerAgent().set_batch_item_approval(item_id, approved)
+    return {'ok': True}
+
+
+@app.post('/api/batch/{batch_id}/send')
+async def send_batch(batch_id: str):
+    """Confirm-then-send for a review-mode EMAIL batch. Browser-channel
+    batches have nothing to "send" here — the user finishes those by hand
+    in their own browser using the screenshot as a guide."""
+    from agents.batch_applier import send_staged_batch
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, lambda: send_staged_batch(batch_id))
+    if result.get('error'):
+        return JSONResponse(result, status_code=404)
+    return result
+
+
 # ── Blacklist ──────────────────────────────────────────────────────────────────
 
 @app.get('/api/blacklist')

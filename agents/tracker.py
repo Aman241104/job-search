@@ -237,6 +237,42 @@ class TrackerAgent:
                     updated_at TEXT
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS batches (
+                    id TEXT PRIMARY KEY,
+                    mode TEXT,
+                    channel TEXT,
+                    status TEXT DEFAULT 'staged',
+                    created_at TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS batch_items (
+                    id TEXT PRIMARY KEY,
+                    batch_id TEXT,
+                    job_id TEXT,
+                    email TEXT,
+                    cv_path TEXT,
+                    cover_path TEXT,
+                    cv_markdown TEXT,
+                    cover_letter_text TEXT,
+                    screenshot_url TEXT,
+                    fields_filled TEXT,
+                    fields_missing TEXT,
+                    approved INTEGER DEFAULT 1,
+                    status TEXT DEFAULT 'staged',
+                    error TEXT,
+                    FOREIGN KEY (batch_id) REFERENCES batches(id),
+                    FOREIGN KEY (job_id) REFERENCES jobs(id)
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_batch_items_batch ON batch_items(batch_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_learning_topics_item ON learning_topics(item_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_book_pages_book ON learning_book_pages(book_id)")
             if _pg_pool:
@@ -410,6 +446,79 @@ class TrackerAgent:
     def delete_story(self, story_id: str) -> None:
         with self._get_conn() as conn:
             conn.execute("DELETE FROM story_bank WHERE id = ?", (story_id,))
+            conn.commit()
+
+    # ── Settings (simple key-value) ─────────────────────────────────────────────
+
+    def get_setting(self, key: str, default: str = "") -> str:
+        with self._get_conn() as conn:
+            row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        if not row:
+            return default
+        return row[0] if not isinstance(row, dict) else row["value"]
+
+    def set_setting(self, key: str, value: str) -> None:
+        with self._get_conn() as conn:
+            if _pg_pool:
+                conn.execute("""
+                    INSERT INTO settings (key, value) VALUES (?, ?)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """, (key, value))
+            else:
+                conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+            conn.commit()
+
+    # ── Batch apply (email/browser, automatic or review-then-send) ─────────────
+
+    def create_batch(self, mode: str, channel: str) -> str:
+        batch_id = str(uuid.uuid4())
+        now = datetime.now().isoformat()
+        with self._get_conn() as conn:
+            conn.execute(
+                "INSERT INTO batches (id, mode, channel, status, created_at) VALUES (?, ?, ?, 'staged', ?)",
+                (batch_id, mode, channel, now),
+            )
+            conn.commit()
+        return batch_id
+
+    def add_batch_item(self, batch_id: str, job_id: str, **fields) -> str:
+        item_id = str(uuid.uuid4())
+        cols = ["id", "batch_id", "job_id"] + list(fields.keys())
+        placeholders = ", ".join(["?"] * len(cols))
+        values = [item_id, batch_id, job_id] + list(fields.values())
+        with self._get_conn() as conn:
+            conn.execute(f"INSERT INTO batch_items ({', '.join(cols)}) VALUES ({placeholders})", values)
+            conn.commit()
+        return item_id
+
+    def get_batch(self, batch_id: str) -> dict | None:
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            batch_row = conn.execute("SELECT * FROM batches WHERE id = ?", (batch_id,)).fetchone()
+            if not batch_row:
+                return None
+            item_rows = conn.execute("""
+                SELECT bi.*, j.title, j.company, j.score
+                FROM batch_items bi JOIN jobs j ON bi.job_id = j.id
+                WHERE bi.batch_id = ?
+            """, (batch_id,)).fetchall()
+        batch = dict(batch_row)
+        batch["items"] = [dict(r) for r in item_rows]
+        return batch
+
+    def set_batch_item_approval(self, item_id: str, approved: bool) -> None:
+        with self._get_conn() as conn:
+            conn.execute("UPDATE batch_items SET approved = ? WHERE id = ?", (1 if approved else 0, item_id))
+            conn.commit()
+
+    def update_batch_item_status(self, item_id: str, status: str, error: str = "") -> None:
+        with self._get_conn() as conn:
+            conn.execute("UPDATE batch_items SET status = ?, error = ? WHERE id = ?", (status, error, item_id))
+            conn.commit()
+
+    def update_batch_status(self, batch_id: str, status: str) -> None:
+        with self._get_conn() as conn:
+            conn.execute("UPDATE batches SET status = ? WHERE id = ?", (status, batch_id))
             conn.commit()
 
     # ── Training Sessions ──────────────────────────────────────────────────────

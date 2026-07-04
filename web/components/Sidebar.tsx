@@ -17,6 +17,7 @@ import {
   MoreHorizontal,
   GraduationCap,
   BookMarked,
+  Send,
   X as CloseIcon,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -26,6 +27,7 @@ import clsx from 'clsx';
 const navItems = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/jobs', icon: Briefcase, label: 'Jobs' },
+  { href: '/batch', icon: Send, label: 'Batch Apply' },
   { href: '/analytics', icon: BarChart2, label: 'Analytics' },
   { href: '/train', icon: Brain, label: 'Train' },
   { href: '/learning', icon: GraduationCap, label: 'Learning' },
