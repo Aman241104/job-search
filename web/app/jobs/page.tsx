@@ -2,23 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
-import {
-  Search,
-  SlidersHorizontal,
-  ChevronLeft,
-  ChevronRight,
-  X,
-  LayoutList,
-  Columns,
-  CheckSquare,
-  Star,
-  Trash2,
-  ChevronDown,
-  ArrowUp,
-  Keyboard,
-} from 'lucide-react';
+import { MagnifyingGlass, Sliders, CaretLeft, CaretRight, X, ListBullets, Columns, CheckSquare, Star, Trash, CaretDown, ArrowUp, Keyboard } from '@phosphor-icons/react';
 import JobCard from '@/components/JobCard';
 import JobDrawer from '@/components/JobDrawer';
+import EmptyState from '@/components/EmptyState';
 import ScoreRing from '@/components/ScoreRing';
 import { ToastProvider, useToast } from '@/components/Toast';
 import { api, Job, JobsResponse } from '@/lib/api';
@@ -61,34 +48,37 @@ const KANBAN_COLUMNS: {
   badgeColor: string;
 }[] = [
   { status: 'found', label: 'Found', headerColor: 'text-white/50', badgeColor: 'bg-white/10' },
-  { status: 'applied', label: 'Applied', headerColor: 'text-blue-400', badgeColor: 'bg-blue-400/15' },
-  { status: 'interviewing', label: 'Interviewing', headerColor: 'text-yellow-400', badgeColor: 'bg-yellow-400/15' },
-  { status: 'offer', label: 'Offer', headerColor: 'text-green-400', badgeColor: 'bg-green-400/15' },
-  { status: 'rejected', label: 'Rejected', headerColor: 'text-red-400', badgeColor: 'bg-red-400/15' },
+  { status: 'applied', label: 'Applied', headerColor: 'text-accent-cyan', badgeColor: 'bg-accent-cyan/15' },
+  { status: 'interviewing', label: 'Interviewing', headerColor: 'text-accent-yellow', badgeColor: 'bg-accent-yellow/15' },
+  { status: 'offer', label: 'Offer', headerColor: 'text-accent-green', badgeColor: 'bg-accent-green/15' },
+  { status: 'rejected', label: 'Rejected', headerColor: 'text-accent-pink', badgeColor: 'bg-accent-pink/15' },
   { status: 'ghosted', label: 'Ghosted', headerColor: 'text-white/30', badgeColor: 'bg-white/5' },
 ];
 
 const statusConfig: Record<Job['status'], { label: string; bg: string; text: string; border: string }> = {
   found: { label: 'Found', bg: 'bg-white/5', text: 'text-white/50', border: 'border-white/10' },
-  applied: { label: 'Applied', bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/20' },
-  interviewing: { label: 'Interviewing', bg: 'bg-yellow-400/10', text: 'text-yellow-400', border: 'border-yellow-400/20' },
-  offer: { label: 'Offer 🎉', bg: 'bg-green-400/10', text: 'text-green-400', border: 'border-green-400/20' },
-  rejected: { label: 'Rejected', bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/20' },
+  applied: { label: 'Applied', bg: 'bg-accent-cyan/10', text: 'text-accent-cyan', border: 'border-accent-cyan/20' },
+  interviewing: { label: 'Interviewing', bg: 'bg-accent-yellow/10', text: 'text-accent-yellow', border: 'border-accent-yellow/20' },
+  offer: { label: 'Offer', bg: 'bg-accent-green/10', text: 'text-accent-green', border: 'border-accent-green/20' },
+  rejected: { label: 'Rejected', bg: 'bg-accent-pink/10', text: 'text-accent-pink', border: 'border-accent-pink/20' },
   ghosted: { label: 'Ghosted', bg: 'bg-white/5', text: 'text-white/30', border: 'border-white/10' },
 };
 
 const allStatuses: Job['status'][] = ['found', 'applied', 'interviewing', 'offer', 'rejected', 'ghosted'];
 
+// Muted -700 shades (not the default -400s, which are tuned to pop on a
+// black background) so each source stays individually recognizable at a
+// glance without reintroducing a wall of saturated color.
 const sourceColors: Record<string, string> = {
-  Internshala: 'text-orange-400 bg-orange-400/10 border-orange-400/20',
-  LinkedIn: 'text-sky-400 bg-sky-400/10 border-sky-400/20',
-  Jobicy: 'text-purple-400 bg-purple-400/10 border-purple-400/20',
-  WeWorkRemotely: 'text-green-400 bg-green-400/10 border-green-400/20',
-  Arbeitnow: 'text-cyan-400 bg-cyan-400/10 border-cyan-400/20',
-  Remotive: 'text-violet-400 bg-violet-400/10 border-violet-400/20',
-  RemoteOK: 'text-rose-400 bg-rose-400/10 border-rose-400/20',
-  TheMuse: 'text-pink-400 bg-pink-400/10 border-pink-400/20',
-  'Remote.co': 'text-teal-400 bg-teal-400/10 border-teal-400/20',
+  Internshala: 'text-orange-700 bg-orange-700/10 border-orange-700/20',
+  LinkedIn: 'text-sky-700 bg-sky-700/10 border-sky-700/20',
+  Jobicy: 'text-purple-700 bg-purple-700/10 border-purple-700/20',
+  WeWorkRemotely: 'text-emerald-700 bg-emerald-700/10 border-emerald-700/20',
+  Arbeitnow: 'text-cyan-700 bg-cyan-700/10 border-cyan-700/20',
+  Remotive: 'text-violet-700 bg-violet-700/10 border-violet-700/20',
+  RemoteOK: 'text-rose-700 bg-rose-700/10 border-rose-700/20',
+  TheMuse: 'text-pink-700 bg-pink-700/10 border-pink-700/20',
+  'Remote.co': 'text-teal-700 bg-teal-700/10 border-teal-700/20',
 };
 
 // ─── Keyboard Shortcuts Modal ─────────────────────────────────────────────────
@@ -239,8 +229,8 @@ function KanbanCard({ job, onStatusChange, onStarChange, onView, isSelected, sel
                 s.bg, s.text, s.border
               )}
             >
-              {s.label.replace(' 🎉', '')}
-              <ChevronDown size={8} />
+              {s.label}
+              <CaretDown size={8} />
             </button>
 
             {showStatusMenu && (
@@ -323,7 +313,7 @@ function BulkBar({ selectedIds, onDeselect, onAction }: BulkBarProps) {
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-bg-2 border border-border text-white/60 hover:text-white/80 transition-all"
           >
             Mark as
-            <ChevronDown size={11} />
+            <CaretDown size={11} />
           </button>
           {showStatusDrop && (
             <>
@@ -349,9 +339,9 @@ function BulkBar({ selectedIds, onDeselect, onAction }: BulkBarProps) {
         {/* Delete */}
         <button
           onClick={() => onAction('delete')}
-          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-all"
+          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-accent-pink/10 border border-accent-pink/20 text-accent-pink hover:bg-accent-pink/20 transition-all"
         >
-          <Trash2 size={11} />
+          <Trash size={11} />
           Delete
         </button>
 
@@ -697,7 +687,7 @@ function JobsPageInner() {
           <div className="flex items-center gap-3 mb-3">
             {/* Search */}
             <div className="flex-1 relative">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
+              <MagnifyingGlass size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
               <input
                 type="text"
                 value={search}
@@ -719,7 +709,7 @@ function JobsPageInner() {
                     : 'text-white/35 hover:text-white/60'
                 )}
               >
-                <LayoutList size={14} />
+                <ListBullets size={14} />
                 <span className="hidden sm:inline text-xs">List</span>
               </button>
               <button
@@ -765,7 +755,7 @@ function JobsPageInner() {
                   : 'bg-bg-2 border-border text-white/50 hover:text-white/70'
               )}
             >
-              <SlidersHorizontal size={14} />
+              <Sliders size={14} />
               Filters
               {activeFilterCount > 0 && (
                 <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-accent-green text-bg text-[10px] font-bold flex items-center justify-center">
@@ -921,7 +911,7 @@ function JobsPageInner() {
                   Starred
                 </button>
 
-                {error && <span className="text-red-400 text-sm">· {error}</span>}
+                {error && <span className="text-accent-pink text-sm">· {error}</span>}
               </div>
             )}
 
@@ -934,7 +924,7 @@ function JobsPageInner() {
 
           {/* Error state */}
           {error && !loading && (
-            <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-5 py-4 text-sm text-red-400 mb-6">
+            <div className="bg-accent-pink/10 border border-accent-pink/20 rounded-xl px-5 py-4 text-sm text-accent-pink mb-6">
               {error}
             </div>
           )}
@@ -962,15 +952,15 @@ function JobsPageInner() {
 
               {/* Empty state */}
               {!loading && data?.jobs.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-24 text-center">
-                  <div className="text-5xl mb-4">🔍</div>
-                  <h3 className="text-lg font-semibold text-white/70 mb-2">No jobs found</h3>
-                  <p className="text-sm text-white/35 max-w-xs">
-                    {search || status || source || minScore > 0
-                      ? 'Try adjusting your filters'
-                      : 'Find some jobs from the Dashboard to get started'}
-                  </p>
-                </div>
+                <EmptyState
+                  icon={MagnifyingGlass}
+                  title="No jobs found"
+                  description={
+                    search || status || source || minScore > 0
+                      ? 'Try adjusting your filters.'
+                      : 'Find some jobs from the Dashboard to get started.'
+                  }
+                />
               )}
 
               {/* Jobs grid */}
@@ -1019,7 +1009,7 @@ function JobsPageInner() {
                     disabled={page === 1}
                     className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-bg-2 border border-border text-sm text-white/50 hover:text-white/80 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                   >
-                    <ChevronLeft size={15} />
+                    <CaretLeft size={15} />
                     Prev
                   </button>
 
@@ -1059,7 +1049,7 @@ function JobsPageInner() {
                     className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-bg-2 border border-border text-sm text-white/50 hover:text-white/80 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                   >
                     Next
-                    <ChevronRight size={15} />
+                    <CaretRight size={15} />
                   </button>
                 </div>
               )}

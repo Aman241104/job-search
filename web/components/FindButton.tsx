@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 import gsap from 'gsap';
-import { Radar, X, CheckCircle2 } from 'lucide-react';
+import { Broadcast, X, CheckCircle } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import { useToast } from './Toast';
 import clsx from 'clsx';
@@ -110,7 +110,7 @@ export default function FindButton({ onComplete }: FindButtonProps) {
         className={clsx(
           'relative flex items-center gap-3 px-6 py-3 rounded-xl font-semibold text-sm transition-all duration-200 overflow-hidden',
           running
-            ? 'bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/15'
+            ? 'bg-accent-pink/10 border border-accent-pink/30 text-accent-pink hover:bg-accent-pink/15'
             : done
             ? 'bg-accent-green/10 border border-accent-green/30 text-accent-green'
             : 'bg-accent-green/10 border border-accent-green/30 text-accent-green hover:bg-accent-green/15 hover:border-accent-green/50'
@@ -119,20 +119,20 @@ export default function FindButton({ onComplete }: FindButtonProps) {
         {running ? (
           <>
             <span className="relative flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-400" />
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-pink opacity-75" />
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-accent-pink" />
             </span>
             Stop Search
             <X size={15} className="ml-auto" />
           </>
         ) : done ? (
           <>
-            <CheckCircle2 size={16} className="drop-shadow-[0_0_8px_rgba(99,255,178,0.6)]" />
+            <CheckCircle size={16} />
             Search Complete
           </>
         ) : (
           <>
-            <Radar size={16} className="drop-shadow-[0_0_8px_rgba(99,255,178,0.4)]" />
+            <Broadcast size={16} />
             Find New Jobs
           </>
         )}
@@ -147,8 +147,8 @@ export default function FindButton({ onComplete }: FindButtonProps) {
               className={clsx(
                 'h-full rounded-full',
                 done
-                  ? 'bg-accent-green shadow-[0_0_8px_rgba(99,255,178,0.4)]'
-                  : 'bg-gradient-to-r from-accent-green to-accent-cyan shadow-[0_0_8px_rgba(99,255,178,0.3)]'
+                  ? 'bg-accent-green'
+                  : 'bg-gradient-to-r from-accent-green to-accent-cyan'
               )}
               style={{ width: '0%' }}
             />

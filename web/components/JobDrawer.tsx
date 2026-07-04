@@ -3,11 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import gsap from 'gsap';
 import clsx from 'clsx';
-import {
-  X, MapPin, DollarSign, ExternalLink, Star, Copy, Check,
-  Loader2, ChevronDown, Calendar, Ban, Download, ChevronRight,
-  Plus, FileText, Mail, ShieldCheck, UserSearch,
-} from 'lucide-react';
+import { X, MapPin, CurrencyDollar, ArrowSquareOut, Star, Copy, Check, CircleNotch, CaretDown, Calendar, Prohibit, DownloadSimple, CaretRight, Plus, FileText, Envelope, ShieldCheck, UserFocus } from '@phosphor-icons/react';
 import ScoreRing from './ScoreRing';
 import { api, Job, InterviewRound } from '@/lib/api';
 import { useToast } from './Toast';
@@ -23,23 +19,23 @@ type DrawerTab = 'overview' | 'track' | 'cv';
 
 const statusConfig: Record<Job['status'], { label: string; color: string }> = {
   found: { label: 'Found', color: 'text-white/50' },
-  applied: { label: 'Applied', color: 'text-blue-400' },
+  applied: { label: 'Applied', color: 'text-accent-cyan' },
   interviewing: { label: 'Interviewing', color: 'text-accent-yellow' },
-  offer: { label: 'Offer 🎉', color: 'text-accent-green' },
-  rejected: { label: 'Rejected', color: 'text-red-400' },
+  offer: { label: 'Offer', color: 'text-accent-green' },
+  rejected: { label: 'Rejected', color: 'text-accent-pink' },
   ghosted: { label: 'Ghosted', color: 'text-white/30' },
 };
 
 const sourceColors: Record<string, string> = {
-  Internshala: 'text-orange-400 bg-orange-400/10 border-orange-400/20',
-  LinkedIn: 'text-sky-400 bg-sky-400/10 border-sky-400/20',
-  Jobicy: 'text-purple-400 bg-purple-400/10 border-purple-400/20',
-  WeWorkRemotely: 'text-green-400 bg-green-400/10 border-green-400/20',
-  Arbeitnow: 'text-cyan-400 bg-cyan-400/10 border-cyan-400/20',
-  Remotive: 'text-violet-400 bg-violet-400/10 border-violet-400/20',
-  RemoteOK: 'text-rose-400 bg-rose-400/10 border-rose-400/20',
-  TheMuse: 'text-pink-400 bg-pink-400/10 border-pink-400/20',
-  'Remote.co': 'text-teal-400 bg-teal-400/10 border-teal-400/20',
+  Internshala: 'text-orange-700 bg-orange-700/10 border-orange-700/20',
+  LinkedIn: 'text-sky-700 bg-sky-700/10 border-sky-700/20',
+  Jobicy: 'text-purple-700 bg-purple-700/10 border-purple-700/20',
+  WeWorkRemotely: 'text-emerald-700 bg-emerald-700/10 border-emerald-700/20',
+  Arbeitnow: 'text-cyan-700 bg-cyan-700/10 border-cyan-700/20',
+  Remotive: 'text-violet-700 bg-violet-700/10 border-violet-700/20',
+  RemoteOK: 'text-rose-700 bg-rose-700/10 border-rose-700/20',
+  TheMuse: 'text-pink-700 bg-pink-700/10 border-pink-700/20',
+  'Remote.co': 'text-teal-700 bg-teal-700/10 border-teal-700/20',
 };
 
 const allStatuses: Job['status'][] = ['found', 'applied', 'interviewing', 'offer', 'rejected', 'ghosted'];
@@ -48,18 +44,18 @@ const ROUND_TYPES = ['phone', 'technical', 'hr', 'assignment', 'final'] as const
 const RESULT_TYPES = ['pending', 'passed', 'failed', 'cancelled'] as const;
 
 const resultBadgeClass: Record<string, string> = {
-  pending: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20',
-  passed: 'text-green-400 bg-green-400/10 border-green-400/20',
-  failed: 'text-red-400 bg-red-400/10 border-red-400/20',
+  pending: 'text-accent-yellow bg-accent-yellow/10 border-accent-yellow/20',
+  passed: 'text-accent-green bg-accent-green/10 border-accent-green/20',
+  failed: 'text-accent-pink bg-accent-pink/10 border-accent-pink/20',
   cancelled: 'text-white/30 bg-white/5 border-white/10',
 };
 
 const timelineDotColor: Record<string, string> = {
   discovered: 'bg-white/40',
-  applied: 'bg-blue-400',
-  interviewing: 'bg-yellow-400',
-  offer: 'bg-green-400',
-  rejected: 'bg-red-400',
+  applied: 'bg-accent-cyan',
+  interviewing: 'bg-accent-yellow',
+  offer: 'bg-accent-green',
+  rejected: 'bg-accent-pink',
   ghosted: 'bg-white/20',
 };
 
@@ -253,7 +249,7 @@ function InterviewsSection({ jobId }: { jobId: string }) {
 
       {loadingRounds ? (
         <div className="flex items-center gap-2 py-2">
-          <Loader2 size={13} className="animate-spin text-white/30" />
+          <CircleNotch size={13} className="animate-spin text-white/30" />
           <span className="text-xs text-white/30">Loading rounds...</span>
         </div>
       ) : (
@@ -304,7 +300,7 @@ function InterviewsSection({ jobId }: { jobId: string }) {
                     disabled={editSaving}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-green/10 border border-accent-green/30 text-accent-green text-xs font-medium transition-all hover:bg-accent-green/20"
                   >
-                    {editSaving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+                    {editSaving ? <CircleNotch size={11} className="animate-spin" /> : <Check size={11} />}
                     Save
                   </button>
                 </div>
@@ -363,7 +359,7 @@ function InterviewsSection({ jobId }: { jobId: string }) {
                   disabled={saving}
                   className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-accent-green/10 border border-accent-green/30 text-accent-green text-xs font-medium hover:bg-accent-green/20 transition-all"
                 >
-                  {saving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+                  {saving ? <CircleNotch size={11} className="animate-spin" /> : <Check size={11} />}
                   Save
                 </button>
                 <button
@@ -406,7 +402,7 @@ function CVSection({ jobId }: { jobId: string }) {
   if (loadingCv) {
     return (
       <div className="flex items-center gap-2 py-4">
-        <Loader2 size={13} className="animate-spin text-white/30" />
+        <CircleNotch size={13} className="animate-spin text-white/30" />
         <span className="text-xs text-white/30">Loading CV...</span>
       </div>
     );
@@ -431,13 +427,13 @@ function CVSection({ jobId }: { jobId: string }) {
             className="flex items-center gap-1.5 px-3 py-1 rounded-lg border border-white/10 text-white/40 text-xs hover:text-white/70 hover:border-white/20 transition-all"
             title="Download CV"
           >
-            <Download size={12} /> Download
+            <DownloadSimple size={12} /> DownloadSimple
           </button>
           <button
             onClick={() => setExpanded((p) => !p)}
             className="flex items-center gap-1.5 px-3 py-1 rounded-lg border border-white/10 text-white/40 text-xs hover:text-white/70 hover:border-white/20 transition-all"
           >
-            <ChevronRight size={12} className={clsx('transition-transform', expanded && 'rotate-90')} />
+            <CaretRight size={12} className={clsx('transition-transform', expanded && 'rotate-90')} />
             {expanded ? 'Collapse' : 'Preview'}
           </button>
         </div>
@@ -701,11 +697,11 @@ export default function JobDrawer({ jobId, onClose, onStatusChange, onStarChange
                 className={clsx(
                   'flex items-center p-1.5 rounded-lg border transition-all',
                   isBlacklisted
-                    ? 'text-red-400 bg-red-400/10 border-red-400/30 hover:bg-red-400/20'
+                    ? 'text-accent-pink bg-accent-pink/10 border-accent-pink/30 hover:bg-accent-pink/20'
                     : 'text-white/30 bg-transparent border-white/10 hover:text-white/60 hover:border-white/20'
                 )}
               >
-                {blacklisting ? <Loader2 size={12} className="animate-spin" /> : <Ban size={12} />}
+                {blacklisting ? <CircleNotch size={12} className="animate-spin" /> : <Prohibit size={12} />}
               </button>
             )}
           </div>
@@ -741,7 +737,7 @@ export default function JobDrawer({ jobId, onClose, onStatusChange, onStarChange
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
           {loading && (
             <div className="flex items-center justify-center py-20">
-              <Loader2 size={24} className="animate-spin text-accent-green" />
+              <CircleNotch size={24} className="animate-spin text-accent-green" />
             </div>
           )}
 
@@ -763,7 +759,7 @@ export default function JobDrawer({ jobId, onClose, onStatusChange, onStarChange
                     )}
                     {job.salary && (
                       <span className="flex items-center gap-1 text-xs text-white/35">
-                        <DollarSign size={11} /> {job.salary}
+                        <CurrencyDollar size={11} /> {job.salary}
                       </span>
                     )}
                     {job.date_found && (
@@ -791,7 +787,7 @@ export default function JobDrawer({ jobId, onClose, onStatusChange, onStarChange
                       disabled={checkingLegitimacy}
                       className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-accent-cyan/10 border border-accent-cyan/25 text-accent-cyan hover:bg-accent-cyan/15 transition-all disabled:opacity-50"
                     >
-                      {checkingLegitimacy ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={12} />}
+                      {checkingLegitimacy ? <CircleNotch size={12} className="animate-spin" /> : <ShieldCheck size={12} />}
                       Check Legitimacy
                     </button>
                     <button
@@ -799,7 +795,7 @@ export default function JobDrawer({ jobId, onClose, onStatusChange, onStarChange
                       disabled={findingContact}
                       className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-accent-purple/10 border border-accent-purple/25 text-accent-purple hover:bg-accent-purple/15 transition-all disabled:opacity-50"
                     >
-                      {findingContact ? <Loader2 size={12} className="animate-spin" /> : <UserSearch size={12} />}
+                      {findingContact ? <CircleNotch size={12} className="animate-spin" /> : <UserFocus size={12} />}
                       Find Contact
                     </button>
                   </div>
@@ -812,7 +808,7 @@ export default function JobDrawer({ jobId, onClose, onStatusChange, onStarChange
                           <span
                             className={clsx(
                               'font-mono text-sm font-bold',
-                              legitimacy.score >= 80 ? 'text-accent-green' : legitimacy.score >= 50 ? 'text-accent-yellow' : 'text-red-400'
+                              legitimacy.score >= 80 ? 'text-accent-green' : legitimacy.score >= 50 ? 'text-accent-yellow' : 'text-accent-pink'
                             )}
                           >
                             {legitimacy.score}/100
@@ -842,7 +838,7 @@ export default function JobDrawer({ jobId, onClose, onStatusChange, onStarChange
                         rel="noopener noreferrer"
                         className="flex items-center gap-1.5 text-xs text-accent-cyan hover:underline"
                       >
-                        <ExternalLink size={11} /> {contact.search_query}
+                        <ArrowSquareOut size={11} /> {contact.search_query}
                       </a>
                       <div>
                         <p className="text-xs text-white/30 uppercase tracking-wider mb-1 mt-2">Draft Message</p>
@@ -904,7 +900,7 @@ export default function JobDrawer({ jobId, onClose, onStatusChange, onStarChange
                 )}
               >
                 <span className={s?.color}>{s?.label}</span>
-                <ChevronDown size={14} />
+                <CaretDown size={14} />
               </button>
               {showStatusMenu && (
                 <div className="absolute bottom-full left-0 right-0 mb-1 bg-bg-3 border border-border rounded-xl overflow-hidden shadow-xl z-10">
@@ -956,7 +952,7 @@ export default function JobDrawer({ jobId, onClose, onStatusChange, onStarChange
                   className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border bg-bg-2 text-sm font-medium text-white/40 hover:text-white/70 transition-all"
                   title="Open job posting"
                 >
-                  <ExternalLink size={14} />
+                  <ArrowSquareOut size={14} />
                 </a>
               )}
 
@@ -972,7 +968,7 @@ export default function JobDrawer({ jobId, onClose, onStatusChange, onStarChange
                       : 'border-accent-green/40 text-accent-green hover:bg-accent-green/10'
                   )}
                 >
-                  {applying ? <Loader2 size={13} className="animate-spin" /> : null}
+                  {applying ? <CircleNotch size={13} className="animate-spin" /> : null}
                   {applying ? 'Generating...' : 'Apply →'}
                 </button>
               )}
@@ -990,7 +986,7 @@ export default function JobDrawer({ jobId, onClose, onStatusChange, onStarChange
                       : 'border-accent-cyan/40 text-accent-cyan hover:bg-accent-cyan/10'
                   )}
                 >
-                  {emailApplying ? <Loader2 size={13} className="animate-spin" /> : <Mail size={13} />}
+                  {emailApplying ? <CircleNotch size={13} className="animate-spin" /> : <Envelope size={13} />}
                 </button>
               )}
             </div>

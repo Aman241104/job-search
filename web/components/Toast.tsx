@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, createContext, useContext, useCallback } from 'react';
 import gsap from 'gsap';
-import { X, CheckCircle2, AlertCircle, Info } from 'lucide-react';
+import { X, CheckCircle, WarningCircle, Info } from '@phosphor-icons/react';
 
 type ToastType = 'success' | 'error' | 'info';
 
@@ -68,18 +68,18 @@ function SingleToast({
   const styles = {
     success: {
       border: 'border-accent-green/30',
-      icon: <CheckCircle2 size={16} className="text-accent-green flex-shrink-0 mt-0.5" />,
-      glow: 'shadow-[0_0_20px_rgba(99,255,178,0.12)]',
+      icon: <CheckCircle size={16} className="text-accent-green flex-shrink-0 mt-0.5" />,
+      glow: 'shadow-[0_4px_16px_rgba(31,29,26,0.08)]',
     },
     error: {
-      border: 'border-red-500/30',
-      icon: <AlertCircle size={16} className="text-red-400 flex-shrink-0 mt-0.5" />,
-      glow: 'shadow-[0_0_20px_rgba(239,68,68,0.12)]',
+      border: 'border-accent-pink/30',
+      icon: <WarningCircle size={16} className="text-accent-pink flex-shrink-0 mt-0.5" />,
+      glow: 'shadow-[0_4px_16px_rgba(31,29,26,0.08)]',
     },
     info: {
       border: 'border-accent-cyan/30',
       icon: <Info size={16} className="text-accent-cyan flex-shrink-0 mt-0.5" />,
-      glow: 'shadow-[0_0_20px_rgba(103,232,249,0.12)]',
+      glow: 'shadow-[0_4px_16px_rgba(31,29,26,0.08)]',
     },
   };
 

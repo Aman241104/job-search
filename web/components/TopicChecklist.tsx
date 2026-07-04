@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Check } from 'lucide-react';
+import { Check } from '@phosphor-icons/react';
 import clsx from 'clsx';
 import { api, LearningTopic } from '@/lib/api';
 import { useToast } from './Toast';
@@ -79,7 +79,7 @@ export default function TopicChecklist({ itemId }: TopicChecklistProps) {
                   topic.covered ? 'bg-accent-green border-accent-green' : 'border-white/20'
                 )}
               >
-                {!!topic.covered && <Check size={11} className="text-bg" strokeWidth={3} />}
+                {!!topic.covered && <Check size={11} className="text-bg" weight="bold" />}
               </span>
               <span className={clsx('text-xs', topic.covered ? 'text-white/40 line-through' : 'text-white/70')}>
                 {topic.topic_name}

@@ -9,10 +9,10 @@ interface ScoreRingProps {
 }
 
 function getScoreColor(score: number): string {
-  if (score >= 80) return '#67e8f9'; // cyan
-  if (score >= 60) return '#63ffb2'; // green
-  if (score >= 40) return '#fbbf24'; // yellow
-  return '#f87171'; // red
+  if (score >= 80) return 'rgb(var(--accent-cyan))';
+  if (score >= 60) return 'rgb(var(--accent-green))';
+  if (score >= 40) return 'rgb(var(--accent-yellow))';
+  return 'rgb(var(--accent-pink))';
 }
 
 export default function ScoreRing({ score, size = 48 }: ScoreRingProps) {
@@ -50,7 +50,7 @@ export default function ScoreRing({ score, size = 48 }: ScoreRingProps) {
         cy={center}
         r={radius * scale}
         fill="none"
-        stroke="rgba(255,255,255,0.06)"
+        stroke="rgb(var(--ink) / 0.08)"
         strokeWidth={strokeWidth * scale}
       />
       {/* Progress */}
@@ -66,9 +66,6 @@ export default function ScoreRing({ score, size = 48 }: ScoreRingProps) {
         strokeDashoffset={circumference * scale}
         strokeLinecap="round"
         transform={`rotate(-90 ${center} ${center})`}
-        style={{
-          filter: `drop-shadow(0 0 4px ${color}88)`,
-        }}
       />
       {/* Center text */}
       <text

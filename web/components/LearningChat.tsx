@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
 import clsx from 'clsx';
-import { Send, Loader2 } from 'lucide-react';
+import { PaperPlaneTilt, CircleNotch, GraduationCap } from '@phosphor-icons/react';
 import { api, LearningItem, LearningMessage } from '@/lib/api';
 import { useToast } from './Toast';
 
@@ -93,7 +93,9 @@ export default function LearningChat({ item }: LearningChatProps) {
     return (
       <div className="flex-1 flex items-center justify-center text-center p-8">
         <div>
-          <div className="text-4xl mb-4">🎓</div>
+          <div className="chip-breathe w-14 h-14 rounded-2xl bg-accent-green/10 text-accent-green flex items-center justify-center mx-auto mb-4">
+            <GraduationCap size={24} />
+          </div>
           <p className="text-white/40 text-sm">Select a book or course to start learning</p>
         </div>
       </div>
@@ -113,7 +115,7 @@ export default function LearningChat({ item }: LearningChatProps) {
         {opening && messages.length === 0 && (
           <div className="flex items-center justify-center h-full text-center">
             <div>
-              <Loader2 size={20} className="animate-spin mx-auto mb-2 text-white/30" />
+              <CircleNotch size={20} className="animate-spin mx-auto mb-2 text-white/30" />
               <p className="text-white/30 text-xs">Loading topic breakdown...</p>
             </div>
           </div>
@@ -127,7 +129,7 @@ export default function LearningChat({ item }: LearningChatProps) {
             {msg.role === 'assistant' && (
               <div className="mr-2 flex-shrink-0 mt-1">
                 <div className="w-6 h-6 rounded-full bg-accent-purple/20 border border-accent-purple/30 flex items-center justify-center">
-                  <span className="text-xs">🎓</span>
+                  <GraduationCap size={12} className="text-accent-purple" />
                 </div>
               </div>
             )}
@@ -152,7 +154,7 @@ export default function LearningChat({ item }: LearningChatProps) {
           <div className="learning-msg flex justify-start">
             <div className="mr-2 flex-shrink-0 mt-1">
               <div className="w-6 h-6 rounded-full bg-accent-purple/20 border border-accent-purple/30 flex items-center justify-center">
-                <span className="text-xs">🎓</span>
+                <GraduationCap size={12} className="text-accent-purple" />
               </div>
             </div>
             <div className="bg-bg-3 border border-border rounded-2xl rounded-tl-md px-4 py-3">
@@ -185,7 +187,7 @@ export default function LearningChat({ item }: LearningChatProps) {
             disabled={opening || loading || !input.trim()}
             className="text-accent-green disabled:text-white/20 transition-colors hover:text-accent-green/80 p-1"
           >
-            {loading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+            {loading ? <CircleNotch size={16} className="animate-spin" /> : <PaperPlaneTilt size={16} />}
           </button>
         </div>
         <p className="text-[10px] text-white/20 mt-1.5 text-center">

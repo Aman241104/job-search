@@ -3,12 +3,12 @@
 import { useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
 import clsx from 'clsx';
-import { LucideIcon, TrendingUp, TrendingDown } from 'lucide-react';
+import { Icon, TrendUp, TrendDown } from '@phosphor-icons/react';
 
 interface StatCardProps {
   label: string;
   value: number;
-  icon: LucideIcon;
+  icon: Icon;
   color: 'green' | 'pink' | 'purple' | 'cyan' | 'yellow';
   trend?: number;
   suffix?: string;
@@ -19,35 +19,35 @@ const colorMap = {
   green: {
     iconBg: 'bg-accent-green/10 border-accent-green/20',
     iconColor: 'text-accent-green',
-    glow: 'shadow-[0_0_30px_rgba(99,255,178,0.06)]',
-    value: 'text-accent-green glow-green',
+    glow: 'shadow-[0_0_30px_rgb(var(--accent-green)/0.05)]',
+    value: 'text-accent-green',
     trend: 'text-accent-green',
   },
   pink: {
     iconBg: 'bg-accent-pink/10 border-accent-pink/20',
     iconColor: 'text-accent-pink',
-    glow: 'shadow-[0_0_30px_rgba(255,78,205,0.06)]',
-    value: 'text-accent-pink glow-pink',
+    glow: 'shadow-[0_0_30px_rgb(var(--accent-pink)/0.05)]',
+    value: 'text-accent-pink',
     trend: 'text-accent-pink',
   },
   purple: {
     iconBg: 'bg-accent-purple/10 border-accent-purple/20',
     iconColor: 'text-accent-purple',
-    glow: 'shadow-[0_0_30px_rgba(167,139,250,0.06)]',
+    glow: 'shadow-[0_0_30px_rgb(var(--accent-purple)/0.05)]',
     value: 'text-accent-purple',
     trend: 'text-accent-purple',
   },
   cyan: {
     iconBg: 'bg-accent-cyan/10 border-accent-cyan/20',
     iconColor: 'text-accent-cyan',
-    glow: 'shadow-[0_0_30px_rgba(103,232,249,0.06)]',
-    value: 'text-accent-cyan glow-cyan',
+    glow: 'shadow-[0_0_30px_rgb(var(--accent-cyan)/0.05)]',
+    value: 'text-accent-cyan',
     trend: 'text-accent-cyan',
   },
   yellow: {
     iconBg: 'bg-accent-yellow/10 border-accent-yellow/20',
     iconColor: 'text-accent-yellow',
-    glow: 'shadow-[0_0_30px_rgba(251,191,36,0.06)]',
+    glow: 'shadow-[0_0_30px_rgb(var(--accent-yellow)/0.05)]',
     value: 'text-accent-yellow',
     trend: 'text-accent-yellow',
   },
@@ -126,10 +126,10 @@ export default function StatCard({
           <span
             className={clsx(
               'flex items-center gap-1 text-xs font-medium',
-              trend >= 0 ? 'text-accent-green' : 'text-red-400'
+              trend >= 0 ? 'text-accent-green' : 'text-accent-pink'
             )}
           >
-            {trend >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+            {trend >= 0 ? <TrendUp size={12} /> : <TrendDown size={12} />}
             {Math.abs(trend)}
           </span>
         )}

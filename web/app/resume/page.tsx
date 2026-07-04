@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
-import { Save, Loader2, Plus, X, ExternalLink, GitBranch, User, Briefcase, Code, Trophy, Check, Trash2, AlertCircle, RefreshCw } from 'lucide-react';
+import { FloppyDisk, CircleNotch, Plus, X, ArrowSquareOut, GitBranch, User, Briefcase, Code, Trophy, Check, Trash, WarningCircle, ArrowClockwise } from '@phosphor-icons/react';
 import { ToastProvider, useToast } from '@/components/Toast';
 import { api } from '@/lib/api';
 import clsx from 'clsx';
@@ -201,14 +201,14 @@ function ResumePageInner() {
   if (error || !data) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen gap-4">
-        <AlertCircle size={32} className="text-red-400/70" />
+        <WarningCircle size={32} className="text-accent-pink/70" />
         <p className="text-white/50 text-sm">Failed to load resume data.</p>
         <button
           onClick={() => loadResume(true)}
           disabled={retrying}
           className="flex items-center gap-2 px-4 py-2 rounded-xl border border-accent-cyan/30 bg-accent-cyan/10 text-accent-cyan text-sm font-medium hover:bg-accent-cyan/20 transition-all disabled:opacity-50"
         >
-          {retrying ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+          {retrying ? <CircleNotch size={14} className="animate-spin" /> : <ArrowClockwise size={14} />}
           {retrying ? 'Retrying...' : 'Retry'}
         </button>
       </div>
@@ -260,7 +260,7 @@ function ResumePageInner() {
                   : 'bg-accent-green/10 border-accent-green/30 text-accent-green hover:bg-accent-green/20'
             )}
           >
-            {saving ? <Loader2 size={14} className="animate-spin" /> : saved ? <Check size={14} /> : <Save size={14} />}
+            {saving ? <CircleNotch size={14} className="animate-spin" /> : saved ? <Check size={14} /> : <FloppyDisk size={14} />}
             {saving ? 'Saving...' : saved ? 'Saved!' : 'Save'}
           </button>
         </div>
@@ -323,12 +323,12 @@ function ResumePageInner() {
                 placeholder="Write a compelling professional summary..."
               />
               <div className="mt-1 space-y-1">
-                <p className={clsx('text-xs', summaryNearLimit ? 'text-red-400' : 'text-white/25')}>
+                <p className={clsx('text-xs', summaryNearLimit ? 'text-accent-pink' : 'text-white/25')}>
                   {summaryLen} / 400 characters
                 </p>
                 {summaryOverLimit && (
-                  <p className="text-xs text-red-400/80 flex items-center gap-1">
-                    <AlertCircle size={10} />
+                  <p className="text-xs text-accent-pink/80 flex items-center gap-1">
+                    <WarningCircle size={10} />
                     Consider shortening — ATS systems may truncate long summaries
                   </p>
                 )}
@@ -420,10 +420,10 @@ function ResumePageInner() {
                   />
                   <button
                     onClick={() => removeProject(i)}
-                    className="ml-3 p-1.5 rounded-lg text-white/20 hover:text-red-400 hover:bg-red-400/10 transition-all flex-shrink-0"
+                    className="ml-3 p-1.5 rounded-lg text-white/20 hover:text-accent-pink hover:bg-accent-pink/10 transition-all flex-shrink-0"
                     title="Remove project"
                   >
-                    <Trash2 size={13} />
+                    <Trash size={13} />
                   </button>
                 </div>
 
@@ -445,7 +445,7 @@ function ResumePageInner() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs text-white/30 uppercase tracking-wider mb-1 block flex items-center gap-1">
-                        <ExternalLink size={10} /> Live URL
+                        <ArrowSquareOut size={10} /> Live URL
                       </label>
                       <input
                         type="text"
@@ -644,7 +644,7 @@ function BulletEditor({
           />
           <button
             onClick={() => onChange(bullets.filter((_, j) => j !== i))}
-            className="p-1.5 rounded-lg text-white/20 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all mt-0.5"
+            className="p-1.5 rounded-lg text-white/20 hover:text-accent-pink opacity-0 group-hover:opacity-100 transition-all mt-0.5"
           >
             <X size={11} />
           </button>

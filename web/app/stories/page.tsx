@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
-import { Sparkles, Loader2, Save, Trash2, Pencil, Plus, X } from 'lucide-react';
+import { Sparkle, CircleNotch, FloppyDisk, Trash, PencilSimple, Plus, X, BookmarkSimple } from '@phosphor-icons/react';
 import { ToastProvider, useToast } from '@/components/Toast';
+import EmptyState from '@/components/EmptyState';
 import { api, Story } from '@/lib/api';
 
 const EMPTY_FORM = { situation: '', task: '', action: '', result: '', reflection: '', tags: [] as string[] };
@@ -144,7 +145,7 @@ function StoriesPageInner() {
                 disabled={drafting || !notes.trim()}
                 className="flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-lg bg-accent-purple/10 border border-accent-purple/30 text-accent-purple hover:bg-accent-purple/15 transition-all disabled:opacity-50"
               >
-                {drafting ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                {drafting ? <CircleNotch size={12} className="animate-spin" /> : <Sparkle size={12} />}
                 Draft with AI
               </button>
             </div>
@@ -178,7 +179,7 @@ function StoriesPageInner() {
             disabled={saving || !form.situation.trim()}
             className="flex items-center gap-2 text-xs font-semibold px-4 py-2.5 rounded-xl bg-accent-green/10 border border-accent-green/30 text-accent-green hover:bg-accent-green/15 transition-all disabled:opacity-50"
           >
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            {saving ? <CircleNotch size={14} className="animate-spin" /> : <FloppyDisk size={14} />}
             {editingId ? 'Update Story' : 'Save Story'}
           </button>
         </div>
@@ -188,7 +189,15 @@ function StoriesPageInner() {
         {loading ? (
           [...Array(3)].map((_, i) => <div key={i} className="skeleton h-24 rounded-xl" />)
         ) : stories.length === 0 ? (
-          <p className="text-sm text-white/25 text-center py-12">No stories yet — add your first one above.</p>
+          <EmptyState
+            icon={BookmarkSimple}
+            title="No stories yet"
+            description="Add your first STAR+Reflection story — a reusable asset you can adapt to any behavioral question."
+            action={{
+              label: 'Add Story',
+              onClick: () => { setForm(EMPTY_FORM); setEditingId(null); setShowForm(true); },
+            }}
+          />
         ) : (
           stories.map((story) => (
             <div key={story.id} className="story-card bg-bg-2 border border-border rounded-xl p-4">
@@ -208,10 +217,10 @@ function StoriesPageInner() {
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
                   <button onClick={() => handleEdit(story)} className="p-1.5 rounded-lg text-white/30 hover:text-white/70 hover:bg-white/5">
-                    <Pencil size={13} />
+                    <PencilSimple size={13} />
                   </button>
-                  <button onClick={() => handleDelete(story.id)} className="p-1.5 rounded-lg text-white/30 hover:text-red-400 hover:bg-red-400/10">
-                    <Trash2 size={13} />
+                  <button onClick={() => handleDelete(story.id)} className="p-1.5 rounded-lg text-white/30 hover:text-accent-pink hover:bg-accent-pink/10">
+                    <Trash size={13} />
                   </button>
                 </div>
               </div>

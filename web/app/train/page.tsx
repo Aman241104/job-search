@@ -2,22 +2,41 @@
 
 import { useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
-import { Target } from 'lucide-react';
+import { Target, PuzzlePiece, CubeTransparent, Handshake, Atom, HardDrives, Terminal, Database, Users, Palette, CurrencyInr, BookOpen, Icon } from '@phosphor-icons/react';
 import TrainChat from '@/components/TrainChat';
 import { ToastProvider } from '@/components/Toast';
 import { api, TrainTopic, TrainProgress } from '@/lib/api';
 import clsx from 'clsx';
 
 const FALLBACK_TOPICS: TrainTopic[] = [
-  { key: 'dsa', name: 'Data Structures & Algorithms', description: 'Arrays, trees, graphs, dynamic programming', icon: '🧩' },
-  { key: 'system_design', name: 'System Design', description: 'Scalable architecture, databases, caching', icon: '🏗️' },
-  { key: 'behavioral', name: 'Behavioral (STAR)', description: 'Situational questions using STAR method', icon: '🤝' },
-  { key: 'frontend', name: 'Frontend Dev', description: 'React, TypeScript, CSS, performance', icon: '⚛️' },
-  { key: 'backend', name: 'Backend Dev', description: 'APIs, databases, microservices, Node/Python', icon: '⚙️' },
-  { key: 'python', name: 'Python', description: 'Language features, OOP, frameworks, best practices', icon: '🐍' },
-  { key: 'sql', name: 'SQL & Databases', description: 'Queries, indexing, transactions, optimization', icon: '🗄️' },
-  { key: 'hr', name: 'HR & Culture Fit', description: 'Salary negotiation, career goals, teamwork', icon: '💼' },
+  { key: 'dsa', name: 'Data Structures & Algorithms', description: 'Arrays, trees, graphs, dynamic programming', icon: '' },
+  { key: 'system_design', name: 'System Design', description: 'Scalable architecture, databases, caching', icon: '' },
+  { key: 'behavioral', name: 'Behavioral (STAR)', description: 'Situational questions using STAR method', icon: '' },
+  { key: 'frontend', name: 'Frontend Dev', description: 'React, TypeScript, CSS, performance', icon: '' },
+  { key: 'backend', name: 'Backend Dev', description: 'APIs, databases, microservices, Node/Python', icon: '' },
+  { key: 'python', name: 'Python', description: 'Language features, OOP, frameworks, best practices', icon: '' },
+  { key: 'sql', name: 'SQL & Databases', description: 'Queries, indexing, transactions, optimization', icon: '' },
+  { key: 'hr', name: 'HR & Culture Fit', description: 'Salary negotiation, career goals, teamwork', icon: '' },
 ];
+
+// Topics come from the backend and its `icon` field is a raw emoji string —
+// mapped here to lucide icons instead, keyword-matched against the topic's
+// name (its `key` is just a numeric ID, not a semantic slug) so emoji never
+// render in the UI.
+function topicIcon(name: string): Icon {
+  const k = name.toLowerCase();
+  if (k.includes('dsa') || k.includes('algo')) return PuzzlePiece;
+  if (k.includes('system')) return CubeTransparent;
+  if (k.includes('behav') || k.includes('hr') || k.includes('culture')) return Handshake;
+  if (k.includes('frontend') || k.includes('react')) return Atom;
+  if (k.includes('backend') || k.includes('node') || k.includes('server')) return HardDrives;
+  if (k.includes('python')) return Terminal;
+  if (k.includes('sql') || k.includes('database')) return Database;
+  if (k.includes('salary') || k.includes('negotiat')) return CurrencyInr;
+  if (k.includes('portfolio') || k.includes('design')) return Palette;
+  if (k.includes('team') || k.includes('people')) return Users;
+  return BookOpen;
+}
 
 export default function TrainPage() {
   const [topics, setTopics] = useState<TrainTopic[]>([]);
@@ -134,7 +153,19 @@ export default function TrainPage() {
                             : 'bg-bg-2 border-border text-white/60 hover:border-white/10 hover:text-white/80'
                         )}
                       >
-                        <span className="text-xl flex-shrink-0">{topic.icon}</span>
+                        {(() => {
+                          const Icon = topicIcon(topic.name);
+                          return (
+                            <span
+                              className={clsx(
+                                'w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0',
+                                isActive ? 'bg-accent-green/15 text-accent-green' : 'bg-white/5 text-white/40'
+                              )}
+                            >
+                              <Icon size={15} />
+                            </span>
+                          );
+                        })()}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span

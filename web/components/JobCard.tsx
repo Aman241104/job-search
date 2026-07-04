@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import gsap from 'gsap';
 import clsx from 'clsx';
-import { MapPin, DollarSign, ExternalLink, ChevronDown, Loader2, Star, FileText, Mail, StickyNote, Check, X } from 'lucide-react';
+import { MapPin, CurrencyDollar, ArrowSquareOut, CaretDown, CircleNotch, Star, FileText, Envelope, NotePencil, Check, X } from '@phosphor-icons/react';
 import ScoreRing from './ScoreRing';
 import { api, Job } from '@/lib/api';
 import { useToast } from './Toast';
@@ -20,23 +20,23 @@ const statusConfig: Record<
   { label: string; bg: string; text: string; border: string }
 > = {
   found: { label: 'Found', bg: 'bg-white/5', text: 'text-white/50', border: 'border-white/10' },
-  applied: { label: 'Applied', bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/20' },
+  applied: { label: 'Applied', bg: 'bg-accent-cyan/10', text: 'text-accent-cyan', border: 'border-accent-cyan/20' },
   interviewing: { label: 'Interviewing', bg: 'bg-accent-yellow/10', text: 'text-accent-yellow', border: 'border-accent-yellow/20' },
-  offer: { label: 'Offer 🎉', bg: 'bg-accent-green/10', text: 'text-accent-green', border: 'border-accent-green/20' },
-  rejected: { label: 'Rejected', bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/20' },
+  offer: { label: 'Offer', bg: 'bg-accent-green/10', text: 'text-accent-green', border: 'border-accent-green/20' },
+  rejected: { label: 'Rejected', bg: 'bg-accent-pink/10', text: 'text-accent-pink', border: 'border-accent-pink/20' },
   ghosted: { label: 'Ghosted', bg: 'bg-white/5', text: 'text-white/30', border: 'border-white/10' },
 };
 
 const sourceColors: Record<string, string> = {
-  Internshala: 'text-orange-400 bg-orange-400/10 border-orange-400/20',
-  LinkedIn: 'text-sky-400 bg-sky-400/10 border-sky-400/20',
-  Jobicy: 'text-purple-400 bg-purple-400/10 border-purple-400/20',
-  WeWorkRemotely: 'text-green-400 bg-green-400/10 border-green-400/20',
-  Arbeitnow: 'text-cyan-400 bg-cyan-400/10 border-cyan-400/20',
-  Remotive: 'text-violet-400 bg-violet-400/10 border-violet-400/20',
-  RemoteOK: 'text-rose-400 bg-rose-400/10 border-rose-400/20',
-  TheMuse: 'text-pink-400 bg-pink-400/10 border-pink-400/20',
-  'Remote.co': 'text-teal-400 bg-teal-400/10 border-teal-400/20',
+  Internshala: 'text-orange-700 bg-orange-700/10 border-orange-700/20',
+  LinkedIn: 'text-sky-700 bg-sky-700/10 border-sky-700/20',
+  Jobicy: 'text-purple-700 bg-purple-700/10 border-purple-700/20',
+  WeWorkRemotely: 'text-emerald-700 bg-emerald-700/10 border-emerald-700/20',
+  Arbeitnow: 'text-cyan-700 bg-cyan-700/10 border-cyan-700/20',
+  Remotive: 'text-violet-700 bg-violet-700/10 border-violet-700/20',
+  RemoteOK: 'text-rose-700 bg-rose-700/10 border-rose-700/20',
+  TheMuse: 'text-pink-700 bg-pink-700/10 border-pink-700/20',
+  'Remote.co': 'text-teal-700 bg-teal-700/10 border-teal-700/20',
 };
 
 const allStatuses: Job['status'][] = ['found', 'applied', 'interviewing', 'offer', 'rejected', 'ghosted'];
@@ -172,7 +172,7 @@ export default function JobCard({ job, onStatusChange, onStarChange, onView }: J
             )}
             {job.salary && (
               <span className="flex items-center gap-1 text-[11px] text-white/35">
-                <DollarSign size={10} />
+                <CurrencyDollar size={10} />
                 {job.salary}
               </span>
             )}
@@ -204,7 +204,7 @@ export default function JobCard({ job, onStatusChange, onStarChange, onView }: J
                 disabled={savingNotes}
                 className="flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-lg bg-accent-green/10 border border-accent-green/20 text-accent-green hover:bg-accent-green/15 transition-all disabled:opacity-50"
               >
-                {savingNotes ? <Loader2 size={9} className="animate-spin" /> : <Check size={9} />}
+                {savingNotes ? <CircleNotch size={9} className="animate-spin" /> : <Check size={9} />}
                 Save
               </button>
               <button
@@ -231,7 +231,7 @@ export default function JobCard({ job, onStatusChange, onStarChange, onView }: J
             )}
           >
             {s.label}
-            <ChevronDown size={10} />
+            <CaretDown size={10} />
           </button>
 
           {showStatusMenu && (
@@ -269,7 +269,7 @@ export default function JobCard({ job, onStatusChange, onStarChange, onView }: J
             )}
             title="Add notes"
           >
-            <StickyNote size={12} />
+            <NotePencil size={12} />
           </button>
 
           {/* CV download */}
@@ -290,7 +290,7 @@ export default function JobCard({ job, onStatusChange, onStarChange, onView }: J
               className="p-1.5 rounded-lg text-white/25 hover:text-accent-yellow hover:bg-accent-yellow/10 transition-all duration-150"
               title="Download Cover Letter"
             >
-              <Mail size={12} />
+              <Envelope size={12} />
             </button>
           )}
 
@@ -302,7 +302,7 @@ export default function JobCard({ job, onStatusChange, onStarChange, onView }: J
               rel="noopener noreferrer"
               className="p-1.5 rounded-lg text-white/25 hover:text-white/60 hover:bg-white/5 transition-all duration-150"
             >
-              <ExternalLink size={12} />
+              <ArrowSquareOut size={12} />
             </a>
           )}
 
@@ -319,7 +319,7 @@ export default function JobCard({ job, onStatusChange, onStarChange, onView }: J
             >
               {applying ? (
                 <>
-                  <Loader2 size={10} className="animate-spin" />
+                  <CircleNotch size={10} className="animate-spin" />
                   Generating...
                 </>
               ) : (

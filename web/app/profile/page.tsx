@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, KeyboardEvent } from 'react';
 import gsap from 'gsap';
-import { ExternalLink, X, Check, Loader2 } from 'lucide-react';
+import { ArrowSquareOut, X, Check, CircleNotch } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import clsx from 'clsx';
 
@@ -257,7 +257,7 @@ export default function ProfilePage() {
               className="inline-flex items-center gap-1.5 text-xs font-mono text-accent-yellow"
               title="Unsaved changes"
             >
-              <span className="w-2 h-2 rounded-full bg-accent-yellow shadow-[0_0_6px_rgba(251,191,36,0.7)] inline-block" />
+              <span className="w-2 h-2 rounded-full bg-accent-yellow inline-block" />
               Unsaved
             </span>
           )}
@@ -278,7 +278,7 @@ export default function ProfilePage() {
           )}
         >
           {saveState === 'saving' ? (
-            <Loader2 size={14} className="animate-spin" />
+            <CircleNotch size={14} className="animate-spin" />
           ) : saveState === 'saved' ? (
             <Check size={14} />
           ) : null}
@@ -341,14 +341,14 @@ export default function ProfilePage() {
             value={profile.github}
             onChange={(v) => set('github', v)}
             placeholder="github.com/yourhandle"
-            suffix={<ExternalLink size={14} />}
+            suffix={<ArrowSquareOut size={14} />}
           />
           <Field
             label="Portfolio"
             value={profile.portfolio}
             onChange={(v) => set('portfolio', v)}
             placeholder="yoursite.vercel.app"
-            suffix={<ExternalLink size={14} />}
+            suffix={<ArrowSquareOut size={14} />}
           />
         </Section>
 

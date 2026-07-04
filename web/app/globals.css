@@ -2,24 +2,48 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Every variable below is a raw "R G B" triplet (no commas, no rgb() wrapper)
+   so Tailwind's rgb(var(--x) / <alpha-value>) pattern in tailwind.config.ts
+   can apply opacity modifiers (bg-white/20, text-accent-green/10, etc.) on
+   top of it. Swapping :root -> .dark re-themes the whole app; no component
+   file needs to change since none of them reference a hex value directly. */
 :root {
-  --bg: #050508;
-  --bg-1: #0a0a0f;
-  --bg-2: #0e0e16;
-  --bg-3: #131320;
-  --accent-green: #63ffb2;
-  --accent-pink: #ff4ecd;
-  --accent-purple: #a78bfa;
-  --accent-cyan: #67e8f9;
-  --accent-yellow: #fbbf24;
-  --border: rgba(255, 255, 255, 0.06);
-  --border-glow: rgba(99, 255, 178, 0.15);
+  --bg: 251 250 247;
+  --bg-1: 255 255 255;
+  --bg-2: 243 241 236;
+  --bg-3: 237 234 226;
+  --ink: 31 29 26;
+  --ink-muted: 107 102 89;
+  --accent-green: 63 115 85;
+  --accent-cyan: 47 102 144;
+  --accent-purple: 122 95 166;
+  --accent-yellow: 150 105 10;
+  --accent-pink: 161 59 76;
+  --border: 232 228 218;
+}
+
+.dark {
+  --bg: 26 24 21;
+  --bg-1: 35 32 25;
+  --bg-2: 42 38 32;
+  --bg-3: 50 45 37;
+  --ink: 242 238 228;
+  --ink-muted: 166 158 141;
+  /* Brighter than the light-mode accents on purpose — the light values were
+     tuned as mid-dark tones for contrast against a white card; the same
+     values would read as muddy/low-contrast against a dark card. */
+  --accent-green: 111 174 139;
+  --accent-cyan: 111 168 208;
+  --accent-purple: 169 146 208;
+  --accent-yellow: 217 160 63;
+  --accent-pink: 217 112 134;
+  --border: 58 52 42;
 }
 
 html,
 body {
-  background-color: #050508;
-  color: rgba(255, 255, 255, 0.85);
+  background-color: rgb(var(--bg));
+  color: rgb(var(--ink));
   font-family: 'Outfit', sans-serif;
   min-height: 100vh;
   overflow-x: hidden;
@@ -38,73 +62,58 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(99, 255, 178, 0.2);
+  background: rgb(var(--accent-green) / 0.2);
   border-radius: 2px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(99, 255, 178, 0.4);
+  background: rgb(var(--accent-green) / 0.4);
 }
 
-/* Animated dot grid background */
+/* Subtle static warmth behind the page — a soft, slow-breathing radial glow
+   instead of the old animated neon dot grid. Very low opacity by design:
+   presence, not decoration. */
 .dot-grid {
-  background-image: radial-gradient(circle, rgba(99, 255, 178, 0.12) 1px, transparent 1px);
-  background-size: 24px 24px;
-  animation: drift 20s linear infinite;
+  background-image: radial-gradient(circle at 20% 15%, rgb(var(--accent-green) / 0.05) 0%, transparent 45%),
+    radial-gradient(circle at 85% 80%, rgb(var(--accent-yellow) / 0.04) 0%, transparent 45%);
+  animation: breathe 12s ease-in-out infinite;
 }
 
-@keyframes drift {
-  0% {
-    background-position: 0 0;
+@keyframes breathe {
+  0%, 100% {
+    opacity: 0.7;
   }
-  100% {
-    background-position: 24px 24px;
+  50% {
+    opacity: 1;
   }
 }
 
-/* Neon glow text */
-.glow-green {
-  text-shadow: 0 0 20px rgba(99, 255, 178, 0.6);
-}
-
-.glow-pink {
-  text-shadow: 0 0 20px rgba(255, 78, 205, 0.6);
-}
-
-.glow-cyan {
-  text-shadow: 0 0 20px rgba(103, 232, 249, 0.6);
-}
-
-.glow-purple {
-  text-shadow: 0 0 20px rgba(167, 139, 250, 0.6);
-}
-
-/* Card hover glow border */
+/* Card hover — subtle lift, not a glow */
 .card-hover {
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .card-hover:hover {
-  border-color: rgba(99, 255, 178, 0.3);
-  box-shadow: 0 0 20px rgba(99, 255, 178, 0.08), inset 0 0 20px rgba(99, 255, 178, 0.02);
+  border-color: rgb(var(--accent-green) / 0.25);
+  box-shadow: 0 4px 16px rgb(var(--ink) / 0.05);
 }
 
 /* Glass card base */
 .glass {
-  background: rgba(14, 14, 22, 0.8);
+  background: rgb(var(--bg-1) / 0.75);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
 
-/* Gradient text */
+/* Gradient text — subtle two-tone, not neon */
 .gradient-text-green {
-  background: linear-gradient(135deg, #63ffb2, #67e8f9);
+  background: linear-gradient(135deg, rgb(var(--accent-green)), rgb(var(--accent-cyan)));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
 .gradient-text-pink {
-  background: linear-gradient(135deg, #ff4ecd, #a78bfa);
+  background: linear-gradient(135deg, rgb(var(--accent-pink)), rgb(var(--accent-purple)));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -114,9 +123,9 @@ body {
 .skeleton {
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.04) 25%,
-    rgba(255, 255, 255, 0.08) 50%,
-    rgba(255, 255, 255, 0.04) 75%
+    rgb(var(--ink) / 0.04) 25%,
+    rgb(var(--ink) / 0.08) 50%,
+    rgb(var(--ink) / 0.04) 75%
   );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
@@ -147,18 +156,18 @@ body {
 
 /* Chat message markdown */
 .ai-message code {
-  background: rgba(99, 255, 178, 0.1);
-  border: 1px solid rgba(99, 255, 178, 0.2);
+  background: rgb(var(--accent-green) / 0.08);
+  border: 1px solid rgb(var(--accent-green) / 0.18);
   border-radius: 4px;
   padding: 1px 6px;
   font-family: 'Fragment Mono', monospace;
   font-size: 0.85em;
-  color: #63ffb2;
+  color: rgb(var(--accent-green));
 }
 
 .ai-message pre {
-  background: rgba(5, 5, 8, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgb(var(--ink) / 0.03);
+  border: 1px solid rgb(var(--ink) / 0.08);
   border-radius: 8px;
   padding: 12px;
   margin: 8px 0;
@@ -172,7 +181,7 @@ body {
 }
 
 .ai-message strong {
-  color: #63ffb2;
+  color: rgb(var(--accent-green));
   font-weight: 600;
 }
 
@@ -194,8 +203,8 @@ input:focus,
 textarea:focus,
 select:focus {
   outline: none;
-  border-color: rgba(99, 255, 178, 0.4) !important;
-  box-shadow: 0 0 0 2px rgba(99, 255, 178, 0.08);
+  border-color: rgb(var(--accent-green) / 0.4) !important;
+  box-shadow: 0 0 0 2px rgb(var(--accent-green) / 0.1);
 }
 
 /* Button base */
@@ -204,7 +213,7 @@ select:focus {
 }
 
 .btn-ghost:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgb(var(--ink) / 0.04);
 }
 
 /* Noise texture overlay */
@@ -212,7 +221,37 @@ select:focus {
   content: '';
   position: absolute;
   inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
   pointer-events: none;
   border-radius: inherit;
+}
+
+/* Cozy staggered entrance for lists/grids — apply with style={{ animationDelay: `${i * 50}ms` }} */
+@keyframes stagger-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.stagger-in {
+  animation: stagger-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Idle breathing icon chip, for empty states */
+@keyframes chip-breathe {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+.chip-breathe {
+  animation: chip-breathe 3.5s ease-in-out infinite;
 }

@@ -2,10 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
-import {
-  TrendingUp, Target, Zap, Building2, AlertCircle, CheckCircle, Info,
-  Calendar, Award, Star,
-} from 'lucide-react';
+import { TrendUp, Target, Lightning, Buildings, WarningCircle, CheckCircle, Info, Calendar, Medal, Star } from '@phosphor-icons/react';
 import clsx from 'clsx';
 import { api } from '@/lib/api';
 
@@ -73,16 +70,16 @@ const COLOR_MAP: Record<string, string> = {
   green: 'bg-accent-green',
   cyan: 'bg-accent-cyan',
   yellow: 'bg-accent-yellow',
-  orange: 'bg-orange-400',
-  red: 'bg-red-400',
+  orange: 'bg-orange-700',
+  red: 'bg-accent-pink',
 };
 
 const TEXT_COLOR_MAP: Record<string, string> = {
   green: 'text-accent-green',
   cyan: 'text-accent-cyan',
   yellow: 'text-accent-yellow',
-  orange: 'text-orange-400',
-  red: 'text-red-400',
+  orange: 'text-orange-700',
+  red: 'text-accent-pink',
 };
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -157,17 +154,17 @@ function HBar({
 function ConversionHealth({ rate }: { rate: number }) {
   const healthy = rate > 20;
   const ok = rate >= 5;
-  const dot = healthy ? '🟢' : ok ? '🟡' : '🔴';
+  const dotColor = healthy ? 'bg-accent-green' : ok ? 'bg-accent-yellow' : 'bg-accent-pink';
   const label = healthy ? 'Healthy' : ok ? 'Needs work' : 'Critical';
   const cls = healthy
     ? 'bg-accent-green/10 border-accent-green/20 text-accent-green'
     : ok
     ? 'bg-accent-yellow/10 border-accent-yellow/20 text-accent-yellow'
-    : 'bg-red-500/10 border-red-500/20 text-red-400';
+    : 'bg-accent-pink/10 border-accent-pink/20 text-accent-pink';
 
   return (
     <div className={clsx('inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium', cls)}>
-      <span>{dot}</span>
+      <span className={clsx('w-2 h-2 rounded-full flex-shrink-0', dotColor)} />
       <span>Conversion health: {label}</span>
     </div>
   );
@@ -178,7 +175,7 @@ function ConversionHealth({ rate }: { rate: number }) {
 function qualityColor(pct: number) {
   if (pct >= 50) return 'text-accent-green bg-accent-green/10';
   if (pct >= 30) return 'text-accent-yellow bg-accent-yellow/10';
-  return 'text-red-400 bg-red-400/10';
+  return 'text-accent-pink bg-accent-pink/10';
 }
 
 function SourceROITable({ rows }: { rows: SourceRow[] }) {
@@ -254,7 +251,7 @@ export default function AnalyticsPage() {
   // Fetch all data in parallel
   useEffect(() => {
     Promise.all([
-      fetch('http://localhost:8000/api/analytics').then((r) => r.json()) as Promise<Analytics>,
+      api.analytics() as unknown as Promise<Analytics>,
       api.salaryStats().catch(() => null),
       api.statsTimeline().catch(() => ({ timeline: [] })),
     ])
@@ -330,7 +327,7 @@ export default function AnalyticsPage() {
     : 1;
 
   const tipIcon = (type: Tip['type']) => {
-    if (type === 'warning') return <AlertCircle size={14} className="text-accent-yellow flex-shrink-0" />;
+    if (type === 'warning') return <WarningCircle size={14} className="text-accent-yellow flex-shrink-0" />;
     if (type === 'success') return <CheckCircle size={14} className="text-accent-green flex-shrink-0" />;
     return <Info size={14} className="text-accent-cyan flex-shrink-0" />;
   };
@@ -346,7 +343,7 @@ export default function AnalyticsPage() {
       </div>
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-5 py-4 text-sm text-red-400 mb-6">
+        <div className="bg-accent-pink/10 border border-accent-pink/20 rounded-xl px-5 py-4 text-sm text-accent-pink mb-6">
           {error}
         </div>
       )}
@@ -375,7 +372,7 @@ export default function AnalyticsPage() {
               {
                 label: 'Applied this week',
                 value: timeline.length > 0 ? weekApplied : '—',
-                icon: Zap,
+                icon: Lightning,
                 color: 'text-accent-cyan',
                 bg: 'bg-accent-cyan/10 border-accent-cyan/20',
               },
@@ -417,10 +414,10 @@ export default function AnalyticsPage() {
           {/* ── KPI row ── */}
           <div className="anim-card grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { label: 'Total Jobs', value: data.total_jobs, icon: TrendingUp, color: 'text-accent-green' },
+              { label: 'Total Jobs', value: data.total_jobs, icon: TrendUp, color: 'text-accent-green' },
               { label: 'Avg Score', value: `${data.avg_score}/100`, icon: Target, color: 'text-accent-cyan' },
-              { label: 'Apply Rate', value: `${data.funnel.apply_rate}%`, icon: Zap, color: 'text-accent-yellow' },
-              { label: 'Top Companies', value: data.top_companies.length, icon: Building2, color: 'text-accent-purple' },
+              { label: 'Apply Rate', value: `${data.funnel.apply_rate}%`, icon: Lightning, color: 'text-accent-yellow' },
+              { label: 'Top Companies', value: data.top_companies.length, icon: Buildings, color: 'text-accent-purple' },
             ].map(({ label, value, icon: Icon, color }) => (
               <div key={label} className="bg-bg-2 border border-border rounded-2xl px-5 py-4 flex items-center gap-4">
                 <Icon size={20} className={color} />
@@ -433,7 +430,7 @@ export default function AnalyticsPage() {
           </div>
 
           {/* ── Main grid ── */}
-          <div className="grid md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
             {/* ── Feature 3: Improved Funnel ── */}
             <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
@@ -458,7 +455,7 @@ export default function AnalyticsPage() {
                   </div>
                 </div>
 
-                <FunnelBar label="Applied" value={data.funnel.applied} max={data.funnel.found} color="bg-blue-500/60" rate={data.funnel.apply_rate} />
+                <FunnelBar label="Applied" value={data.funnel.applied} max={data.funnel.found} color="bg-accent-cyan/60" rate={data.funnel.apply_rate} />
 
                 <div className="flex items-center gap-4 pl-24">
                   <div className="flex-1 flex items-center gap-2 text-[10px] text-white/30">
@@ -489,7 +486,7 @@ export default function AnalyticsPage() {
 
               <div className="mt-5 pt-4 border-t border-border grid grid-cols-3 gap-3 text-center">
                 <div>
-                  <div className="text-lg font-mono font-bold text-blue-400">{data.funnel.apply_rate}%</div>
+                  <div className="text-lg font-mono font-bold text-accent-cyan">{data.funnel.apply_rate}%</div>
                   <div className="text-[10px] text-white/30">Apply rate</div>
                 </div>
                 <div>
@@ -507,7 +504,12 @@ export default function AnalyticsPage() {
             <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
               <h2 className="font-semibold text-white/90 mb-1">Score Distribution</h2>
               <p className="text-xs text-white/30 mb-5">How well jobs match your profile</p>
-              <div className="flex items-end gap-2 h-32">
+              {/* No items-end here: each ScoreBar column needs to stretch
+                  (the default) to actually receive this container's h-32,
+                  otherwise the inner flex-1 bar has no height to grow into
+                  and silently renders at 0px regardless of its computed
+                  percentage. */}
+              <div className="flex gap-2 h-32">
                 {data.score_distribution.map((bucket) => (
                   <ScoreBar key={bucket.range} bucket={bucket} maxCount={maxScore} />
                 ))}
@@ -524,7 +526,7 @@ export default function AnalyticsPage() {
                   ? 'bg-accent-green/5 border-accent-green/20 text-accent-green/80'
                   : pct60Plus >= 20
                   ? 'bg-accent-yellow/5 border-accent-yellow/20 text-accent-yellow/80'
-                  : 'bg-red-500/5 border-red-500/20 text-red-400/80'
+                  : 'bg-accent-pink/5 border-accent-pink/20 text-accent-pink/80'
               )}>
                 <span className="font-semibold">{pct60Plus}% of your jobs score above 60</span>
                 {' — '}
@@ -593,7 +595,7 @@ export default function AnalyticsPage() {
           {data.source_breakdown.length > 0 && (
             <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
               <div className="flex items-center gap-3 mb-1">
-                <Award size={16} className="text-accent-yellow" />
+                <Medal size={16} className="text-accent-yellow" />
                 <h2 className="font-semibold text-white/90">Source Performance</h2>
               </div>
               <p className="text-xs text-white/30 mb-5">

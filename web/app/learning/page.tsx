@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
-import { BookOpen, GraduationCap, Sparkles, Check, CircleDot, Circle, Plus, Upload, FileText, Loader2 } from 'lucide-react';
+import { BookOpen, GraduationCap, Sparkle, Check, RadioButton, Circle, Plus, UploadSimple, FileText, CircleNotch } from '@phosphor-icons/react';
 import LearningChat from '@/components/LearningChat';
 import TopicChecklist from '@/components/TopicChecklist';
 import BookReader from '@/components/BookReader';
@@ -15,13 +15,13 @@ type Tab = 'skills' | 'books';
 
 function StatusIcon({ status }: { status: LearningItem['status'] }) {
   if (status === 'done') return <Check size={14} className="text-accent-green" />;
-  if (status === 'in_progress') return <CircleDot size={14} className="text-accent-yellow" />;
+  if (status === 'in_progress') return <RadioButton size={14} className="text-accent-yellow" />;
   return <Circle size={14} className="text-white/20" />;
 }
 
 function ItemIcon({ type }: { type: LearningItem['item_type'] }) {
   if (type === 'course') return <GraduationCap size={18} className="flex-shrink-0 mt-0.5" />;
-  if (type === 'skill') return <Sparkles size={18} className="flex-shrink-0 mt-0.5" />;
+  if (type === 'skill') return <Sparkle size={18} className="flex-shrink-0 mt-0.5" />;
   return <BookOpen size={18} className="flex-shrink-0 mt-0.5" />;
 }
 
@@ -240,7 +240,7 @@ function LearningPageInner() {
                 disabled={addingSkill || !newSkill.trim()}
                 className="p-2 rounded-lg bg-accent-green/10 border border-accent-green/30 text-accent-green disabled:opacity-40"
               >
-                {addingSkill ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                {addingSkill ? <CircleNotch size={14} className="animate-spin" /> : <Plus size={14} />}
               </button>
             </div>
 
@@ -279,7 +279,7 @@ function LearningPageInner() {
               disabled={uploading}
               className="w-full mb-5 flex items-center justify-center gap-2 text-xs font-semibold px-4 py-3 rounded-xl border border-dashed border-accent-green/30 text-accent-green hover:bg-accent-green/5 transition-all disabled:opacity-50"
             >
-              {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+              {uploading ? <CircleNotch size={14} className="animate-spin" /> : <UploadSimple size={14} />}
               {uploading ? 'Uploading & extracting...' : 'Upload a PDF'}
             </button>
 

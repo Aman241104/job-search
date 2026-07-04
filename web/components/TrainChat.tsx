@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
 import clsx from 'clsx';
-import { Send, Loader2, Star } from 'lucide-react';
+import { PaperPlaneTilt, CircleNotch, Star, Target, Robot } from '@phosphor-icons/react';
 import { api, TrainMessage, TrainTopic } from '@/lib/api';
 import { useToast } from './Toast';
 
@@ -23,7 +23,7 @@ function ScoreBadge({ score }: { score: number }) {
   const color =
     score >= 8 ? 'text-accent-green bg-accent-green/10 border-accent-green/20' :
     score >= 6 ? 'text-accent-yellow bg-accent-yellow/10 border-accent-yellow/20' :
-    'text-red-400 bg-red-400/10 border-red-400/20';
+    'text-accent-pink bg-accent-pink/10 border-accent-pink/20';
 
   return (
     <span className={clsx('inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded-md border ml-2', color)}>
@@ -140,7 +140,9 @@ export default function TrainChat({ topic }: TrainChatProps) {
     return (
       <div className="flex-1 flex items-center justify-center text-center p-8">
         <div>
-          <div className="text-4xl mb-4">🎯</div>
+          <div className="chip-breathe w-14 h-14 rounded-2xl bg-accent-green/10 text-accent-green flex items-center justify-center mx-auto mb-4">
+            <Target size={24} />
+          </div>
           <p className="text-white/40 text-sm">Select a topic to start training</p>
         </div>
       </div>
@@ -176,7 +178,7 @@ export default function TrainChat({ topic }: TrainChatProps) {
           >
             {starting ? (
               <>
-                <Loader2 size={12} className="animate-spin" />
+                <CircleNotch size={12} className="animate-spin" />
                 Starting...
               </>
             ) : sessionId ? (
@@ -211,7 +213,7 @@ export default function TrainChat({ topic }: TrainChatProps) {
             {msg.role === 'assistant' && (
               <div className="mr-2 flex-shrink-0 mt-1">
                 <div className="w-6 h-6 rounded-full bg-accent-purple/20 border border-accent-purple/30 flex items-center justify-center">
-                  <span className="text-xs">🤖</span>
+                  <Robot size={12} className="text-accent-purple" />
                 </div>
               </div>
             )}
@@ -247,7 +249,7 @@ export default function TrainChat({ topic }: TrainChatProps) {
           <div className="chat-msg flex justify-start">
             <div className="mr-2 flex-shrink-0 mt-1">
               <div className="w-6 h-6 rounded-full bg-accent-purple/20 border border-accent-purple/30 flex items-center justify-center">
-                <span className="text-xs">🤖</span>
+                <Robot size={12} className="text-accent-purple" />
               </div>
             </div>
             <div className="bg-bg-3 border border-border rounded-2xl rounded-tl-md px-4 py-3">
@@ -288,9 +290,9 @@ export default function TrainChat({ topic }: TrainChatProps) {
             className="text-accent-green disabled:text-white/20 transition-colors hover:text-accent-green/80 p-1"
           >
             {loading ? (
-              <Loader2 size={16} className="animate-spin" />
+              <CircleNotch size={16} className="animate-spin" />
             ) : (
-              <Send size={16} />
+              <PaperPlaneTilt size={16} />
             )}
           </button>
         </div>

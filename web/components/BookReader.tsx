@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Sparkles, Send, Loader2, Download } from 'lucide-react';
+import { CaretLeft, CaretRight, Sparkle, PaperPlaneTilt, CircleNotch, DownloadSimple, FileText } from '@phosphor-icons/react';
 import { api, LearningBook, BookPage } from '@/lib/api';
 import { useToast } from './Toast';
 
@@ -81,7 +81,9 @@ export default function BookReader({ book }: BookReaderProps) {
     return (
       <div className="flex-1 flex items-center justify-center text-center p-8">
         <div>
-          <div className="text-4xl mb-4">📄</div>
+          <div className="chip-breathe w-14 h-14 rounded-2xl bg-accent-green/10 text-accent-green flex items-center justify-center mx-auto mb-4">
+            <FileText size={24} />
+          </div>
           <p className="text-white/40 text-sm">Select a book, or upload a PDF to get started</p>
         </div>
       </div>
@@ -106,7 +108,7 @@ export default function BookReader({ book }: BookReaderProps) {
               title="Download original PDF"
               className="p-1.5 rounded-lg border border-border text-white/50 hover:text-white/80"
             >
-              <Download size={14} />
+              <DownloadSimple size={14} />
             </a>
           )}
           <button
@@ -114,14 +116,14 @@ export default function BookReader({ book }: BookReaderProps) {
             disabled={pageNum <= 1}
             className="p-1.5 rounded-lg border border-border text-white/50 hover:text-white/80 disabled:opacity-30"
           >
-            <ChevronLeft size={14} />
+            <CaretLeft size={14} />
           </button>
           <button
             onClick={() => setPageNum((p) => Math.min(book.page_count, p + 1))}
             disabled={pageNum >= book.page_count}
             className="p-1.5 rounded-lg border border-border text-white/50 hover:text-white/80 disabled:opacity-30"
           >
-            <ChevronRight size={14} />
+            <CaretRight size={14} />
           </button>
         </div>
       </div>
@@ -143,7 +145,7 @@ export default function BookReader({ book }: BookReaderProps) {
                 disabled={summarizing}
                 className="flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-lg bg-accent-purple/10 border border-accent-purple/30 text-accent-purple hover:bg-accent-purple/15 transition-all disabled:opacity-50"
               >
-                {summarizing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                {summarizing ? <CircleNotch size={12} className="animate-spin" /> : <Sparkle size={12} />}
                 {page?.summary ? 'Regenerate summary' : 'Summarize this page'}
               </button>
               {page?.summary && (
@@ -169,7 +171,7 @@ export default function BookReader({ book }: BookReaderProps) {
                     </div>
                   </div>
                 ))}
-                {chatLoading && <Loader2 size={14} className="animate-spin text-white/30" />}
+                {chatLoading && <CircleNotch size={14} className="animate-spin text-white/30" />}
                 <div ref={chatEndRef} />
               </div>
             )}
@@ -198,7 +200,7 @@ export default function BookReader({ book }: BookReaderProps) {
             disabled={chatLoading || !chatInput.trim()}
             className="text-accent-green disabled:text-white/20 p-1"
           >
-            {chatLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+            {chatLoading ? <CircleNotch size={16} className="animate-spin" /> : <PaperPlaneTilt size={16} />}
           </button>
         </div>
         <p className="text-[10px] text-white/20 mt-1.5 text-center">

@@ -3,38 +3,24 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useTheme } from 'next-themes';
 import gsap from 'gsap';
-import {
-  LayoutDashboard,
-  Briefcase,
-  Brain,
-  Link2,
-  Download,
-  BarChart2,
-  FileText,
-  User,
-  Search,
-  MoreHorizontal,
-  GraduationCap,
-  BookMarked,
-  Send,
-  X as CloseIcon,
-} from 'lucide-react';
+import { SquaresFour, Briefcase, Brain, LinkSimple, DownloadSimple, ChartBar, FileText, User, MagnifyingGlass, DotsThree, GraduationCap, BookmarkSimple, PaperPlaneTilt, Sun, Moon, X as CloseIcon } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import { useGlobalSearch } from '@/components/GlobalSearch';
 import clsx from 'clsx';
 
 const navItems = [
-  { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { href: '/dashboard', icon: SquaresFour, label: 'Dashboard' },
   { href: '/jobs', icon: Briefcase, label: 'Jobs' },
-  { href: '/batch', icon: Send, label: 'Batch Apply' },
-  { href: '/analytics', icon: BarChart2, label: 'Analytics' },
+  { href: '/batch', icon: PaperPlaneTilt, label: 'Batch Apply' },
+  { href: '/analytics', icon: ChartBar, label: 'Analytics' },
   { href: '/train', icon: Brain, label: 'Train' },
   { href: '/learning', icon: GraduationCap, label: 'Learning' },
-  { href: '/stories', icon: BookMarked, label: 'Story Bank' },
+  { href: '/stories', icon: BookmarkSimple, label: 'Story Bank' },
   { href: '/resume', icon: FileText, label: 'Resume' },
   { href: '/profile', icon: User, label: 'Profile' },
-  { href: '/links', icon: Link2, label: 'Job Boards' },
+  { href: '/links', icon: LinkSimple, label: 'Job Boards' },
 ];
 
 // Mobile bottom nav only has room for ~5 comfortable tabs on a 375px screen
@@ -51,6 +37,14 @@ export default function Sidebar() {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const { open: openSearch } = useGlobalSearch();
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  // next-themes reads localStorage client-side only — theme is undefined
+  // during SSR/first paint, so avoid rendering the wrong icon before the
+  // real value is known (the CSS var swap itself has no such flash, since
+  // next-themes injects a pre-hydration script for that).
+  useEffect(() => setMounted(true), []);
 
   // Close the "More" sheet on route change so it doesn't stay open after navigating.
   useEffect(() => {
@@ -104,26 +98,20 @@ export default function Sidebar() {
                 key={href}
                 href={href}
                 className={clsx(
-                  'nav-item relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 group',
+                  'nav-item relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 active:scale-[0.97] group',
                   isActive
                     ? 'bg-accent-green/10 text-accent-green border-l-2 border-accent-green'
                     : 'text-white/40 hover:text-white/80 hover:bg-white/5 border-l-2 border-transparent'
                 )}
               >
-                <Icon
-                  size={18}
-                  className={clsx(
-                    'flex-shrink-0 transition-all duration-150',
-                    isActive ? 'drop-shadow-[0_0_8px_rgba(99,255,178,0.6)]' : ''
-                  )}
-                />
+                <Icon size={18} className="flex-shrink-0 transition-all duration-150" />
                 {isExpanded && (
                   <span className="text-sm font-medium whitespace-nowrap overflow-hidden">
                     {label}
                   </span>
                 )}
                 {isActive && isExpanded && (
-                  <span className="ml-auto w-1.5 h-1.5 rounded-full bg-accent-green shadow-[0_0_6px_rgba(99,255,178,0.8)]" />
+                  <span className="ml-auto w-1.5 h-1.5 rounded-full bg-accent-green" />
                 )}
               </Link>
             );
@@ -134,7 +122,7 @@ export default function Sidebar() {
             onClick={openSearch}
             className="nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/40 hover:text-white/80 hover:bg-white/5 border-l-2 border-transparent transition-all duration-150 w-full text-left"
           >
-            <Search size={18} className="flex-shrink-0" />
+            <MagnifyingGlass size={18} className="flex-shrink-0" />
             {isExpanded && (
               <span className="flex-1 flex items-center gap-2 min-w-0">
                 <span className="text-sm font-medium whitespace-nowrap">Search</span>
@@ -148,17 +136,30 @@ export default function Sidebar() {
 
         {/* Bottom actions */}
         <div className="py-4 px-2 border-t border-border flex flex-col gap-1">
+          {mounted && (
+            <button
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              className="nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/40 hover:text-accent-purple hover:bg-accent-purple/5 transition-all duration-150 active:scale-[0.97]"
+            >
+              {theme === 'dark' ? <Sun size={18} className="flex-shrink-0" /> : <Moon size={18} className="flex-shrink-0" />}
+              {isExpanded && (
+                <span className="text-sm font-medium whitespace-nowrap">
+                  {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+                </span>
+              )}
+            </button>
+          )}
           <button
             onClick={handleExport}
             className="nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/40 hover:text-accent-yellow hover:bg-accent-yellow/5 transition-all duration-150"
           >
-            <Download size={18} className="flex-shrink-0" />
+            <DownloadSimple size={18} className="flex-shrink-0" />
             {isExpanded && <span className="text-sm font-medium whitespace-nowrap">Export</span>}
           </button>
 
           {/* User avatar */}
           <div className="flex items-center gap-3 px-3 py-2.5 mt-1">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-accent-green to-accent-cyan flex items-center justify-center flex-shrink-0 shadow-[0_0_12px_rgba(99,255,178,0.3)]">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-accent-green to-accent-cyan flex items-center justify-center flex-shrink-0">
               <span className="text-bg font-mono font-bold text-xs">AP</span>
             </div>
             {isExpanded && (
@@ -193,7 +194,7 @@ export default function Sidebar() {
                     key={href}
                     href={href}
                     className={clsx(
-                      'flex flex-col items-center gap-1.5 py-3 rounded-xl transition-all duration-150',
+                      'flex flex-col items-center gap-1.5 py-3 rounded-xl transition-all duration-150 active:scale-95',
                       isActive ? 'text-accent-green bg-accent-green/10' : 'text-white/50 bg-white/5'
                     )}
                   >
@@ -206,16 +207,25 @@ export default function Sidebar() {
                 onClick={() => { setShowMore(false); openSearch(); }}
                 className="flex flex-col items-center gap-1.5 py-3 rounded-xl text-white/50 bg-white/5"
               >
-                <Search size={20} />
+                <MagnifyingGlass size={20} />
                 <span className="text-[10px] font-medium">Search</span>
               </button>
               <button
                 onClick={() => { setShowMore(false); handleExport(); }}
                 className="flex flex-col items-center gap-1.5 py-3 rounded-xl text-white/50 bg-white/5"
               >
-                <Download size={20} />
+                <DownloadSimple size={20} />
                 <span className="text-[10px] font-medium">Export</span>
               </button>
+              {mounted && (
+                <button
+                  onClick={() => { setTheme(theme === 'dark' ? 'light' : 'dark'); }}
+                  className="flex flex-col items-center gap-1.5 py-3 rounded-xl text-white/50 bg-white/5 active:scale-95"
+                >
+                  {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+                  <span className="text-[10px] font-medium">{theme === 'dark' ? 'Light' : 'Dark'}</span>
+                </button>
+              )}
             </div>
           </div>
         </>
@@ -230,14 +240,11 @@ export default function Sidebar() {
               key={href}
               href={href}
               className={clsx(
-                'flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all duration-150',
+                'flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all duration-150 active:scale-90',
                 isActive ? 'text-accent-green' : 'text-white/40'
               )}
             >
-              <Icon
-                size={20}
-                className={isActive ? 'drop-shadow-[0_0_8px_rgba(99,255,178,0.6)]' : ''}
-              />
+              <Icon size={20} />
               <span className="text-[10px] font-medium">{label}</span>
             </Link>
           );
@@ -249,7 +256,7 @@ export default function Sidebar() {
             showMore ? 'text-accent-green' : 'text-white/40'
           )}
         >
-          <MoreHorizontal size={20} />
+          <DotsThree size={20} />
           <span className="text-[10px] font-medium">More</span>
         </button>
       </nav>

@@ -2,14 +2,14 @@
 
 import { useEffect, useRef } from 'react';
 import gsap from 'gsap';
-import { ExternalLink } from 'lucide-react';
+import { ArrowSquareOut, GraduationCap, Briefcase, MagnifyingGlass, Scissors, Lightning, ChatCircle, UsersFour, Buildings, TrendUp, Globe, Radio, Monitor, GlobeHemisphereWest, House, Laptop, Palette, Newspaper, Icon } from '@phosphor-icons/react';
 import clsx from 'clsx';
 
 
 interface Platform {
   name: string;
   description: string;
-  icon: string;
+  icon: Icon;
   url: string;
   color: string;
   accent: string;
@@ -17,96 +17,102 @@ interface Platform {
   autoScraped?: boolean;
 }
 
+// Every accent cycles through the app's 5 defined tokens (which have real
+// --accent-* CSS custom properties in globals.css) rather than reaching for
+// one-off Tailwind default colors — the previous version referenced colors
+// like text-blue-400/text-orange-400 whose `var(--blue-400)` doesn't exist
+// as a custom property at all, so the hover glow effect below silently did
+// nothing for most of these cards even before this redesign.
 const PLATFORMS: Platform[] = [
   // ── India Platforms ──────────────────────────────────────────────────────
   {
     name: 'Internshala',
     description: 'Best for fresher jobs & internships in India. Auto-scraped by this dashboard.',
-    icon: '🎓',
+    icon: GraduationCap,
     url: 'https://internshala.com/jobs/react-js-jobs/',
-    color: 'border-blue-500/20 hover:border-blue-500/40',
-    accent: 'text-blue-400',
+    color: 'border-accent-cyan/20 hover:border-accent-cyan/40',
+    accent: 'text-accent-cyan',
     tag: 'Auto-scraped',
     autoScraped: true,
   },
   {
     name: 'Naukri',
     description: "India's largest job portal. Search React + Ahmedabad for best results.",
-    icon: '🟠',
+    icon: Briefcase,
     url: 'https://www.naukri.com/react-developer-jobs-in-ahmedabad',
-    color: 'border-orange-500/20 hover:border-orange-500/40',
-    accent: 'text-orange-400',
+    color: 'border-accent-yellow/20 hover:border-accent-yellow/40',
+    accent: 'text-accent-yellow',
     tag: 'India #1',
   },
   {
     name: 'Foundit',
     description: 'Formerly Monster India — good for full-time tech roles across India.',
-    icon: '🔎',
+    icon: MagnifyingGlass,
     url: 'https://www.foundit.in/srp/results?query=react+developer&location=Ahmedabad',
-    color: 'border-red-500/20 hover:border-red-500/40',
-    accent: 'text-red-400',
+    color: 'border-accent-pink/20 hover:border-accent-pink/40',
+    accent: 'text-accent-pink',
     tag: 'India',
   },
   {
     name: 'Cutshort',
     description: 'AI-powered matching for tech roles at Indian startups. Strong React/TS listings.',
-    icon: '✂️',
+    icon: Scissors,
     url: 'https://cutshort.io/jobs/react-js?location=ahmedabad',
-    color: 'border-pink-500/20 hover:border-pink-500/40',
-    accent: 'text-pink-400',
+    color: 'border-accent-purple/20 hover:border-accent-purple/40',
+    accent: 'text-accent-purple',
     tag: 'Tech Startups',
   },
   {
     name: 'Instahyre',
     description: 'Hire/get-hired platform for Indian tech pros. Good for startup roles.',
-    icon: '⚡',
+    icon: Lightning,
     url: 'https://www.instahyre.com/search-jobs/?q=react+developer&l=Ahmedabad',
-    color: 'border-yellow-500/20 hover:border-yellow-500/40',
-    accent: 'text-yellow-400',
+    color: 'border-accent-yellow/20 hover:border-accent-yellow/40',
+    accent: 'text-accent-yellow',
     tag: 'India Startups',
   },
   {
     name: 'Hirect',
     description: 'Chat-based direct hiring platform popular with Indian startups.',
-    icon: '💬',
+    icon: ChatCircle,
     url: 'https://hirect.in',
-    color: 'border-emerald-500/20 hover:border-emerald-500/40',
-    accent: 'text-emerald-400',
+    color: 'border-accent-green/20 hover:border-accent-green/40',
+    accent: 'text-accent-green',
     tag: 'Direct Hire',
   },
   // ── Global / Remote Platforms ────────────────────────────────────────────
   {
     name: 'LinkedIn',
     description: 'Auto-scraped via guest API — React/Frontend/Fullstack jobs in India + Ahmedabad.',
-    icon: '💼',
+    icon: UsersFour,
     url: 'https://www.linkedin.com/jobs/search/?keywords=React+Developer&location=Ahmedabad&f_E=1',
-    color: 'border-sky-500/20 hover:border-sky-500/40',
-    accent: 'text-sky-400',
+    color: 'border-accent-cyan/20 hover:border-accent-cyan/40',
+    accent: 'text-accent-cyan',
     tag: 'Auto-scraped',
     autoScraped: true,
   },
   {
     name: 'Indeed India',
     description: 'Global aggregator with strong India presence. Fresher + React search.',
-    icon: '🔍',
+    icon: MagnifyingGlass,
     url: 'https://in.indeed.com/jobs?q=react+developer+fresher&l=Ahmedabad',
-    color: 'border-yellow-500/20 hover:border-yellow-500/40',
-    accent: 'text-yellow-400',
+    color: 'border-accent-yellow/20 hover:border-accent-yellow/40',
+    accent: 'text-accent-yellow',
     tag: 'Aggregator',
   },
   {
     name: 'Glassdoor',
     description: 'Jobs + company reviews + salary data. Good for research before applying.',
-    icon: '🪟',
+    icon: Buildings,
     url: 'https://www.glassdoor.co.in/Job/ahmedabad-react-developer-jobs-SRCH_IL.0,9_IC2940658_KO10,25.htm',
-    color: 'border-green-500/20 hover:border-green-500/40',
-    accent: 'text-green-400',
+    color: 'border-accent-green/20 hover:border-accent-green/40',
+    accent: 'text-accent-green',
     tag: 'Reviews + Jobs',
   },
   {
     name: 'Wellfound',
     description: 'Formerly AngelList Talent — startup jobs with equity. Great remote listings.',
-    icon: '🚀',
+    icon: TrendUp,
     url: 'https://wellfound.com/jobs?role=frontend-engineer&remote=true',
     color: 'border-accent-cyan/20 hover:border-accent-cyan/40',
     accent: 'text-accent-cyan',
@@ -115,7 +121,7 @@ const PLATFORMS: Platform[] = [
   {
     name: 'WeWorkRemotely',
     description: 'Top remote jobs board. Programming section auto-scraped by this dashboard.',
-    icon: '🌐',
+    icon: Globe,
     url: 'https://weworkremotely.com/categories/remote-programming-jobs',
     color: 'border-accent-green/20 hover:border-accent-green/40',
     accent: 'text-accent-green',
@@ -125,70 +131,70 @@ const PLATFORMS: Platform[] = [
   {
     name: 'Remotive',
     description: 'Curated remote tech jobs. Software-dev + frontend auto-scraped.',
-    icon: '📡',
+    icon: Radio,
     url: 'https://remotive.com/remote-jobs/software-dev',
-    color: 'border-violet-500/20 hover:border-violet-500/40',
-    accent: 'text-violet-400',
+    color: 'border-accent-purple/20 hover:border-accent-purple/40',
+    accent: 'text-accent-purple',
     tag: 'Auto-scraped',
     autoScraped: true,
   },
   {
     name: 'RemoteOK',
     description: 'Large remote jobs board. React/frontend listings auto-scraped.',
-    icon: '🖥️',
+    icon: Monitor,
     url: 'https://remoteok.com/remote-react-jobs',
-    color: 'border-rose-500/20 hover:border-rose-500/40',
-    accent: 'text-rose-400',
+    color: 'border-accent-pink/20 hover:border-accent-pink/40',
+    accent: 'text-accent-pink',
     tag: 'Auto-scraped',
     autoScraped: true,
   },
   {
     name: 'Arbeitnow',
     description: 'Free remote job board API. Tech + remote listings auto-scraped.',
-    icon: '🌍',
+    icon: GlobeHemisphereWest,
     url: 'https://arbeitnow.com',
-    color: 'border-teal-500/20 hover:border-teal-500/40',
-    accent: 'text-teal-400',
+    color: 'border-accent-cyan/20 hover:border-accent-cyan/40',
+    accent: 'text-accent-cyan',
     tag: 'Auto-scraped',
     autoScraped: true,
   },
   {
     name: 'Remote.co',
     description: 'Vetted remote developer jobs. RSS feed auto-scraped by dashboard.',
-    icon: '🏠',
+    icon: House,
     url: 'https://remote.co/remote-jobs/developer/',
-    color: 'border-indigo-500/20 hover:border-indigo-500/40',
-    accent: 'text-indigo-400',
+    color: 'border-accent-purple/20 hover:border-accent-purple/40',
+    accent: 'text-accent-purple',
     tag: 'Auto-scraped',
     autoScraped: true,
   },
   {
     name: 'Jobicy',
     description: 'Remote-first jobs API. React/JS/TS listings auto-scraped.',
-    icon: '💻',
+    icon: Laptop,
     url: 'https://jobicy.com/?q=react',
-    color: 'border-purple-500/20 hover:border-purple-500/40',
-    accent: 'text-purple-400',
+    color: 'border-accent-green/20 hover:border-accent-green/40',
+    accent: 'text-accent-green',
     tag: 'Auto-scraped',
     autoScraped: true,
   },
   {
     name: 'The Muse',
     description: 'Entry-level engineering jobs. Auto-scraped for frontend/fullstack roles.',
-    icon: '🎨',
+    icon: Palette,
     url: 'https://www.themuse.com/jobs/engineering',
-    color: 'border-amber-500/20 hover:border-amber-500/40',
-    accent: 'text-amber-400',
+    color: 'border-accent-yellow/20 hover:border-accent-yellow/40',
+    accent: 'text-accent-yellow',
     tag: 'Auto-scraped',
     autoScraped: true,
   },
   {
     name: 'HackerNews Hiring',
     description: 'Monthly "Who is hiring?" — raw authentic startup jobs. Check 1st of each month.',
-    icon: '🦊',
+    icon: Newspaper,
     url: 'https://news.ycombinator.com/jobs',
-    color: 'border-orange-400/20 hover:border-orange-400/40',
-    accent: 'text-orange-300',
+    color: 'border-accent-yellow/20 hover:border-accent-yellow/40',
+    accent: 'text-accent-yellow',
     tag: 'HN Community',
   },
 ];
@@ -263,7 +269,9 @@ export default function LinksPage() {
 
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
-                <span className="text-3xl leading-none">{p.icon}</span>
+                <span className={clsx('w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-white/5', p.accent)}>
+                  <p.icon size={18} />
+                </span>
                 <div>
                   <h3 className={clsx('font-semibold text-sm', p.accent)}>{p.name}</h3>
                   <div className="flex items-center gap-1.5 mt-0.5">
@@ -276,7 +284,7 @@ export default function LinksPage() {
                   </div>
                 </div>
               </div>
-              <ExternalLink
+              <ArrowSquareOut
                 size={14}
                 className="text-white/20 group-hover:text-white/50 transition-colors mt-0.5"
               />

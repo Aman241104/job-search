@@ -422,6 +422,12 @@ export const api = {
       return r.json();
     }),
 
+  analytics: (): Promise<Record<string, unknown>> =>
+    fetch(`${API}/api/analytics`).then((r) => {
+      if (!r.ok) throw new Error(`Analytics failed: ${r.status}`);
+      return r.json();
+    }),
+
   salaryStats: async (): Promise<{
     ranges: { label: string; count: number }[];
     avg_mentioned: number;

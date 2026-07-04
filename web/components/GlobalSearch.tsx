@@ -10,7 +10,7 @@ import {
   KeyboardEvent,
 } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, X } from 'lucide-react';
+import { MagnifyingGlass, X } from '@phosphor-icons/react';
 import gsap from 'gsap';
 import clsx from 'clsx';
 import ScoreRing from '@/components/ScoreRing';
@@ -150,7 +150,7 @@ function GlobalSearchModal({ onClose }: { onClose: () => void }) {
       >
         {/* Search input row */}
         <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border">
-          <Search size={18} className="text-white/30 flex-shrink-0" />
+          <MagnifyingGlass size={18} className="text-white/30 flex-shrink-0" />
           <input
             ref={inputRef}
             type="text"

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, Mail, Send, MonitorSmartphone, Check, X, RefreshCw } from 'lucide-react';
+import { CircleNotch, Envelope, PaperPlaneTilt, DeviceMobile, Check, X, ArrowClockwise } from '@phosphor-icons/react';
 import { ToastProvider, useToast } from '@/components/Toast';
 import { api, Job, Batch } from '@/lib/api';
 import clsx from 'clsx';
@@ -111,7 +111,7 @@ function BatchPageInner() {
     }
   };
 
-  const channelIcon = { email: Mail, telegram: Send, browser: MonitorSmartphone }[channel];
+  const channelIcon = { email: Envelope, telegram: PaperPlaneTilt, browser: DeviceMobile }[channel];
   const ChannelIcon = channelIcon;
 
   return (
@@ -170,9 +170,9 @@ function BatchPageInner() {
                 channel === c ? 'bg-accent-green/10 border-accent-green/30 text-accent-green' : 'border-border text-white/40 hover:text-white/70'
               )}
             >
-              {c === 'email' && <Mail size={12} />}
-              {c === 'telegram' && <Send size={12} />}
-              {c === 'browser' && <MonitorSmartphone size={12} />}
+              {c === 'email' && <Envelope size={12} />}
+              {c === 'telegram' && <PaperPlaneTilt size={12} />}
+              {c === 'browser' && <DeviceMobile size={12} />}
               {c}
             </button>
           ))}
@@ -202,7 +202,7 @@ function BatchPageInner() {
             disabled={loadingCandidates}
             className="flex items-center gap-2 text-xs font-semibold px-4 py-2 rounded-lg bg-bg-3 border border-border text-white/70 hover:text-white/90 transition-all disabled:opacity-50"
           >
-            {loadingCandidates ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+            {loadingCandidates ? <CircleNotch size={12} className="animate-spin" /> : <ArrowClockwise size={12} />}
             Load candidates
           </button>
         </div>
@@ -229,7 +229,7 @@ function BatchPageInner() {
                     selected.has(job.id) ? 'bg-accent-green border-accent-green' : 'border-white/20'
                   )}
                 >
-                  {selected.has(job.id) && <Check size={11} className="text-bg" strokeWidth={3} />}
+                  {selected.has(job.id) && <Check size={11} className="text-bg" weight="bold" />}
                 </span>
                 <span className="text-sm text-white/70 flex-1 truncate">
                   {job.title} <span className="text-white/30">@ {job.company}</span>
@@ -243,7 +243,7 @@ function BatchPageInner() {
             disabled={running || selected.size === 0}
             className="flex items-center gap-2 text-sm font-semibold px-5 py-2.5 rounded-xl bg-accent-green/10 border border-accent-green/30 text-accent-green hover:bg-accent-green/15 transition-all disabled:opacity-50"
           >
-            {running ? <Loader2 size={14} className="animate-spin" /> : <ChannelIcon size={14} />}
+            {running ? <CircleNotch size={14} className="animate-spin" /> : <ChannelIcon size={14} />}
             Run batch ({selected.size})
           </button>
         </div>
@@ -261,7 +261,7 @@ function BatchPageInner() {
                 disabled={sending}
                 className="flex items-center gap-2 text-xs font-semibold px-4 py-2 rounded-lg bg-accent-green/10 border border-accent-green/30 text-accent-green hover:bg-accent-green/15 disabled:opacity-50"
               >
-                {sending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                {sending ? <CircleNotch size={12} className="animate-spin" /> : <PaperPlaneTilt size={12} />}
                 Send approved
               </button>
             )}
@@ -285,7 +285,7 @@ function BatchPageInner() {
                     {item.title} <span className="text-white/30">@ {item.company}</span>
                   </p>
                   {item.email && <p className="text-xs text-white/30">{item.email}</p>}
-                  {item.error && <p className="text-xs text-red-400">{item.error}</p>}
+                  {item.error && <p className="text-xs text-accent-pink">{item.error}</p>}
                 </div>
                 <span
                   className={clsx(
@@ -293,7 +293,7 @@ function BatchPageInner() {
                     item.status === 'sent' || item.status === 'prefilled'
                       ? 'bg-accent-green/10 text-accent-green'
                       : item.status.includes('failed')
-                      ? 'bg-red-500/10 text-red-400'
+                      ? 'bg-accent-pink/10 text-accent-pink'
                       : 'bg-white/5 text-white/40'
                   )}
                 >
