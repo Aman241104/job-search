@@ -206,8 +206,8 @@ export default function LinksPage() {
     if (!gridRef.current) return;
     gsap.fromTo(
       gridRef.current.querySelectorAll('.platform-card'),
-      { y: 25, opacity: 0 },
-      { y: 0, opacity: 1, stagger: 0.05, duration: 0.55, ease: 'power3.out', delay: 0.1 }
+      { y: 25, opacity: 0, scale: 0.95 },
+      { y: 0, opacity: 1, scale: 1, stagger: 0.05, duration: 0.6, ease: 'back.out(1.6)', delay: 0.1 }
     );
   }, []);
 

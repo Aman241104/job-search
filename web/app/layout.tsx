@@ -4,6 +4,7 @@ import { ThemeProvider } from 'next-themes';
 import './globals.css';
 import Sidebar from '@/components/Sidebar';
 import { GlobalSearchProvider } from '@/components/GlobalSearch';
+import IconWeightProvider from '@/components/IconWeightProvider';
 
 const fragmentMono = Fragment_Mono({
   weight: ['400'],
@@ -37,18 +38,24 @@ export default function RootLayout({
     <html lang="en" className={`${fragmentMono.variable} ${outfit.variable}`} suppressHydrationWarning>
       <body className="bg-bg font-sans antialiased">
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
-          {/* Dot grid background */}
-          <div className="dot-grid fixed inset-0 pointer-events-none z-0" />
+          {/* Google Material Symbols / Pixel-style icons read as filled, not
+              thin-outline — this sets that as the app-wide default for every
+              Phosphor icon; any icon with its own explicit `weight` prop
+              (e.g. active-state toggles) still overrides it as normal. */}
+          <IconWeightProvider>
+            {/* Dot grid background */}
+            <div className="dot-grid fixed inset-0 pointer-events-none z-0" />
 
-          {/* App shell */}
-          <GlobalSearchProvider>
-            <div className="relative z-10 flex min-h-screen">
-              <Sidebar />
-              <main className="flex-1 overflow-y-auto min-h-screen">
-                {children}
-              </main>
-            </div>
-          </GlobalSearchProvider>
+            {/* App shell */}
+            <GlobalSearchProvider>
+              <div className="relative z-10 flex min-h-screen">
+                <Sidebar />
+                <main className="flex-1 overflow-y-auto min-h-screen">
+                  {children}
+                </main>
+              </div>
+            </GlobalSearchProvider>
+          </IconWeightProvider>
         </ThemeProvider>
       </body>
     </html>

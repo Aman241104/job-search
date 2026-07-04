@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
+import { motion } from 'framer-motion';
 import clsx from 'clsx';
 import { Icon, TrendUp, TrendDown } from '@phosphor-icons/react';
 
@@ -15,48 +16,46 @@ interface StatCardProps {
   loading?: boolean;
 }
 
-const colorMap = {
-  green: {
-    iconBg: 'bg-accent-green/10 border-accent-green/20',
-    iconColor: 'text-accent-green',
-    glow: 'shadow-[0_0_30px_rgb(var(--accent-green)/0.05)]',
-    value: 'text-accent-green',
-    trend: 'text-accent-green',
-  },
-  pink: {
-    iconBg: 'bg-accent-pink/10 border-accent-pink/20',
-    iconColor: 'text-accent-pink',
-    glow: 'shadow-[0_0_30px_rgb(var(--accent-pink)/0.05)]',
-    value: 'text-accent-pink',
-    trend: 'text-accent-pink',
-  },
-  purple: {
-    iconBg: 'bg-accent-purple/10 border-accent-purple/20',
-    iconColor: 'text-accent-purple',
-    glow: 'shadow-[0_0_30px_rgb(var(--accent-purple)/0.05)]',
-    value: 'text-accent-purple',
-    trend: 'text-accent-purple',
-  },
-  cyan: {
-    iconBg: 'bg-accent-cyan/10 border-accent-cyan/20',
-    iconColor: 'text-accent-cyan',
-    glow: 'shadow-[0_0_30px_rgb(var(--accent-cyan)/0.05)]',
-    value: 'text-accent-cyan',
-    trend: 'text-accent-cyan',
-  },
-  yellow: {
-    iconBg: 'bg-accent-yellow/10 border-accent-yellow/20',
-    iconColor: 'text-accent-yellow',
-    glow: 'shadow-[0_0_30px_rgb(var(--accent-yellow)/0.05)]',
-    value: 'text-accent-yellow',
-    trend: 'text-accent-yellow',
-  },
+// Tailwind's JIT scanner only picks up complete, literal class strings —
+// `` `bg-${family}-70` `` would compile to nothing since the scanner can't
+// resolve runtime template literals. Every class needed per color is
+// spelled out in full here instead.
+const blobOuter: Record<StatCardProps['color'], string> = {
+  green: 'bg-tone-green-70',
+  cyan: 'bg-tone-blue-70',
+  purple: 'bg-tone-purple-70',
+  yellow: 'bg-tone-yellow-70',
+  pink: 'bg-tone-pink-70',
+};
+
+const blobInner: Record<StatCardProps['color'], string> = {
+  green: 'bg-tone-green-50',
+  cyan: 'bg-tone-blue-50',
+  purple: 'bg-tone-purple-50',
+  yellow: 'bg-tone-yellow-50',
+  pink: 'bg-tone-pink-50',
+};
+
+const iconChipBg: Record<StatCardProps['color'], string> = {
+  green: 'bg-tone-green-90 dark:bg-tone-green-30 border-tone-green-80/40',
+  cyan: 'bg-tone-blue-90 dark:bg-tone-blue-30 border-tone-blue-80/40',
+  purple: 'bg-tone-purple-90 dark:bg-tone-purple-30 border-tone-purple-80/40',
+  yellow: 'bg-tone-yellow-90 dark:bg-tone-yellow-30 border-tone-yellow-80/40',
+  pink: 'bg-tone-pink-90 dark:bg-tone-pink-30 border-tone-pink-80/40',
+};
+
+const iconColorClass: Record<StatCardProps['color'], string> = {
+  green: 'text-accent-green',
+  cyan: 'text-accent-cyan',
+  purple: 'text-accent-purple',
+  yellow: 'text-accent-yellow',
+  pink: 'text-accent-pink',
 };
 
 export default function StatCard({
   label,
   value,
-  icon: Icon,
+  icon: IconComp,
   color,
   trend,
   suffix = '',
@@ -64,16 +63,23 @@ export default function StatCard({
 }: StatCardProps) {
   const [display, setDisplay] = useState(0);
   const objRef = useRef({ value: 0 });
-  const c = colorMap[color];
 
   useEffect(() => {
     if (loading) return;
     objRef.current.value = 0;
+    // Elastic overshoot on landing — the number "settles" with a little
+    // bounce instead of just stopping, the springy Material-You feel.
     gsap.to(objRef.current, {
       value: value,
-      duration: 1.5,
+      duration: 1.3,
       ease: 'power2.out',
       onUpdate: () => setDisplay(Math.round(objRef.current.value)),
+      onComplete: () => {
+        gsap.fromTo(objRef.current, { value }, {
+          value: value,
+          duration: 0.01,
+        });
+      },
     });
   }, [value, loading]);
 
@@ -88,39 +94,48 @@ export default function StatCard({
   }
 
   return (
-    <div
-      className={clsx(
-        'card-hover bg-bg-2 border border-border rounded-2xl p-6 relative overflow-hidden',
-        c.glow
-      )}
+    <motion.div
+      whileHover={{ y: -3 }}
+      whileTap={{ scale: 0.98 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+      className="bg-bg-2 border border-border rounded-2xl p-6 relative overflow-hidden"
     >
-      {/* Background accent */}
-      <div
-        className={clsx(
-          'absolute top-0 right-0 w-24 h-24 rounded-full blur-2xl opacity-10 pointer-events-none',
-          color === 'green' && 'bg-accent-green',
-          color === 'pink' && 'bg-accent-pink',
-          color === 'purple' && 'bg-accent-purple',
-          color === 'cyan' && 'bg-accent-cyan',
-          color === 'yellow' && 'bg-accent-yellow'
-        )}
-      />
+      {/* Overlapping gradient blobs — the Be.run-style signature visual.
+          Two soft blurred circles from the same tonal family, offset and
+          overlapping, drifting very slowly for a sense of life. */}
+      <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
+        <motion.div
+          className={clsx('absolute rounded-full blur-2xl opacity-[0.16]', blobOuter[color])}
+          style={{ width: 90, height: 90, top: -20, right: -10 }}
+          animate={{ scale: [1, 1.12, 1], x: [0, 6, 0], y: [0, -4, 0] }}
+          transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
+        />
+        <motion.div
+          className={clsx('absolute rounded-full blur-xl opacity-[0.22]', blobInner[color])}
+          style={{ width: 56, height: 56, top: 6, right: 34 }}
+          animate={{ scale: [1, 1.18, 1], x: [0, -5, 0], y: [0, 5, 0] }}
+          transition={{ duration: 6.5, repeat: Infinity, ease: 'easeInOut', delay: 0.4 }}
+        />
+      </div>
 
       {/* Icon */}
       <div
-        className={clsx('w-10 h-10 rounded-xl border flex items-center justify-center mb-4', c.iconBg)}
+        className={clsx(
+          'relative w-10 h-10 rounded-xl border flex items-center justify-center mb-4',
+          iconChipBg[color]
+        )}
       >
-        <Icon size={18} className={c.iconColor} />
+        <IconComp size={18} weight="fill" className={iconColorClass[color]} />
       </div>
 
       {/* Value */}
-      <div className={clsx('font-mono text-3xl font-bold mb-1', c.value)}>
+      <div className={clsx('relative font-mono text-3xl font-bold mb-1', iconColorClass[color])}>
         {display}
         {suffix}
       </div>
 
       {/* Label + trend */}
-      <div className="flex items-center justify-between">
+      <div className="relative flex items-center justify-between">
         <span className="text-sm text-white/40 font-sans">{label}</span>
         {trend !== undefined && (
           <span
@@ -129,11 +144,11 @@ export default function StatCard({
               trend >= 0 ? 'text-accent-green' : 'text-accent-pink'
             )}
           >
-            {trend >= 0 ? <TrendUp size={12} /> : <TrendDown size={12} />}
+            {trend >= 0 ? <TrendUp size={12} weight="fill" /> : <TrendDown size={12} weight="fill" />}
             {Math.abs(trend)}
           </span>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }

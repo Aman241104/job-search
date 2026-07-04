@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import { CircleNotch, Envelope, PaperPlaneTilt, DeviceMobile, Check, X, ArrowClockwise } from '@phosphor-icons/react';
 import { ToastProvider, useToast } from '@/components/Toast';
 import { api, Job, Batch } from '@/lib/api';
@@ -127,28 +128,44 @@ function BatchPageInner() {
       <div className="bg-bg-2 border border-border rounded-2xl p-4 mb-5">
         <p className="text-xs font-medium text-white/40 uppercase tracking-wider mb-3">Mode</p>
         <div className="flex gap-2">
-          <button
+          <motion.button
             onClick={() => toggleMode('review')}
             disabled={modeLoading}
+            whileTap={{ scale: 0.97 }}
             className={clsx(
-              'flex-1 text-left px-4 py-3 rounded-xl border transition-all',
-              mode === 'review' ? 'bg-accent-green/10 border-accent-green/30 text-white/90' : 'border-border text-white/50 hover:text-white/70'
+              'relative flex-1 text-left px-4 py-3 rounded-xl border overflow-hidden',
+              mode === 'review' ? 'border-accent-green/30 text-white/90' : 'border-border text-white/50 hover:text-white/70'
             )}
           >
-            <span className="text-sm font-semibold block">Review</span>
-            <span className="text-xs text-white/35">Generate everything, review, then one click to send approved items</span>
-          </button>
-          <button
+            {mode === 'review' && (
+              <motion.div
+                layoutId="batch-mode-pill"
+                className="absolute inset-0 bg-accent-green/10"
+                transition={{ type: 'spring', stiffness: 350, damping: 28 }}
+              />
+            )}
+            <span className="relative text-sm font-semibold block">Review</span>
+            <span className="relative text-xs text-white/35">Generate everything, review, then one click to send approved items</span>
+          </motion.button>
+          <motion.button
             onClick={() => toggleMode('automatic')}
             disabled={modeLoading}
+            whileTap={{ scale: 0.97 }}
             className={clsx(
-              'flex-1 text-left px-4 py-3 rounded-xl border transition-all',
-              mode === 'automatic' ? 'bg-accent-yellow/10 border-accent-yellow/30 text-white/90' : 'border-border text-white/50 hover:text-white/70'
+              'relative flex-1 text-left px-4 py-3 rounded-xl border overflow-hidden',
+              mode === 'automatic' ? 'border-accent-yellow/30 text-white/90' : 'border-border text-white/50 hover:text-white/70'
             )}
           >
-            <span className="text-sm font-semibold block">Automatic</span>
-            <span className="text-xs text-white/35">Fires immediately, gated by your score threshold — no review step</span>
-          </button>
+            {mode === 'automatic' && (
+              <motion.div
+                layoutId="batch-mode-pill"
+                className="absolute inset-0 bg-accent-yellow/10"
+                transition={{ type: 'spring', stiffness: 350, damping: 28 }}
+              />
+            )}
+            <span className="relative text-sm font-semibold block">Automatic</span>
+            <span className="relative text-xs text-white/35">Fires immediately, gated by your score threshold — no review step</span>
+          </motion.button>
         </div>
         {channel === 'browser' && (
           <p className="text-xs text-accent-cyan/70 mt-3">
@@ -162,19 +179,31 @@ function BatchPageInner() {
         <p className="text-xs font-medium text-white/40 uppercase tracking-wider mb-3">Channel</p>
         <div className="flex gap-2 mb-4">
           {(['email', 'telegram', 'browser'] as Channel[]).map((c) => (
-            <button
+            <motion.button
               key={c}
               onClick={() => setChannel(c)}
+              whileTap={{ scale: 0.95 }}
+              whileHover={{ scale: 1.03 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 17 }}
               className={clsx(
-                'flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border transition-all capitalize',
-                channel === c ? 'bg-accent-green/10 border-accent-green/30 text-accent-green' : 'border-border text-white/40 hover:text-white/70'
+                'relative flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border overflow-hidden capitalize',
+                channel === c ? 'border-accent-green/30 text-accent-green' : 'border-border text-white/40 hover:text-white/70'
               )}
             >
-              {c === 'email' && <Envelope size={12} />}
-              {c === 'telegram' && <PaperPlaneTilt size={12} />}
-              {c === 'browser' && <DeviceMobile size={12} />}
-              {c}
-            </button>
+              {channel === c && (
+                <motion.div
+                  layoutId="batch-channel-pill"
+                  className="absolute inset-0 bg-accent-green/10"
+                  transition={{ type: 'spring', stiffness: 350, damping: 28 }}
+                />
+              )}
+              <span className="relative flex items-center gap-1.5">
+                {c === 'email' && <Envelope size={12} weight="fill" />}
+                {c === 'telegram' && <PaperPlaneTilt size={12} weight="fill" />}
+                {c === 'browser' && <DeviceMobile size={12} weight="fill" />}
+                {c}
+              </span>
+            </motion.button>
           ))}
         </div>
 

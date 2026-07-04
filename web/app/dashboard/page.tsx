@@ -413,8 +413,8 @@ export default function DashboardPage() {
     if (!cardsRef.current || loading) return;
     gsap.fromTo(
       cardsRef.current.querySelectorAll('.anim-card'),
-      { y: 30, opacity: 0 },
-      { y: 0, opacity: 1, stagger: 0.08, duration: 0.6, ease: 'power3.out' }
+      { y: 30, opacity: 0, scale: 0.96 },
+      { y: 0, opacity: 1, scale: 1, stagger: 0.08, duration: 0.7, ease: 'back.out(1.6)' }
     );
   }, [loading]);
 

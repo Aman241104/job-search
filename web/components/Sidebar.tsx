@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTheme } from 'next-themes';
+import { motion } from 'framer-motion';
 import gsap from 'gsap';
 import { SquaresFour, Briefcase, Brain, LinkSimple, DownloadSimple, ChartBar, FileText, User, MagnifyingGlass, DotsThree, GraduationCap, BookmarkSimple, PaperPlaneTilt, Sun, Moon, X as CloseIcon } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
@@ -55,8 +56,8 @@ export default function Sidebar() {
     if (!sidebarRef.current) return;
     const items = sidebarRef.current.querySelectorAll('.nav-item');
     gsap.fromTo(items,
-      { x: -30, opacity: 0 },
-      { x: 0, opacity: 1, stagger: 0.07, duration: 0.5, ease: 'power3.out', delay: 0.1 }
+      { x: -20, opacity: 0, scale: 0.9 },
+      { x: 0, opacity: 1, scale: 1, stagger: 0.06, duration: 0.6, ease: 'back.out(1.7)', delay: 0.1 }
     );
   }, []);
 
@@ -72,8 +73,9 @@ export default function Sidebar() {
         onMouseEnter={() => setIsExpanded(true)}
         onMouseLeave={() => setIsExpanded(false)}
         className={clsx(
-          'hidden md:flex flex-col h-screen sticky top-0 z-40',
-          'bg-bg-1 border-r border-border transition-all duration-300 ease-in-out',
+          'hidden md:flex flex-col sticky top-4 z-40 my-4 ml-4 rounded-[28px]',
+          'h-[calc(100vh-2rem)] bg-bg-1 border border-border shadow-[0_4px_20px_rgb(var(--ink)/0.06)]',
+          'transition-all duration-300 ease-in-out',
           isExpanded ? 'w-[220px]' : 'w-[64px]'
         )}
       >
@@ -94,26 +96,27 @@ export default function Sidebar() {
           {navItems.map(({ href, icon: Icon, label }) => {
             const isActive = pathname === href || pathname.startsWith(href + '/');
             return (
-              <Link
-                key={href}
-                href={href}
-                className={clsx(
-                  'nav-item relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 active:scale-[0.97] group',
-                  isActive
-                    ? 'bg-accent-green/10 text-accent-green border-l-2 border-accent-green'
-                    : 'text-white/40 hover:text-white/80 hover:bg-white/5 border-l-2 border-transparent'
-                )}
-              >
-                <Icon size={18} className="flex-shrink-0 transition-all duration-150" />
-                {isExpanded && (
-                  <span className="text-sm font-medium whitespace-nowrap overflow-hidden">
-                    {label}
-                  </span>
-                )}
-                {isActive && isExpanded && (
-                  <span className="ml-auto w-1.5 h-1.5 rounded-full bg-accent-green" />
-                )}
-              </Link>
+              <motion.div key={href} whileTap={{ scale: 0.94 }} whileHover={{ x: 2 }} transition={{ type: 'spring', stiffness: 400, damping: 17 }}>
+                <Link
+                  href={href}
+                  className={clsx(
+                    'nav-item relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors duration-150 group',
+                    isActive
+                      ? 'bg-accent-green/10 text-accent-green border-l-2 border-accent-green'
+                      : 'text-white/40 hover:text-white/80 hover:bg-white/5 border-l-2 border-transparent'
+                  )}
+                >
+                  <Icon size={18} weight={isActive ? 'fill' : 'regular'} className="flex-shrink-0 transition-all duration-150" />
+                  {isExpanded && (
+                    <span className="text-sm font-medium whitespace-nowrap overflow-hidden">
+                      {label}
+                    </span>
+                  )}
+                  {isActive && isExpanded && (
+                    <span className="ml-auto w-1.5 h-1.5 rounded-full bg-accent-green" />
+                  )}
+                </Link>
+              </motion.div>
             );
           })}
 
@@ -236,29 +239,32 @@ export default function Sidebar() {
         {mobilePrimaryItems.map(({ href, icon: Icon, label }) => {
           const isActive = pathname === href || pathname.startsWith(href + '/');
           return (
-            <Link
-              key={href}
-              href={href}
-              className={clsx(
-                'flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all duration-150 active:scale-90',
-                isActive ? 'text-accent-green' : 'text-white/40'
-              )}
-            >
-              <Icon size={20} />
-              <span className="text-[10px] font-medium">{label}</span>
-            </Link>
+            <motion.div key={href} whileTap={{ scale: 0.85 }} transition={{ type: 'spring', stiffness: 500, damping: 15 }}>
+              <Link
+                href={href}
+                className={clsx(
+                  'flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl',
+                  isActive ? 'text-accent-green' : 'text-white/40'
+                )}
+              >
+                <Icon size={20} weight={isActive ? 'fill' : 'regular'} />
+                <span className="text-[10px] font-medium">{label}</span>
+              </Link>
+            </motion.div>
           );
         })}
-        <button
+        <motion.button
           onClick={() => setShowMore(true)}
+          whileTap={{ scale: 0.85 }}
+          transition={{ type: 'spring', stiffness: 500, damping: 15 }}
           className={clsx(
-            'flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all duration-150',
+            'flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl',
             showMore ? 'text-accent-green' : 'text-white/40'
           )}
         >
-          <DotsThree size={20} />
+          <DotsThree size={20} weight={showMore ? 'fill' : 'regular'} />
           <span className="text-[10px] font-medium">More</span>
-        </button>
+        </motion.button>
       </nav>
     </>
   );

@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import gsap from 'gsap';
+import { motion } from 'framer-motion';
 import { Broadcast, X, CheckCircle } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import { useToast } from './Toast';
@@ -105,10 +106,13 @@ export default function FindButton({ onComplete }: FindButtonProps) {
 
   return (
     <div className="flex flex-col gap-3">
-      <button
+      <motion.button
         onClick={handleFind}
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.96 }}
+        transition={{ type: 'spring', stiffness: 400, damping: 15 }}
         className={clsx(
-          'relative flex items-center gap-3 px-6 py-3 rounded-xl font-semibold text-sm transition-all duration-200 overflow-hidden',
+          'relative flex items-center gap-3 px-6 py-3 rounded-xl font-semibold text-sm transition-colors duration-200 overflow-hidden',
           running
             ? 'bg-accent-pink/10 border border-accent-pink/30 text-accent-pink hover:bg-accent-pink/15'
             : done
@@ -136,7 +140,7 @@ export default function FindButton({ onComplete }: FindButtonProps) {
             Find New Jobs
           </>
         )}
-      </button>
+      </motion.button>
 
       {(running || done || progress > 0) && (
         <div className="space-y-2">

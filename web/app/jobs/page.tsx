@@ -478,8 +478,8 @@ function JobsPageInner() {
     const cards = gridRef.current.querySelectorAll('.job-card-item');
     gsap.fromTo(
       cards,
-      { y: 30, opacity: 0 },
-      { y: 0, opacity: 1, stagger: 0.04, duration: 0.5, ease: 'power3.out' }
+      { y: 30, opacity: 0, scale: 0.96 },
+      { y: 0, opacity: 1, scale: 1, stagger: 0.04, duration: 0.6, ease: 'back.out(1.6)' }
     );
   }, [data, loading]);
 

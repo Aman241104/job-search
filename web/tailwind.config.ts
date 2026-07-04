@@ -1,5 +1,16 @@
 import type { Config } from 'tailwindcss';
 
+// Generates the { 0: 'rgb(var(--green-0)/<alpha-value>)', 10: ..., ... }
+// shape for one tonal family, so `bg-green-40`, `text-blue-80` etc. are
+// available for components that need a specific tone from the ramp (not
+// just the flat `accent-*` alias) — e.g. StatCard's blob visualization.
+const TONE_STOPS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 99, 100];
+function tonalScale(family: string): Record<number, string> {
+  return Object.fromEntries(
+    TONE_STOPS.map((t) => [t, `rgb(var(--${family}-${t}) / <alpha-value>)`])
+  );
+}
+
 const config: Config = {
   content: [
     './pages/**/*.{js,ts,jsx,tsx,mdx}',
@@ -44,6 +55,17 @@ const config: Config = {
           yellow: 'rgb(var(--accent-yellow) / <alpha-value>)',
           pink: 'rgb(var(--accent-pink) / <alpha-value>)',
         },
+        // Full 13-stop tonal ramps (Material 3's own tone stops), generated
+        // from the same 5 seed hues as the accent-* aliases above — see
+        // web/lib/theme.ts for the generator and globals.css for the values.
+        // Named `tone-*` (not `green`/`blue`/etc.) to avoid colliding with
+        // Tailwind's own default color scales, which are still used
+        // elsewhere for source badges (e.g. text-purple-700, text-pink-700).
+        'tone-green': tonalScale('green'),
+        'tone-blue': tonalScale('blue'),
+        'tone-purple': tonalScale('purple'),
+        'tone-yellow': tonalScale('yellow'),
+        'tone-pink': tonalScale('pink'),
         border: {
           DEFAULT: 'rgb(var(--border) / <alpha-value>)',
         },
@@ -54,6 +76,22 @@ const config: Config = {
       },
       animation: {
         'pulse-slow': 'pulse 3s ease-in-out infinite',
+      },
+      // Redefining every standard radius key (still under `extend`, so any
+      // key not listed here would fall back to Tailwind's default) means
+      // every existing rounded-lg/xl/2xl/3xl class across ~240 call sites
+      // automatically gets bigger, chunkier, more "Material You" — zero
+      // component changes needed, same trick as the color tokens above.
+      borderRadius: {
+        none: '0',
+        sm: '6px',
+        DEFAULT: '10px',
+        md: '14px',
+        lg: '18px',
+        xl: '22px',
+        '2xl': '28px',
+        '3xl': '36px',
+        full: '9999px',
       },
     },
   },

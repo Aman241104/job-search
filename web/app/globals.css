@@ -6,7 +6,15 @@
    so Tailwind's rgb(var(--x) / <alpha-value>) pattern in tailwind.config.ts
    can apply opacity modifiers (bg-white/20, text-accent-green/10, etc.) on
    top of it. Swapping :root -> .dark re-themes the whole app; no component
-   file needs to change since none of them reference a hex value directly. */
+   file needs to change since none of them reference a hex value directly.
+
+   The --{family}-{tone} vars are full 13-stop tonal ramps (Material 3's own
+   tone stops), generated once via web/lib/theme.ts (culori, OKLCH) from one
+   vivid seed hex per family — see that file for the generator. Components
+   that only need "the accent color" keep using the flat --accent-* aliases
+   below (unchanged call sites); new components (StatCard's blob
+   visualization, etc.) can reach into the full ramp for lighter/darker
+   variants of the same hue family. */
 :root {
   --bg: 251 250 247;
   --bg-1: 255 255 255;
@@ -14,12 +22,46 @@
   --bg-3: 237 234 226;
   --ink: 31 29 26;
   --ink-muted: 107 102 89;
-  --accent-green: 63 115 85;
-  --accent-cyan: 47 102 144;
-  --accent-purple: 122 95 166;
-  --accent-yellow: 150 105 10;
-  --accent-pink: 161 59 76;
   --border: 232 228 218;
+
+  --green-0: 0 0 0;       --green-10: 0 5 1;       --green-20: 0 28 12;
+  --green-30: 0 56 28;    --green-40: 0 87 47;     --green-50: 15 118 68;
+  --green-60: 57 149 96;  --green-70: 91 180 125;  --green-80: 123 212 156;
+  --green-90: 155 246 187; --green-95: 197 255 216; --green-99: 244 255 247;
+  --green-100: 255 255 255;
+
+  --blue-0: 0 0 0;      --blue-10: 0 3 12;     --blue-20: 0 22 47;
+  --blue-30: 0 47 87;   --blue-40: 0 73 131;   --blue-50: 0 101 178;
+  --blue-60: 20 130 223; --blue-70: 67 162 255; --blue-80: 138 195 255;
+  --blue-90: 198 225 255; --blue-95: 227 240 255; --blue-99: 249 252 255;
+  --blue-100: 255 255 255;
+
+  --purple-0: 0 0 0;      --purple-10: 5 0 18;     --purple-20: 30 0 63;
+  --purple-30: 60 0 113;  --purple-40: 88 32 153;  --purple-50: 115 66 186;
+  --purple-60: 144 97 219; --purple-70: 174 129 254; --purple-80: 199 173 255;
+  --purple-90: 226 215 255; --purple-95: 240 235 255; --purple-99: 252 251 255;
+  --purple-100: 255 255 255;
+
+  --yellow-0: 0 0 0;     --yellow-10: 6 3 0;     --yellow-20: 31 20 0;
+  --yellow-30: 60 43 0;  --yellow-40: 92 67 0;   --yellow-50: 126 93 0;
+  --yellow-60: 162 121 0; --yellow-70: 200 149 0; --yellow-80: 233 181 57;
+  --yellow-90: 255 217 138; --yellow-95: 255 236 200; --yellow-99: 255 251 244;
+  --yellow-100: 255 255 255;
+
+  --pink-0: 0 0 0;     --pink-10: 13 0 1;    --pink-20: 49 0 9;
+  --pink-30: 91 0 24;  --pink-40: 137 0 41;  --pink-50: 183 16 60;
+  --pink-60: 219 62 88; --pink-70: 255 96 117; --pink-80: 255 158 164;
+  --pink-90: 255 209 210; --pink-95: 255 232 233; --pink-99: 255 250 251;
+  --pink-100: 255 255 255;
+
+  /* Flat aliases — light mode uses the "primary" role's tone (40): vivid
+     enough to read as a real color, dark enough for text/icon contrast on
+     a light card. */
+  --accent-green: var(--green-40);
+  --accent-cyan: var(--blue-40);
+  --accent-purple: var(--purple-40);
+  --accent-yellow: var(--yellow-40);
+  --accent-pink: var(--pink-40);
 }
 
 .dark {
@@ -29,15 +71,18 @@
   --bg-3: 50 45 37;
   --ink: 242 238 228;
   --ink-muted: 166 158 141;
-  /* Brighter than the light-mode accents on purpose — the light values were
-     tuned as mid-dark tones for contrast against a white card; the same
-     values would read as muddy/low-contrast against a dark card. */
-  --accent-green: 111 174 139;
-  --accent-cyan: 111 168 208;
-  --accent-purple: 169 146 208;
-  --accent-yellow: 217 160 63;
-  --accent-pink: 217 112 134;
   --border: 58 52 42;
+
+  /* Dark mode uses tone 80 for the flat aliases — Material's own convention
+     is to flip to a *lighter* tone in dark mode for adequate contrast
+     against a dark card, rather than reusing the light-mode tone (which
+     would read muddy/low-contrast here). The full ramps above don't change
+     between themes — only which tone the flat alias points at does. */
+  --accent-green: var(--green-80);
+  --accent-cyan: var(--blue-80);
+  --accent-purple: var(--purple-80);
+  --accent-yellow: var(--yellow-80);
+  --accent-pink: var(--pink-80);
 }
 
 html,
