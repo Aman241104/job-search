@@ -46,6 +46,8 @@ SMTP_PORT = 587
 
 ADZUNA_APP_ID = os.getenv("ADZUNA_APP_ID", "")
 ADZUNA_APP_KEY = os.getenv("ADZUNA_APP_KEY", "")
+JOOBLE_API_KEY = os.getenv("JOOBLE_API_KEY", "")
+CAREERJET_API_KEY = os.getenv("CAREERJET_API_KEY", "")
 
 # Cloudinary — persistent storage for uploaded book PDFs (Render's free-tier
 # local disk is ephemeral and doesn't survive a restart/redeploy; the raw

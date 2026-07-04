@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import DATA_DIR, ADZUNA_APP_ID, ADZUNA_APP_KEY
+from config import DATA_DIR, ADZUNA_APP_ID, ADZUNA_APP_KEY, JOOBLE_API_KEY, CAREERJET_API_KEY
 from claude_client import ask_claude_json, score_job_single
 from bs4 import BeautifulSoup
 from rich.console import Console
@@ -290,7 +290,70 @@ class JobFinderAgent:
                         continue
             except Exception as e:
                 console.print(f"[yellow]LinkedIn [{search.get('keywords')}] failed: {e}[/yellow]")
+        # NOT calling _enrich_linkedin_descriptions() here by default — live
+        # testing 2026-07-04 showed repeated use escalates LinkedIn's
+        # anti-bot system (explicit [ANTIBOT] errors, success rate dropped
+        # from 15/15 to 4/43 across two sessions minutes apart). The real
+        # risk isn't the enrichment failing gracefully (it does) — it's that
+        # continued individual-page visits could get this IP flagged broadly
+        # enough to also break the guest search API above, which already
+        # works reliably today. Call self._enrich_linkedin_descriptions(jobs)
+        # manually/locally if you want to try it anyway, with max_jobs kept low.
         return jobs
+
+    def _enrich_linkedin_descriptions(self, jobs: list, max_jobs: int = 15) -> None:
+        """
+        The guest search API above never includes the job description — only
+        the individual job page has it, and that page is JS-rendered and more
+        aggressively bot-protected than the search API. Uses Crawl4AI
+        (headless browser, concurrency=1) to fetch real description text for
+        up to `max_jobs` of the found postings, paced 2s apart. Deliberately
+        NOT applied to Himalayas (see its own comment) — that source is
+        blocked by a Cloudflare TLS-fingerprint check, not a JS-rendering
+        gap, so a headless browser doesn't reliably help there anyway.
+        Any per-job failure just leaves that job's description empty (today's
+        behavior) — never crashes the rest of the scrape run over this.
+        """
+        if not jobs:
+            return
+        try:
+            import asyncio
+            from crawl4ai import AsyncWebCrawler
+        except ImportError:
+            return  # crawl4ai not installed in this environment — descriptions just stay empty
+
+        # LinkedIn gates the full description behind a login wall for guests
+        # on some postings (varies per-company/posting, not predictable up
+        # front) — when that happens the "content" after the title heading is
+        # actually the sign-in prompt, not a real description. Reject text
+        # dominated by these tells rather than storing login-wall junk as if
+        # it were a job description.
+        LOGIN_WALL_TELLS = ("forgot password", "join or sign in to find your next job", "email or phone")
+
+        def _looks_like_login_wall(text: str) -> bool:
+            lowered = text[:600].lower()
+            return sum(1 for tell in LOGIN_WALL_TELLS if tell in lowered) >= 2
+
+        async def _fetch_all():
+            async with AsyncWebCrawler() as crawler:
+                for job in jobs[:max_jobs]:
+                    try:
+                        result = await crawler.arun(url=job["url"])
+                        if result.success and result.markdown:
+                            md = result.markdown
+                            marker = f"### {job['title']}"
+                            idx = md.find(marker)
+                            text = (md[idx + len(marker):] if idx != -1 else md).strip()
+                            if text and not _looks_like_login_wall(text):
+                                job["description"] = text[:3000]
+                    except Exception:
+                        continue  # this job's description stays empty, not fatal
+                    await asyncio.sleep(2)  # pacing — avoid hammering LinkedIn
+
+        try:
+            asyncio.run(_fetch_all())
+        except Exception as e:
+            console.print(f"[yellow]LinkedIn description enrichment failed: {e}[/yellow]")
 
     # ── Source: Remotive (free REST API — curated remote tech jobs) ──────────
 
@@ -655,6 +718,90 @@ class JobFinderAgent:
             console.print(f"[yellow]Adzuna failed: {e}[/yellow]")
             return []
 
+    # ── Source: Jooble (free REST API, key-based — official, no bot-detection
+    # surface at all, same trust tier as Adzuna) ──────────────────────────────
+
+    def _fetch_jooble(self, keyword: str, location: str = "India") -> list:
+        if not JOOBLE_API_KEY:
+            return []
+        try:
+            r = requests.post(
+                f"https://jooble.org/api/{JOOBLE_API_KEY}",
+                json={"keywords": keyword, "location": location},
+                headers={"Content-Type": "application/json"},
+                timeout=15,
+            )
+            r.raise_for_status()
+            jobs = []
+            for j in r.json().get("jobs", []):
+                title = j.get("title", "")
+                if self._is_senior(title):
+                    continue
+                jobs.append({
+                    "id":           str(uuid.uuid4()),
+                    "title":        title,
+                    "company":      j.get("company", ""),
+                    "description":  BeautifulSoup(j.get("snippet", ""), "html.parser").get_text(separator=" ")[:2000],
+                    "url":          j.get("link", ""),
+                    "source":       "Jooble",
+                    "location":     j.get("location", location),
+                    "salary":       j.get("salary", "") or "Not specified",
+                    "date_posted":  j.get("updated", ""),
+                    "tags":         [],
+                    "score":        0,
+                    "score_reason": "",
+                    "date_found":   datetime.now().isoformat(),
+                })
+            return jobs
+        except Exception as e:
+            console.print(f"[yellow]Jooble failed: {e}[/yellow]")
+            return []
+
+    # ── Source: Careerjet (free REST API, key-based — official, 1000 req/hr) ─
+
+    def _fetch_careerjet(self, keyword: str, location: str = "India") -> list:
+        if not CAREERJET_API_KEY:
+            return []
+        try:
+            r = requests.get(
+                "http://public.api.careerjet.net/search",
+                params={
+                    "keywords": keyword, "location": location,
+                    "affid": CAREERJET_API_KEY, "user_ip": "1.1.1.1",
+                    "user_agent": HEADERS["User-Agent"], "url": "https://job-serach.local/",
+                    "pagesize": 20,
+                },
+                timeout=15,
+            )
+            r.raise_for_status()
+            data = r.json()
+            if data.get("type") != "JOBS":
+                return []
+            jobs = []
+            for j in data.get("jobs", []):
+                title = j.get("title", "")
+                if self._is_senior(title):
+                    continue
+                jobs.append({
+                    "id":           str(uuid.uuid4()),
+                    "title":        title,
+                    "company":      j.get("company", ""),
+                    "description":  BeautifulSoup(j.get("description", ""), "html.parser").get_text(separator=" ")[:2000],
+                    "url":          j.get("url", ""),
+                    "source":       "Careerjet",
+                    "location":     j.get("locations", "") or location,
+                    "salary":       j.get("salary", "") or "Not specified",
+                    "date_posted":  j.get("date", ""),
+                    "tags":         [],
+                    "score":        0,
+                    "score_reason": "",
+                    "date_found":   datetime.now().isoformat(),
+                })
+            return jobs
+        except Exception as e:
+            console.print(f"[yellow]Careerjet failed: {e}[/yellow]")
+            return []
+
     PROFILE = (
         "Aman Patel, fresher 2026, B.E. EC Engineering LDCE Ahmedabad CGPA 8.0. "
         "Skills: React Next.js TypeScript JavaScript Tailwind Node.js Express MongoDB MySQL GSAP Figma. "
@@ -869,6 +1016,18 @@ class JobFinderAgent:
                 all_jobs.extend(self._fetch_adzuna(kw))
                 console.print(f"  [dim]Adzuna Ahmedabad: '{kw}'[/dim]")
                 all_jobs.extend(self._fetch_adzuna(kw, where="Ahmedabad"))
+
+        # ── Jooble (optional — needs free key) ──
+        if JOOBLE_API_KEY:
+            for kw in ["react developer", "frontend developer"]:
+                console.print(f"  [dim]Jooble: '{kw}'[/dim]")
+                all_jobs.extend(self._fetch_jooble(kw))
+
+        # ── Careerjet (optional — needs free key) ──
+        if CAREERJET_API_KEY:
+            for kw in ["react developer", "frontend developer"]:
+                console.print(f"  [dim]Careerjet: '{kw}'[/dim]")
+                all_jobs.extend(self._fetch_careerjet(kw))
 
         # ── WeWorkRemotely (remote programming jobs) ──
         console.print("  [dim]WeWorkRemotely: remote programming jobs[/dim]")
