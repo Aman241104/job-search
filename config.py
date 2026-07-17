@@ -29,6 +29,7 @@ GEMINI_MODEL_FALLBACK = "gemini-2.5-flash"  # smarter/low-quota — only 20/day
 # this default, don't assume a catalog listing means it actually works.
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "")
 NVIDIA_MODEL = os.getenv("NVIDIA_MODEL", "nvidia/llama-3.3-nemotron-super-49b-v1")
+NVIDIA_EMBED_MODEL = os.getenv("NVIDIA_EMBED_MODEL", "baai/bge-m3")
 
 # AI_PROVIDER controls CV/cover-letter generation only (agents/cv_customizer.py).
 # "claude_code" shells out to the local `claude` CLI, using the existing `claude login`
