@@ -122,6 +122,82 @@ def _whisper_transcribe(video_id: str) -> tuple:
         return result["text"], "whisper", ""
 
 
+def _list_playlist_videos(playlist_url: str) -> tuple:
+    """Returns ([{"video_id":..., "title":..., "url":...}, ...], playlist_title).
+    Uses yt-dlp's flat extraction — lists videos without downloading anything."""
+    import yt_dlp
+
+    ydl_opts = {"extract_flat": True, "quiet": True}
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(playlist_url, download=False)
+    entries = info.get("entries") or [info]  # a single-video URL falls back to itself
+    videos = []
+    for e in entries:
+        if not e:
+            continue
+        vid = e.get("id")
+        videos.append({
+            "video_id": vid,
+            "title": e.get("title") or vid,
+            "url": f"https://www.youtube.com/watch?v={vid}",
+        })
+    return videos, info.get("title") or "Untitled playlist"
+
+
+class StudyAgent:
+    def __init__(self):
+        from agents.tracker import TrackerAgent
+        self.tracker = TrackerAgent()
+
+    def start_playlist(self, url: str) -> str:
+        """Fast step: list videos (no download), create the playlist + pending
+        video rows, return immediately. Heavy work happens in process_playlist."""
+        videos_meta, playlist_title = _list_playlist_videos(url)
+        playlist_id = self.tracker.add_playlist(url, playlist_title)
+        for v in videos_meta:
+            self.tracker.add_video(playlist_id, v["video_id"], v["title"], v["url"])
+        return playlist_id
+
+    def process_playlist(self, playlist_id: str) -> None:
+        """Slow step: transcribe, generate notes, chunk, and embed every
+        pending video in this playlist. One video's failure never stops the
+        rest of the playlist."""
+        from claude_client import ask_ai, ask_nvidia_embedding
+
+        for v in self.tracker.get_videos_for_playlist(playlist_id):
+            if v["status"] != "pending":
+                continue
+            row_id = v["id"]
+            try:
+                self.tracker.update_video(row_id, status="transcribing")
+                text, source, error = _get_transcript(v["video_id"])
+                if not text:
+                    self.tracker.update_video(row_id, status="failed", error=error or "empty transcript")
+                    continue
+
+                notes = ask_ai(
+                    "Turn this video transcript into structured study notes (markdown, headings + "
+                    f"bullet points, grounded only in the transcript, no invented facts):\n\n{text[:12000]}",
+                    max_tokens=1200,
+                )
+                self.tracker.update_video(
+                    row_id, transcript=text, notes_md=notes or "", source=source, status="embedding"
+                )
+
+                chunks = _chunk_text(text)
+                if chunks:
+                    chunk_ids = self.tracker.add_chunks(row_id, playlist_id, chunks)
+                    vectors = ask_nvidia_embedding(chunks, input_type="passage")
+                    if vectors and len(vectors) == len(chunk_ids):
+                        _add_to_index(chunk_ids, vectors)
+
+                self.tracker.update_video(row_id, status="done")
+            except Exception as e:
+                self.tracker.update_video(row_id, status="failed", error=str(e))
+
+        self.tracker.update_playlist_status(playlist_id, "done")
+
+
 if __name__ == "__main__":
     # Offline self-check: no network, deterministic vectors — verifies
     # chunking + index add/search wiring independent of YouTube/NVIDIA.
