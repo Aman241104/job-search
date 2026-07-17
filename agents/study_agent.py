@@ -205,11 +205,12 @@ class StudyAgent:
             return {"answer": "Embedding service unavailable — try again shortly.", "sources": []}
 
         raw_results = _search_index(vectors[0], k=k * 4 if playlist_id else k)
-        chunk_ids = [cid for cid, _ in raw_results]
-        chunk_map = self.tracker.get_chunks_by_ids(chunk_ids)
+        candidate_ids = [cid for cid, _ in raw_results]
+        chunk_map = self.tracker.get_chunks_by_ids(candidate_ids)
+        chunk_ids = [cid for cid in candidate_ids if cid in chunk_map]
 
         if playlist_id:
-            chunk_ids = [cid for cid in chunk_ids if chunk_map.get(cid, {}).get("playlist_id") == playlist_id][:k]
+            chunk_ids = [cid for cid in chunk_ids if chunk_map[cid]["playlist_id"] == playlist_id][:k]
 
         if not chunk_ids:
             return {"answer": "No indexed content matches this question yet.", "sources": []}
