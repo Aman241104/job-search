@@ -273,6 +273,42 @@ class TrackerAgent:
                 )
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_batch_items_batch ON batch_items(batch_id)")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS learning_playlists (
+                    id TEXT PRIMARY KEY,
+                    url TEXT,
+                    title TEXT,
+                    status TEXT DEFAULT 'ingesting',
+                    created_at TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS learning_videos (
+                    id TEXT PRIMARY KEY,
+                    playlist_id TEXT,
+                    video_id TEXT,
+                    title TEXT,
+                    url TEXT,
+                    transcript TEXT,
+                    notes_md TEXT,
+                    source TEXT,
+                    status TEXT DEFAULT 'pending',
+                    error TEXT,
+                    created_at TEXT,
+                    FOREIGN KEY (playlist_id) REFERENCES learning_playlists(id)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS learning_video_chunks (
+                    id TEXT PRIMARY KEY,
+                    video_id TEXT,
+                    playlist_id TEXT,
+                    chunk_index INTEGER,
+                    text TEXT,
+                    created_at TEXT,
+                    FOREIGN KEY (video_id) REFERENCES learning_videos(id)
+                )
+            """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_learning_topics_item ON learning_topics(item_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_book_pages_book ON learning_book_pages(book_id)")
             if _pg_pool:
@@ -1008,6 +1044,96 @@ class TrackerAgent:
         with self._get_conn() as conn:
             conn.execute("UPDATE learning_books SET current_page = ? WHERE id = ?", (page_num, book_id))
             conn.commit()
+
+    # ── YouTube playlist study RAG ──────────────────────────────────────────
+
+    def add_playlist(self, url: str, title: str) -> str:
+        playlist_id = str(uuid.uuid4())
+        now = datetime.now().isoformat()
+        with self._get_conn() as conn:
+            conn.execute(
+                "INSERT INTO learning_playlists (id, url, title, status, created_at) VALUES (?, ?, ?, 'ingesting', ?)",
+                (playlist_id, url, title, now),
+            )
+            conn.commit()
+        return playlist_id
+
+    def update_playlist_status(self, playlist_id: str, status: str) -> None:
+        with self._get_conn() as conn:
+            conn.execute("UPDATE learning_playlists SET status = ? WHERE id = ?", (status, playlist_id))
+            conn.commit()
+
+    def get_playlists(self) -> list:
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT * FROM learning_playlists ORDER BY created_at DESC").fetchall()
+        return [dict(r) for r in rows]
+
+    def get_playlist(self, playlist_id: str) -> dict | None:
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM learning_playlists WHERE id = ?", (playlist_id,)).fetchone()
+        return dict(row) if row else None
+
+    def add_video(self, playlist_id: str, video_id: str, title: str, url: str) -> str:
+        row_id = str(uuid.uuid4())
+        now = datetime.now().isoformat()
+        with self._get_conn() as conn:
+            conn.execute(
+                "INSERT INTO learning_videos (id, playlist_id, video_id, title, url, status, created_at) "
+                "VALUES (?, ?, ?, ?, ?, 'pending', ?)",
+                (row_id, playlist_id, video_id, title, url, now),
+            )
+            conn.commit()
+        return row_id
+
+    def update_video(self, row_id: str, **fields) -> None:
+        """fields: any of transcript, notes_md, source, status, error."""
+        if not fields:
+            return
+        cols = ", ".join(f"{k} = ?" for k in fields)
+        with self._get_conn() as conn:
+            conn.execute(f"UPDATE learning_videos SET {cols} WHERE id = ?", (*fields.values(), row_id))
+            conn.commit()
+
+    def get_videos_for_playlist(self, playlist_id: str) -> list:
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM learning_videos WHERE playlist_id = ? ORDER BY created_at", (playlist_id,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def add_chunks(self, video_row_id: str, playlist_id: str, chunks: list) -> list:
+        """chunks: list of chunk text strings. Returns the generated chunk ids,
+        in the same order — callers need this order to line up with FAISS rows."""
+        ids = [str(uuid.uuid4()) for _ in chunks]
+        now = datetime.now().isoformat()
+        with self._get_conn() as conn:
+            for i, (chunk_id, text) in enumerate(zip(ids, chunks)):
+                conn.execute(
+                    "INSERT INTO learning_video_chunks (id, video_id, playlist_id, chunk_index, text, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (chunk_id, video_row_id, playlist_id, i, text, now),
+                )
+            conn.commit()
+        return ids
+
+    def get_chunks_by_ids(self, chunk_ids: list) -> dict:
+        """Returns {chunk_id: {"text":..., "video_id":..., "playlist_id":..., "video_title":...}}."""
+        if not chunk_ids:
+            return {}
+        placeholders = ",".join("?" for _ in chunk_ids)
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                f"""SELECT c.id, c.text, c.video_id, c.playlist_id, v.title AS video_title
+                    FROM learning_video_chunks c
+                    JOIN learning_videos v ON v.id = c.video_id
+                    WHERE c.id IN ({placeholders})""",
+                chunk_ids,
+            ).fetchall()
+        return {r["id"]: dict(r) for r in rows}
 
     # ── Telegram inbound (message_id -> job_id, so a reply to a job alert can
     # be matched back to the job it's about) ──────────────────────────────────
