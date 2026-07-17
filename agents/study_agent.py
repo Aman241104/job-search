@@ -197,6 +197,39 @@ class StudyAgent:
 
         self.tracker.update_playlist_status(playlist_id, "done")
 
+    def ask(self, question: str, playlist_id: str = None, k: int = 5) -> dict:
+        from claude_client import ask_ai, ask_nvidia_embedding
+
+        vectors = ask_nvidia_embedding([question], input_type="query")
+        if not vectors:
+            return {"answer": "Embedding service unavailable — try again shortly.", "sources": []}
+
+        raw_results = _search_index(vectors[0], k=k * 4 if playlist_id else k)
+        chunk_ids = [cid for cid, _ in raw_results]
+        chunk_map = self.tracker.get_chunks_by_ids(chunk_ids)
+
+        if playlist_id:
+            chunk_ids = [cid for cid in chunk_ids if chunk_map.get(cid, {}).get("playlist_id") == playlist_id][:k]
+
+        if not chunk_ids:
+            return {"answer": "No indexed content matches this question yet.", "sources": []}
+
+        context_parts = []
+        sources = []
+        for cid in chunk_ids:
+            c = chunk_map[cid]
+            context_parts.append(f"[{c['video_title']}]: {c['text']}")
+            if c["video_title"] not in sources:
+                sources.append(c["video_title"])
+
+        context = "\n\n".join(context_parts)
+        prompt = (
+            "Answer the question using ONLY the context below. If the answer isn't in the "
+            f"context, say so.\n\nContext:\n{context}\n\nQuestion: {question}"
+        )
+        answer = ask_ai(prompt, max_tokens=600)
+        return {"answer": answer or "No answer generated.", "sources": sources}
+
 
 if __name__ == "__main__":
     # Offline self-check: no network, deterministic vectors — verifies
