@@ -25,6 +25,61 @@ def _nvidia_cfg():
     return NVIDIA_API_KEY, NVIDIA_MODEL
 
 
+def _nvidia_embed_cfg():
+    from config import NVIDIA_API_KEY, NVIDIA_EMBED_MODEL
+    return NVIDIA_API_KEY, NVIDIA_EMBED_MODEL
+
+
+NVIDIA_EMBED_URL = "https://integrate.api.nvidia.com/v1/embeddings"
+
+
+def ask_nvidia_embedding(texts: list, input_type: str = "passage", retries: int = 2) -> list:
+    """
+    Batch-embed a list of strings via NVIDIA NIM's bge-m3 embedding endpoint
+    (OpenAI-compatible /v1/embeddings). bge-m3 is an asymmetric model — NIM
+    requires input_type: "passage" when embedding content to index, "query"
+    when embedding a search question. Returns [] on any failure (no key,
+    network error, non-200) so callers can skip the batch rather than crash
+    the whole ingest — same fail-open contract as ask_nvidia.
+    """
+    api_key, model = _nvidia_embed_cfg()
+    if not api_key or not texts:
+        return []
+
+    body = {
+        "input": texts,
+        "model": model,
+        "input_type": input_type,
+        "encoding_format": "float",
+        "truncate": "END",
+    }
+
+    for attempt in range(retries):
+        try:
+            resp = _requests.post(
+                NVIDIA_EMBED_URL,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+                json=body,
+                timeout=60,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return [item["embedding"] for item in data["data"]]
+            if resp.status_code == 429 and attempt < retries - 1:
+                time.sleep(5 * (attempt + 1))
+                continue
+            break
+        except Exception:
+            if attempt < retries - 1:
+                time.sleep(3)
+            continue
+    return []
+
+
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
