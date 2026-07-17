@@ -79,6 +79,49 @@ def _search_index(query_vector: list, k: int = 5) -> list:
     return results
 
 
+def _get_transcript(video_id: str) -> tuple:
+    """Returns (text, source, error). source is 'captions' or 'whisper';
+    text is '' and error is set if both methods fail."""
+    from youtube_transcript_api import YouTubeTranscriptApi
+    from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
+
+    try:
+        segments = YouTubeTranscriptApi().fetch(video_id)
+        text = " ".join(s.text for s in segments)
+        if text.strip():
+            return text, "captions", ""
+    except (TranscriptsDisabled, NoTranscriptFound):
+        pass
+    except Exception:
+        pass  # any other captions-fetch error also falls through to Whisper
+
+    try:
+        return _whisper_transcribe(video_id)
+    except Exception as e:
+        return "", "", f"captions unavailable and Whisper fallback failed: {e}"
+
+
+def _whisper_transcribe(video_id: str) -> tuple:
+    import tempfile
+    import whisper
+    import yt_dlp
+
+    with tempfile.TemporaryDirectory() as tmp:
+        audio_path = os.path.join(tmp, f"{video_id}.mp3")
+        ydl_opts = {
+            "format": "bestaudio/best",
+            "outtmpl": os.path.join(tmp, video_id),
+            "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3"}],
+            "quiet": True,
+            "noplaylist": True,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
+        model = whisper.load_model("base")
+        result = model.transcribe(audio_path)
+        return result["text"], "whisper", ""
+
+
 if __name__ == "__main__":
     # Offline self-check: no network, deterministic vectors — verifies
     # chunking + index add/search wiring independent of YouTube/NVIDIA.
