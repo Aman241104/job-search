@@ -12,6 +12,29 @@ INDEX_PATH = os.path.join(DATA_DIR, "study_index.faiss")
 ORDER_PATH = os.path.join(DATA_DIR, "study_index_order.json")
 EMBED_DIM = 1024  # bge-m3 dense embedding size
 
+_cookies_file_cache = None
+
+
+def _cookies_file():
+    """Writes YOUTUBE_COOKIES (a Netscape-format cookies.txt's contents, e.g.
+    exported via the "Get cookies.txt" browser extension) to a temp file once
+    per process and returns its path, or None if unset. Needed because cloud
+    hosts (Cloud Run, Render, etc.) get IP-blocked by YouTube's bot check for
+    both caption fetches and yt-dlp downloads — a real browser session's
+    cookies are the standard yt-dlp-recommended workaround."""
+    global _cookies_file_cache
+    if _cookies_file_cache:
+        return _cookies_file_cache
+    raw = os.getenv("YOUTUBE_COOKIES", "")
+    if not raw:
+        return None
+    import tempfile
+    fd, path = tempfile.mkstemp(suffix="_cookies.txt")
+    with os.fdopen(fd, "w") as f:
+        f.write(raw)
+    _cookies_file_cache = path
+    return path
+
 
 def _chunk_text(text: str, chunk_words: int = 500, overlap_words: int = 50) -> list:
     """Word-based chunking with overlap. Returns [] for blank/whitespace-only text."""
@@ -82,23 +105,34 @@ def _search_index(query_vector: list, k: int = 5) -> list:
 def _get_transcript(video_id: str) -> tuple:
     """Returns (text, source, error). source is 'captions' or 'whisper';
     text is '' and error is set if both methods fail."""
+    from http.cookiejar import MozillaCookieJar
     from youtube_transcript_api import YouTubeTranscriptApi
     from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 
+    http_client = None
+    cookies_path = _cookies_file()
+    if cookies_path:
+        import requests
+        jar = MozillaCookieJar(cookies_path)
+        jar.load(ignore_discard=True, ignore_expires=True)
+        http_client = requests.Session()
+        http_client.cookies = jar
+
+    captions_error = ""
     try:
-        segments = YouTubeTranscriptApi().fetch(video_id)
+        segments = YouTubeTranscriptApi(http_client=http_client).fetch(video_id)
         text = " ".join(s.text for s in segments)
         if text.strip():
             return text, "captions", ""
-    except (TranscriptsDisabled, NoTranscriptFound):
-        pass
-    except Exception:
-        pass  # any other captions-fetch error also falls through to Whisper
+    except (TranscriptsDisabled, NoTranscriptFound) as e:
+        captions_error = str(e)
+    except Exception as e:
+        captions_error = str(e)  # any other captions-fetch error also falls through to Whisper
 
     try:
         return _whisper_transcribe(video_id)
     except Exception as e:
-        return "", "", f"captions unavailable and Whisper fallback failed: {e}"
+        return "", "", f"captions failed ({captions_error}) and Whisper fallback failed: {e}"
 
 
 def _whisper_transcribe(video_id: str) -> tuple:
@@ -115,6 +149,9 @@ def _whisper_transcribe(video_id: str) -> tuple:
             "quiet": True,
             "noplaylist": True,
         }
+        cookies_path = _cookies_file()
+        if cookies_path:
+            ydl_opts["cookiefile"] = cookies_path
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
         model = whisper.load_model("base")
