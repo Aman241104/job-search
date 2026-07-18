@@ -21,6 +21,10 @@ touches your instance, and vice versa.
 
 ## Quick start
 
+Requires `ffmpeg` on your system `PATH` (used as a Whisper transcription
+fallback for YouTube playlist videos with captions disabled — Learning >
+Playlists tab). `sudo apt install ffmpeg` / `brew install ffmpeg`.
+
 ```bash
 git clone <this-repo>
 cd job-serach

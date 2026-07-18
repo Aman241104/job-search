@@ -11,6 +11,7 @@ choose to deploy to a platform that requires a payment method on file
 be charged unless you exceed the free tier).
 """
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -34,6 +35,9 @@ def section(title: str):
 
 def main():
     print(__doc__)
+    if not shutil.which("ffmpeg"):
+        print("NOTE: ffmpeg not found on PATH — install it (apt/brew install ffmpeg)")
+        print("      or the Learning > Playlists Whisper transcription fallback won't work.")
     input("Press Enter to begin...")
     env = {}
 
@@ -45,6 +49,7 @@ def main():
 
     section("2/7 — AI provider (required)")
     print("NVIDIA NIM is the primary provider — free tier, ~40 requests/min, no card needed.")
+    print("Same key also powers the Learning > Playlists RAG embeddings (bge-m3).")
     print("Sign up at https://build.nvidia.com, open any model, click 'Get API Key'.")
     env["NVIDIA_API_KEY"] = ask("Paste your NVIDIA API key")
     env["NVIDIA_MODEL"] = "nvidia/llama-3.3-nemotron-super-49b-v1"
