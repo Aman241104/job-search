@@ -16,6 +16,8 @@ output/books/*.pdf
 data/applications.db
 data/found_jobs.json
 data/gemini_cooldowns.json
+data/study_index.faiss
+data/study_index_order.json
 
 # Session/tool state — not meant to be shared
 .claude/
