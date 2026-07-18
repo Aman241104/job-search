@@ -300,3 +300,113 @@ select:focus {
 .chip-breathe {
   animation: chip-breathe 3.5s ease-in-out infinite;
 }
+
+/* Rendered markdown docs (web/app/docs/*) — hand-styled instead of pulling
+   in @tailwindcss/typography for two static pages. */
+.markdown-body {
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: rgb(var(--ink) / 0.75);
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3 {
+  color: rgb(var(--ink) / 0.9);
+  font-weight: 700;
+  margin-top: 2em;
+  margin-bottom: 0.6em;
+}
+
+.markdown-body h1 { font-size: 1.35rem; }
+.markdown-body h2 { font-size: 1.15rem; }
+.markdown-body h3 { font-size: 1rem; }
+
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body blockquote {
+  margin-bottom: 1em;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 1.4em;
+}
+
+.markdown-body li {
+  margin-bottom: 0.35em;
+}
+
+.markdown-body li > p {
+  margin-bottom: 0.35em;
+}
+
+.markdown-body a {
+  color: rgb(var(--accent-green));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown-body strong {
+  color: rgb(var(--ink) / 0.9);
+  font-weight: 600;
+}
+
+.markdown-body code {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.82em;
+  background: rgb(var(--bg-2));
+  border: 1px solid rgb(var(--border));
+  border-radius: 4px;
+  padding: 0.1em 0.4em;
+}
+
+.markdown-body pre {
+  background: rgb(var(--bg-2));
+  border: 1px solid rgb(var(--border));
+  border-radius: 10px;
+  padding: 1em;
+  overflow-x: auto;
+  margin-bottom: 1.2em;
+}
+
+.markdown-body pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.8em;
+  line-height: 1.6;
+}
+
+.markdown-body blockquote {
+  border-left: 3px solid rgb(var(--accent-green) / 0.4);
+  padding-left: 1em;
+  color: rgb(var(--ink) / 0.55);
+}
+
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid rgb(var(--border));
+  margin: 2em 0;
+}
+
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.2em;
+  font-size: 0.85em;
+}
+
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid rgb(var(--border));
+  padding: 0.5em 0.75em;
+  text-align: left;
+}
+
+.markdown-body th {
+  background: rgb(var(--bg-2));
+  color: rgb(var(--ink) / 0.85);
+  font-weight: 600;
+}

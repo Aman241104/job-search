@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { motion } from 'framer-motion';
 import gsap from 'gsap';
-import { SquaresFour, Briefcase, Brain, LinkSimple, DownloadSimple, ChartBar, FileText, User, MagnifyingGlass, DotsThree, GraduationCap, BookmarkSimple, PaperPlaneTilt, Sun, Moon, X as CloseIcon } from '@phosphor-icons/react';
+import { SquaresFour, Briefcase, Brain, LinkSimple, DownloadSimple, ChartBar, FileText, User, MagnifyingGlass, DotsThree, GraduationCap, BookmarkSimple, PaperPlaneTilt, BookOpen, Sun, Moon, X as CloseIcon } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import { useGlobalSearch } from '@/components/GlobalSearch';
 import clsx from 'clsx';
@@ -22,6 +22,7 @@ const navItems = [
   { href: '/resume', icon: FileText, label: 'Resume' },
   { href: '/profile', icon: User, label: 'Profile' },
   { href: '/links', icon: LinkSimple, label: 'Job Boards' },
+  { href: '/docs', icon: BookOpen, label: 'Docs' },
 ];
 
 // Mobile bottom nav only has room for ~5 comfortable tabs on a 375px screen
