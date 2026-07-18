@@ -153,6 +153,15 @@ export default function PlaylistPanel() {
             ))}
           </div>
         )}
+
+        <a
+          href="https://github.com/Lucifer0406/EduRAG"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-6 block text-center text-[10px] text-white/25 hover:text-accent-green transition-colors"
+        >
+          RAG pipeline design informed by Lucifer0406/EduRAG ↗
+        </a>
       </div>
 
       <div className="flex-1 flex flex-col min-h-0 min-h-[500px]">
