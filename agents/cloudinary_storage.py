@@ -45,7 +45,8 @@ def upload_raw(raw_bytes: bytes, public_id: str) -> str:
             raw_bytes, resource_type="raw", public_id=public_id, overwrite=True,
         )
         return result.get("secure_url", "")
-    except Exception:
+    except Exception as e:
+        print(f"[cloudinary_storage] upload_raw({public_id!r}) failed: {e!r}")
         return ""
 
 
@@ -59,8 +60,12 @@ def download_raw(public_id: str) -> bytes | None:
         import requests
         url, _ = cloudinary.utils.cloudinary_url(public_id, resource_type="raw")
         resp = requests.get(url, timeout=30)
-        return resp.content if resp.status_code == 200 else None
-    except Exception:
+        if resp.status_code != 200:
+            print(f"[cloudinary_storage] download_raw({public_id!r}) -> {url} returned HTTP {resp.status_code}")
+            return None
+        return resp.content
+    except Exception as e:
+        print(f"[cloudinary_storage] download_raw({public_id!r}) failed: {e!r}")
         return None
 
 
