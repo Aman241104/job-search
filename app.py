@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, Query, Request, UploadFile, File
+from fastapi import FastAPI, Query, Request, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -1127,6 +1127,48 @@ async def book_chat(book_id: str, page_num: int, message: str = Query(default=''
     loop = asyncio.get_event_loop()
     response = await loop.run_in_executor(None, lambda: chat.send(message, max_tokens=600))
     return {'response': response or ''}
+
+
+# ── YouTube playlist study RAG — paste a playlist link, get transcripts +
+# AI notes per video, and ask questions answered by RAG over the indexed
+# transcripts. Ingest is split into a fast synchronous step (list videos,
+# create rows) so the request returns immediately, and a BackgroundTasks
+# step that does the slow transcribe/embed work; the frontend polls
+# GET .../{playlist_id} for per-video progress. ─────────────────────────────
+
+@app.post('/api/learning/playlists/ingest')
+async def ingest_playlist(background_tasks: BackgroundTasks, url: str = Query(...)):
+    from agents.study_agent import StudyAgent
+    agent = StudyAgent()
+    loop = asyncio.get_event_loop()
+    playlist_id = await loop.run_in_executor(None, lambda: agent.start_playlist(url))
+    background_tasks.add_task(agent.process_playlist, playlist_id)
+    return {'ok': True, 'playlist_id': playlist_id}
+
+
+@app.get('/api/learning/playlists')
+async def list_playlists():
+    return TrackerAgent().get_playlists()
+
+
+@app.get('/api/learning/playlists/{playlist_id}')
+async def get_playlist_detail(playlist_id: str):
+    tracker = TrackerAgent()
+    playlist = tracker.get_playlist(playlist_id)
+    if not playlist:
+        return JSONResponse({'error': 'Playlist not found'}, status_code=404)
+    playlist['videos'] = tracker.get_videos_for_playlist(playlist_id)
+    return playlist
+
+
+@app.post('/api/learning/playlists/ask')
+async def ask_playlists(question: str = Query(...), playlist_id: str = Query(default=None)):
+    if not question:
+        return JSONResponse({'error': 'question is required'}, status_code=400)
+    from agents.study_agent import StudyAgent
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, lambda: StudyAgent().ask(question, playlist_id))
+    return result
 
 
 # ── Interview Story Bank (STAR + Reflection) ────────────────────────────────────
