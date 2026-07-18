@@ -136,6 +136,29 @@ export interface Story {
   updated_at: string;
 }
 
+export interface StudyVideo {
+  id: string;
+  playlist_id: string;
+  video_id: string;
+  title: string;
+  url: string;
+  transcript?: string;
+  notes_md?: string;
+  source?: string;
+  status: 'pending' | 'transcribing' | 'embedding' | 'done' | 'failed';
+  error?: string;
+  created_at: string;
+}
+
+export interface StudyPlaylist {
+  id: string;
+  url: string;
+  title: string;
+  status: string;
+  created_at: string;
+  videos?: StudyVideo[];
+}
+
 export interface InterviewRound {
   id: string;
   job_id: string;
@@ -353,6 +376,34 @@ export const api = {
       { method: 'POST' }
     ).then((r) => {
       if (!r.ok) throw new Error(`Book chat failed: ${r.status}`);
+      return r.json();
+    }),
+
+  ingestPlaylist: (url: string): Promise<{ ok: boolean; playlist_id: string }> =>
+    fetch(`${API}/api/learning/playlists/ingest?url=${encodeURIComponent(url)}`, { method: 'POST' }).then((r) => {
+      if (!r.ok) throw new Error(`Playlist ingest failed: ${r.status}`);
+      return r.json();
+    }),
+
+  listPlaylists: (): Promise<StudyPlaylist[]> =>
+    fetch(`${API}/api/learning/playlists`).then((r) => {
+      if (!r.ok) throw new Error(`List playlists failed: ${r.status}`);
+      return r.json();
+    }),
+
+  getPlaylist: (id: string): Promise<StudyPlaylist> =>
+    fetch(`${API}/api/learning/playlists/${id}`).then((r) => {
+      if (!r.ok) throw new Error(`Get playlist failed: ${r.status}`);
+      return r.json();
+    }),
+
+  askPlaylists: (question: string, playlistId?: string): Promise<{ answer: string; sources: string[] }> =>
+    fetch(
+      `${API}/api/learning/playlists/ask?question=${encodeURIComponent(question)}` +
+        (playlistId ? `&playlist_id=${playlistId}` : ''),
+      { method: 'POST' }
+    ).then((r) => {
+      if (!r.ok) throw new Error(`Ask failed: ${r.status}`);
       return r.json();
     }),
 
