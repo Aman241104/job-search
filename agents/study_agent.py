@@ -76,6 +76,51 @@ def _save_index(index, order: list) -> None:
         json.dump(order, f)
 
 
+STUDY_INDEX_PUBLIC_ID = "job-serach-study/study_index.faiss"
+STUDY_ORDER_PUBLIC_ID = "job-serach-study/study_index_order.json"
+
+
+def _cloud_sync_down() -> None:
+    """Best-effort — pulls the latest index from Cloudinary before a search,
+    so this host sees vectors added by ingestion on a different host (e.g. a
+    playlist ingested from local dev, searched via the deployed backend,
+    whose own IP is blocked from fetching YouTube transcripts directly — see
+    _cookies_file's comment). Overwrites local files unconditionally.
+    ponytail: last-uploader-wins, no staleness/versioning check — fine for a
+    single-user project; add one if this ever needs concurrent multi-host
+    ingests."""
+    from agents.cloudinary_storage import download_raw
+    index_bytes = download_raw(STUDY_INDEX_PUBLIC_ID)
+    order_bytes = download_raw(STUDY_ORDER_PUBLIC_ID)
+    if not (index_bytes and order_bytes):
+        return
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(INDEX_PATH, "wb") as f:
+            f.write(index_bytes)
+        with open(ORDER_PATH, "wb") as f:
+            f.write(order_bytes)
+    except Exception:
+        pass
+
+
+def _cloud_sync_up() -> None:
+    """Best-effort — pushes the current on-disk index to Cloudinary so a
+    playlist ingested on this host is searchable from ask() running on a
+    different host. No-op if Cloudinary isn't configured or nothing has been
+    indexed yet."""
+    from agents.cloudinary_storage import upload_raw
+    if not (os.path.exists(INDEX_PATH) and os.path.exists(ORDER_PATH)):
+        return
+    try:
+        with open(INDEX_PATH, "rb") as f:
+            upload_raw(f.read(), STUDY_INDEX_PUBLIC_ID)
+        with open(ORDER_PATH, "rb") as f:
+            upload_raw(f.read(), STUDY_ORDER_PUBLIC_ID)
+    except Exception:
+        pass
+
+
 def _add_to_index(chunk_ids: list, vectors: list) -> None:
     """Appends new chunk vectors to the on-disk index and saves it."""
     if not chunk_ids or not vectors:
@@ -201,6 +246,8 @@ class StudyAgent:
         rest of the playlist."""
         from claude_client import ask_ai, ask_nvidia_embedding
 
+        _cloud_sync_down()  # start from whatever another host last synced, so we build on top of it, not overwrite it
+
         for v in self.tracker.get_videos_for_playlist(playlist_id):
             if v["status"] != "pending":
                 continue
@@ -233,9 +280,12 @@ class StudyAgent:
                 self.tracker.update_video(row_id, status="failed", error=str(e))
 
         self.tracker.update_playlist_status(playlist_id, "done")
+        _cloud_sync_up()  # push this host's index so ask() on another host can find what was just added
 
     def ask(self, question: str, playlist_id: str = None, k: int = 5) -> dict:
         from claude_client import ask_ai, ask_nvidia_embedding
+
+        _cloud_sync_down()  # pick up anything ingested on a different host before searching
 
         vectors = ask_nvidia_embedding([question], input_type="query")
         if not vectors:
