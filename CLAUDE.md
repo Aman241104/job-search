@@ -125,6 +125,13 @@ Frontend Developer, React Developer, Next.js Developer, Full Stack Developer, UI
 - Can send email applications via Gmail SMTP (set SMTP_PASSWORD in .env)
 - Marks status in DB after you confirm
 
+### StudyAgent (agents/study_agent.py)
+- Paste a YouTube playlist link in the dashboard's Learning > Playlists tab
+- `yt-dlp` lists videos, `youtube-transcript-api` gets captions (Whisper fallback if captions are off — needs `ffmpeg` installed)
+- Each video's transcript is summarized into notes via `ask_ai()` and chunked/embedded (NVIDIA `bge-m3`) into a combined FAISS index (`data/study_index.faiss`)
+- Questions are answered by RAG: embed the question, retrieve top-k chunks, ground `ask_ai()`'s answer in them
+- No CLI command — web dashboard only (`POST /api/learning/playlists/ingest`, `GET /api/learning/playlists[/{id}]`, `POST /api/learning/playlists/ask`)
+
 ## How to update your resume
 
 Edit `data/master_resume.json` — this is the master source. All auto-generated CVs are derived from this.

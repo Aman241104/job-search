@@ -7,11 +7,12 @@ import LearningChat from '@/components/LearningChat';
 import TopicChecklist from '@/components/TopicChecklist';
 import BookReader from '@/components/BookReader';
 import { ToastProvider, useToast } from '@/components/Toast';
+import PlaylistPanel from '@/components/PlaylistPanel';
 import { api, LearningItem, LearningBook } from '@/lib/api';
 import clsx from 'clsx';
 
 const STATUS_CYCLE: LearningItem['status'][] = ['not_started', 'in_progress', 'done'];
-type Tab = 'skills' | 'books';
+type Tab = 'skills' | 'books' | 'playlists';
 
 function StatusIcon({ status }: { status: LearningItem['status'] }) {
   if (status === 'done') return <Check size={14} className="text-accent-green" />;
@@ -219,6 +220,17 @@ function LearningPageInner() {
           >
             Books & PDFs
           </button>
+          <button
+            onClick={() => setTab('playlists')}
+            className={clsx(
+              'text-xs font-semibold px-4 py-2 rounded-lg border transition-all',
+              tab === 'playlists'
+                ? 'bg-accent-green/10 border-accent-green/30 text-accent-green'
+                : 'border-border text-white/40 hover:text-white/70'
+            )}
+          >
+            Playlists
+          </button>
         </div>
       </div>
 
@@ -264,7 +276,7 @@ function LearningPageInner() {
             <LearningChat item={selected} />
           </div>
         </div>
-      ) : (
+      ) : tab === 'books' ? (
         <div className="flex-1 flex flex-col md:flex-row min-h-0">
           <div ref={listRef} className="md:w-80 xl:w-96 border-r border-border flex-shrink-0 overflow-y-auto p-4">
             <input
@@ -319,6 +331,8 @@ function LearningPageInner() {
             <BookReader book={selectedBook} />
           </div>
         </div>
+      ) : (
+        <PlaylistPanel />
       )}
     </div>
   );
