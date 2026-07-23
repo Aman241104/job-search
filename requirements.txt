@@ -23,3 +23,4 @@ openai-whisper>=20231117
 PyJWT>=2.13
 Authlib>=1.7
 httpx>=0.28
+itsdangerous>=2.2
