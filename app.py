@@ -5,6 +5,7 @@ import json
 import math
 import os
 import re
+import secrets
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -27,7 +28,7 @@ from config import OUTPUT_DIR, DATA_DIR, MIN_APPLY_SCORE, LEARNING_TRACK, TELEGR
 from claude_client import GeminiChat, ask_gemini, ask_ai, check_legitimacy, draft_star_story
 from agents.contact_finder import draft_contact_outreach
 from agents.trainer import TRAINING_TOPICS, SYSTEM_PROMPTS
-from config import FRONTEND_URL, SMTP_EMAIL
+from config import FRONTEND_URL
 from auth import oauth, issue_session_jwt, get_current_user, SESSION_COOKIE, SESSION_TTL_SECONDS
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -458,9 +459,10 @@ async def find_jobs_stream(user_id: str = Depends(get_current_user)):
             # Push the best new finds to Telegram for manual apply-from-phone —
             # capped at 5/run so a big scrape doesn't spam the same phone with
             # dozens of messages at once. No-ops silently if Telegram isn't
-            # configured (checked once via .enabled, not per-job).
+            # connected for this user (checked once via chat_id, not per-job).
             notifier = TelegramNotifierAgent()
-            if notifier.enabled:
+            telegram_chat_id = (TrackerAgent().get_profile(user_id) or {}).get('telegram_chat_id') or TELEGRAM_CHAT_ID
+            if notifier.enabled and telegram_chat_id:
                 yield 'data: ' + json.dumps({
                     'type': 'progress',
                     'message': 'Pushing top new finds to Telegram...',
@@ -477,7 +479,7 @@ async def find_jobs_stream(user_id: str = Depends(get_current_user)):
                     for j in top_new:
                         try:
                             package = cv_agent.prepare_full_package(j)
-                            if notifier.send_job_alert(user_id, j, package['cv_path'], package['cover_letter_path'], package['cv_markdown']):
+                            if notifier.send_job_alert(user_id, j, package['cv_path'], package['cover_letter_path'], package['cv_markdown'], chat_id=telegram_chat_id):
                                 tracker.update_status(user_id, j['id'], 'found', notes='Telegram alert sent',
                                                        cv_path=package['cv_path'], cover_path=package['cover_letter_path'])
                                 sent_count += 1
@@ -586,9 +588,11 @@ async def telegram_notify(job_id: str, force: bool = Query(default=False), user_
     free moment, instead of needing this dashboard open."""
     tracker = TrackerAgent()
     notifier = TelegramNotifierAgent()
-    if not notifier.enabled:
+    profile = tracker.get_profile(user_id) or {}
+    chat_id = profile.get('telegram_chat_id') or TELEGRAM_CHAT_ID
+    if not notifier.enabled or not chat_id:
         return JSONResponse(
-            {'error': 'Telegram not configured — set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env.'},
+            {'error': 'Telegram not connected — connect it in Profile.'},
             status_code=400,
         )
 
@@ -597,7 +601,7 @@ async def telegram_notify(job_id: str, force: bool = Query(default=False), user_
         row = conn.execute("SELECT * FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id)).fetchone()
     if not row:
         return JSONResponse({'error': 'Job not found'}, status_code=404)
-    threshold = (tracker.get_profile(user_id) or {}).get('min_score_threshold', MIN_APPLY_SCORE)
+    threshold = profile.get('min_score_threshold', MIN_APPLY_SCORE)
     if (row.get('score') or 0) < threshold and not force:
         return JSONResponse({
             'error': f"Score {row.get('score', 0)} is below your quality gate ({threshold}). "
@@ -610,13 +614,46 @@ async def telegram_notify(job_id: str, force: bool = Query(default=False), user_
         return JSONResponse({'error': 'CV generation failed, not notifying — try again.'}, status_code=502)
 
     sent = await loop.run_in_executor(
-        None, lambda: notifier.send_job_alert(user_id, row, package['cv_path'], package['cover_letter_path'], package['cv_markdown'])
+        None, lambda: notifier.send_job_alert(user_id, row, package['cv_path'], package['cover_letter_path'], package['cv_markdown'], chat_id=chat_id)
     )
     if not sent:
-        return JSONResponse({'error': 'Telegram send failed — check TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID.'}, status_code=502)
+        return JSONResponse({'error': 'Telegram send failed — try reconnecting in Profile.'}, status_code=502)
 
     tracker.update_status(user_id, job_id, 'found', notes='Telegram alert sent',
                            cv_path=package['cv_path'], cover_path=package['cover_letter_path'])
+    return {'ok': True}
+
+
+@app.get('/api/telegram/connect-link')
+async def telegram_connect_link(user_id: str = Depends(get_current_user)):
+    """Returns a personal t.me deep-link — tapping it and hitting Start on
+    Telegram sends /start <token> to the shared bot, which the webhook below
+    uses to link that chat_id to this account (see the "connect" design in
+    project_customization_features.md's Telegram section)."""
+    notifier = TelegramNotifierAgent()
+    if not notifier.enabled:
+        return JSONResponse({'error': 'Telegram bot not configured on the server (TELEGRAM_BOT_TOKEN unset).'}, status_code=400)
+
+    tracker = TrackerAgent()
+    profile = tracker.get_profile(user_id) or _default_profile()
+    if not profile.get('telegram_chat_id') and not profile.get('telegram_connect_token'):
+        profile['telegram_connect_token'] = secrets.token_urlsafe(16)
+        tracker.save_profile(user_id, profile)
+
+    username = notifier.get_bot_username()
+    return {
+        'connected': bool(profile.get('telegram_chat_id')),
+        'connect_url': f'https://t.me/{username}?start={profile.get("telegram_connect_token", "")}',
+    }
+
+
+@app.post('/api/telegram/disconnect')
+async def telegram_disconnect(user_id: str = Depends(get_current_user)):
+    tracker = TrackerAgent()
+    profile = tracker.get_profile(user_id) or _default_profile()
+    profile['telegram_chat_id'] = ''
+    profile['telegram_connect_token'] = ''
+    tracker.save_profile(user_id, profile)
     return {'ok': True}
 
 
@@ -660,22 +697,21 @@ async def telegram_webhook(request: Request):
     alert (or just mention the company/title in a plain message) and the
     tracker updates without opening the dashboard.
 
+    Per-user routing: the bot is shared by every account, so an inbound
+    message is routed by chat_id, not by a single global owner. First
+    contact is always "/start <token>" (Telegram's deep-link convention) —
+    that token was minted by /api/telegram/connect-link for one specific
+    account, so on that message this handler links chat_id to that account
+    (single-use: the token is cleared right after). Every message after that
+    is routed by looking up which account's saved chat_id matches.
+
     Auth: Telegram attaches the secret configured via setWebhook's
     secret_token param as this header on every real callback — the only
-    protection this public, unauthenticated-by-default endpoint has. There's
-    no browser session here (Telegram calls this directly), so it resolves to
-    whichever account's email matches SMTP_EMAIL — the bot token/chat id are
-    both global env vars, not per-user yet, so this feature is effectively
-    single-tenant regardless of how many accounts the dashboard has.
+    protection this public, unauthenticated-by-default endpoint has.
     """
     if TELEGRAM_WEBHOOK_SECRET:
         if request.headers.get('X-Telegram-Bot-Api-Secret-Token', '') != TELEGRAM_WEBHOOK_SECRET:
             return JSONResponse({'error': 'unauthorized'}, status_code=403)
-
-    owner = TrackerAgent().get_user_by_email(SMTP_EMAIL)
-    if not owner:
-        return {'ok': True}  # no matching account yet — nothing to update
-    user_id = owner['id']
 
     try:
         update = await request.json()
@@ -687,25 +723,57 @@ async def telegram_webhook(request: Request):
         return {'ok': True}  # non-message update (e.g. a bot command menu event) — nothing to do
 
     chat_id = str(message.get('chat', {}).get('id', ''))
-    if not TELEGRAM_CHAT_ID or chat_id != str(TELEGRAM_CHAT_ID):
-        return {'ok': True}  # ignore messages from anyone but the configured owner chat
-
     text = (message.get('text') or '').strip()
-    if not text:
+    if not chat_id or not text:
         return {'ok': True}
 
-    reply_to = message.get('reply_to_message', {}).get('message_id')
     tracker = TrackerAgent()
     notifier = TelegramNotifierAgent()
-
     loop = asyncio.get_event_loop()
+
+    if text.startswith('/start'):
+        token = text[len('/start'):].strip()
+        owner = await loop.run_in_executor(None, lambda: tracker.get_user_by_telegram_token(token)) if token else None
+        if not owner:
+            await loop.run_in_executor(
+                None, lambda: notifier._send_message(
+                    "This connect link is invalid or already used — grab a fresh one from the Profile page.",
+                    chat_id=chat_id,
+                )
+            )
+            return {'ok': True}
+        profile = tracker.get_profile(owner['id']) or {}
+        profile['telegram_chat_id'] = chat_id
+        profile['telegram_connect_token'] = ''  # single-use
+        await loop.run_in_executor(None, lambda: tracker.save_profile(owner['id'], profile))
+        await loop.run_in_executor(
+            None, lambda: notifier._send_message(
+                "✅ Connected! You'll get job alerts here — reply \"applied\" or \"skip\" to any alert to update the tracker.",
+                chat_id=chat_id,
+            )
+        )
+        return {'ok': True}
+
+    owner = await loop.run_in_executor(None, lambda: tracker.get_user_by_telegram_chat_id(chat_id))
+    if not owner:
+        await loop.run_in_executor(
+            None, lambda: notifier._send_message(
+                "Not connected to any account yet — get your personal connect link from the Profile page.",
+                chat_id=chat_id,
+            )
+        )
+        return {'ok': True}
+    user_id = owner['id']
+
+    reply_to = message.get('reply_to_message', {}).get('message_id')
     job = await loop.run_in_executor(None, lambda: _resolve_job_from_telegram_text(tracker, user_id, text, reply_to))
 
     if not job:
         await loop.run_in_executor(
             None, lambda: notifier._send_message(
                 "🤔 Couldn't match that to a job — reply directly to a job alert message, "
-                "or mention the company/title clearly."
+                "or mention the company/title clearly.",
+                chat_id=chat_id,
             )
         )
         return {'ok': True}
@@ -725,7 +793,8 @@ async def telegram_webhook(request: Request):
     await loop.run_in_executor(None, lambda: tracker.update_status(user_id, job['id'], status, notes=note))
     await loop.run_in_executor(
         None, lambda: notifier._send_message(
-            f"✅ Marked <b>{html.escape(job.get('title',''))}</b> @ {html.escape(job.get('company',''))} as <b>{status}</b>."
+            f"✅ Marked <b>{html.escape(job.get('title',''))}</b> @ {html.escape(job.get('company',''))} as <b>{status}</b>.",
+            chat_id=chat_id,
         )
     )
     return {'ok': True}
@@ -1465,13 +1534,14 @@ async def notify_followups(user_id: str = Depends(get_current_user)):
     followups = await get_followups(user_id)
     jobs = followups['jobs']
     notifier = TelegramNotifierAgent()
-    if not notifier.enabled:
+    chat_id = (TrackerAgent().get_profile(user_id) or {}).get('telegram_chat_id') or TELEGRAM_CHAT_ID
+    if not notifier.enabled or not chat_id:
         return JSONResponse(
-            {'error': 'Telegram not configured — set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env.'},
+            {'error': 'Telegram not connected — connect it in Profile.'},
             status_code=400,
         )
     loop = asyncio.get_event_loop()
-    sent = await loop.run_in_executor(None, lambda: notifier.send_followup_digest(jobs))
+    sent = await loop.run_in_executor(None, lambda: notifier.send_followup_digest(jobs, chat_id=chat_id))
     if not sent:
         return JSONResponse({'error': 'Telegram send failed.'}, status_code=502)
     return {'ok': True, 'count': len(jobs)}
@@ -1586,6 +1656,8 @@ def _default_profile() -> dict:
         'location_weight': 50,
         'smtp_email': '',
         'smtp_app_password': '',
+        'telegram_chat_id': '',
+        'telegram_connect_token': '',
     }
 
 

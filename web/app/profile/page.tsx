@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
-import { ArrowSquareOut, Check, CircleNotch } from '@phosphor-icons/react';
+import { ArrowSquareOut, Check, CircleNotch, TelegramLogo } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import { ChipEditor, Field, Section } from '@/components/ProfileFields';
 import clsx from 'clsx';
@@ -29,6 +29,7 @@ interface ProfileData {
   location_weight: number;
   smtp_email: string;
   smtp_app_password: string;
+  telegram_chat_id: string;
 }
 
 // Mirrors JobFinderAgent.ALL_SOURCE_KEYS in agents/job_finder.py — keep in sync.
@@ -69,6 +70,7 @@ const DEFAULT_PROFILE: ProfileData = {
   location_weight: 50,
   smtp_email: '',
   smtp_app_password: '',
+  telegram_chat_id: '',
 };
 
 /* ─────────────────────── main page ──────────────────── */
@@ -81,6 +83,9 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [telegramConnectUrl, setTelegramConnectUrl] = useState<string | null>(null);
+  const [telegramBusy, setTelegramBusy] = useState(false);
+  const [telegramError, setTelegramError] = useState<string | null>(null);
 
   const isDirty = JSON.stringify(profile) !== JSON.stringify(original);
 
@@ -132,6 +137,39 @@ export default function ProfilePage() {
         ? prev.enabled_sources.filter((k) => k !== key)
         : [...prev.enabled_sources, key],
     }));
+  };
+
+  /* telegram connect flow */
+  const refreshTelegramStatus = async () => {
+    const data = await api.userProfile();
+    const chatId = (data as unknown as ProfileData).telegram_chat_id || '';
+    setProfile((prev) => ({ ...prev, telegram_chat_id: chatId }));
+    setOriginal((prev) => ({ ...prev, telegram_chat_id: chatId }));
+  };
+
+  const handleTelegramConnect = async () => {
+    setTelegramBusy(true);
+    try {
+      const { connect_url } = await api.telegramConnectLink();
+      setTelegramConnectUrl(connect_url);
+      window.open(connect_url, '_blank');
+    } catch {
+      setTelegramError('Could not get a Telegram connect link. Is TELEGRAM_BOT_TOKEN configured?');
+    } finally {
+      setTelegramBusy(false);
+    }
+  };
+
+  const handleTelegramDisconnect = async () => {
+    setTelegramBusy(true);
+    try {
+      await api.telegramDisconnect();
+      setProfile((prev) => ({ ...prev, telegram_chat_id: '' }));
+      setOriginal((prev) => ({ ...prev, telegram_chat_id: '' }));
+      setTelegramConnectUrl(null);
+    } finally {
+      setTelegramBusy(false);
+    }
   };
 
   /* save */
@@ -457,7 +495,49 @@ export default function ProfilePage() {
           />
         </Section>
 
-        {/* 9. Current Offer */}
+        {/* 9. Telegram Alerts */}
+        <Section title="Telegram Alerts">
+          <p className="text-xs text-white/40 -mt-1">
+            Get new job matches pushed to Telegram — reply &quot;applied&quot; or &quot;skip&quot;
+            to any alert to update the tracker, right from your phone.
+          </p>
+          {telegramError && <p className="text-xs text-accent-pink">{telegramError}</p>}
+          <div className="flex items-center gap-3">
+            <TelegramLogo size={20} weight="fill" className="text-[#2AABEE] shrink-0" />
+            {profile.telegram_chat_id ? (
+              <>
+                <span className="text-sm text-accent-green flex-1">Connected</span>
+                <button
+                  onClick={handleTelegramDisconnect}
+                  disabled={telegramBusy}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 text-white/60 border border-border hover:bg-white/10 transition-colors"
+                >
+                  Disconnect
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="text-sm text-white/40 flex-1">Not connected</span>
+                <button
+                  onClick={handleTelegramConnect}
+                  disabled={telegramBusy}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-accent-green/10 text-accent-green border border-accent-green/25 hover:bg-accent-green/20 transition-colors"
+                >
+                  {telegramConnectUrl ? 'Reopen link' : 'Connect Telegram'}
+                </button>
+                <button
+                  onClick={refreshTelegramStatus}
+                  disabled={telegramBusy}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 text-white/60 border border-border hover:bg-white/10 transition-colors"
+                >
+                  I&apos;ve connected
+                </button>
+              </>
+            )}
+          </div>
+        </Section>
+
+        {/* 10. Current Offer */}
         <Section title="Current Offer">
           <Field
             label="Offer Details"

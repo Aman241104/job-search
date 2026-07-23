@@ -18,7 +18,7 @@ import os
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import USER_PROFILE, OUTPUT_DIR, MIN_APPLY_SCORE
+from config import USER_PROFILE, OUTPUT_DIR, MIN_APPLY_SCORE, TELEGRAM_CHAT_ID
 from agents.tracker import TrackerAgent
 from agents.cv_customizer import CVCustomizerAgent
 from agents.job_applier import JobApplierAgent, extract_email_from_description
@@ -122,6 +122,7 @@ def run_telegram_batch(user_id: str, job_ids: list, force: bool = False) -> dict
     notifier = TelegramNotifierAgent()
     batch_id = tracker.create_batch(user_id, mode="automatic", channel="telegram")
     min_score = _min_score(tracker, user_id)
+    chat_id = (tracker.get_profile(user_id) or {}).get("telegram_chat_id") or TELEGRAM_CHAT_ID
 
     for job_id in job_ids:
         job = _get_job(tracker, user_id, job_id)
@@ -130,7 +131,7 @@ def run_telegram_batch(user_id: str, job_ids: list, force: bool = False) -> dict
         if (job.get("score") or 0) < min_score and not force:
             tracker.add_batch_item(batch_id, job_id, status="below_score_gate")
             continue
-        if not notifier.enabled:
+        if not notifier.enabled or not chat_id:
             tracker.add_batch_item(batch_id, job_id, status="telegram_not_configured")
             continue
 
@@ -139,7 +140,7 @@ def run_telegram_batch(user_id: str, job_ids: list, force: bool = False) -> dict
             tracker.add_batch_item(batch_id, job_id, status="generation_failed")
             continue
 
-        sent = notifier.send_job_alert(user_id, job, package["cv_path"], package["cover_letter_path"], package["cv_markdown"])
+        sent = notifier.send_job_alert(user_id, job, package["cv_path"], package["cover_letter_path"], package["cv_markdown"], chat_id=chat_id)
         if sent:
             tracker.update_status(user_id, job_id, "found", notes="Telegram alert sent (batch)",
                                    cv_path=package["cv_path"], cover_path=package["cover_letter_path"])

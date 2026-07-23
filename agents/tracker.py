@@ -391,6 +391,29 @@ class TrackerAgent:
             row = conn.execute("SELECT id, email, name, avatar_url, created_at FROM users WHERE email = ?", (email,)).fetchone()
         return row
 
+    def get_user_by_telegram_chat_id(self, chat_id: str) -> dict | None:
+        """For the Telegram webhook — Telegram calls this directly with no
+        browser session, so an inbound message is routed to a user by
+        matching the chat_id captured during that user's own connect-link
+        flow (see /api/telegram/connect-link + webhook in app.py)."""
+        with self._get_conn() as conn:
+            conn.row_factory = ROW_DICT
+            row = conn.execute(
+                "SELECT user_id FROM profiles WHERE data->>'telegram_chat_id' = ?", (str(chat_id),)
+            ).fetchone()
+        return self.get_user(row["user_id"]) if row else None
+
+    def get_user_by_telegram_token(self, token: str) -> dict | None:
+        """Resolves the one-time /start <token> deep-link payload back to the
+        account that generated it, so the webhook can link that chat_id to
+        the right user on first contact."""
+        with self._get_conn() as conn:
+            conn.row_factory = ROW_DICT
+            row = conn.execute(
+                "SELECT user_id FROM profiles WHERE data->>'telegram_connect_token' = ?", (token,)
+            ).fetchone()
+        return self.get_user(row["user_id"]) if row else None
+
     def get_user(self, user_id: str) -> dict | None:
         with self._get_conn() as conn:
             conn.row_factory = ROW_DICT

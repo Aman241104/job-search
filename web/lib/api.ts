@@ -626,6 +626,18 @@ export const api = {
       return r.json();
     }),
 
+  telegramConnectLink: (): Promise<{ connected: boolean; connect_url: string }> =>
+    apiFetch(`/api/telegram/connect-link`).then((r) => {
+      if (!r.ok) throw new Error(`Telegram connect-link failed: ${r.status}`);
+      return r.json();
+    }),
+
+  telegramDisconnect: (): Promise<{ ok: boolean }> =>
+    apiFetch(`/api/telegram/disconnect`, { method: 'POST' }).then((r) => {
+      if (!r.ok) throw new Error(`Telegram disconnect failed: ${r.status}`);
+      return r.json();
+    }),
+
   updateStatus: (id: string, status: string): Promise<{ ok: boolean }> =>
     apiFetch(`/api/update/${id}`, {
       method: 'PATCH',
