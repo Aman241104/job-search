@@ -2,8 +2,7 @@ import type { Metadata } from 'next';
 import { Fragment_Mono, Outfit } from 'next/font/google';
 import { ThemeProvider } from 'next-themes';
 import './globals.css';
-import Sidebar from '@/components/Sidebar';
-import { GlobalSearchProvider } from '@/components/GlobalSearch';
+import AuthProvider from '@/components/AuthProvider';
 import IconWeightProvider from '@/components/IconWeightProvider';
 
 const fragmentMono = Fragment_Mono({
@@ -46,15 +45,8 @@ export default function RootLayout({
             {/* Dot grid background */}
             <div className="dot-grid fixed inset-0 pointer-events-none z-0" />
 
-            {/* App shell */}
-            <GlobalSearchProvider>
-              <div className="relative z-10 flex min-h-screen">
-                <Sidebar />
-                <main className="flex-1 overflow-y-auto min-h-screen">
-                  {children}
-                </main>
-              </div>
-            </GlobalSearchProvider>
+            {/* App shell — gated by auth, redirects to /login if no session */}
+            <AuthProvider>{children}</AuthProvider>
           </IconWeightProvider>
         </ThemeProvider>
       </body>

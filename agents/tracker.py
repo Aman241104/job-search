@@ -1,4 +1,3 @@
-import sqlite3
 import json
 import uuid
 from datetime import datetime
@@ -15,27 +14,23 @@ from rich.table import Table
 
 console = Console()
 
-# ── Postgres support (DATABASE_URL-gated) ───────────────────────────────────
-# Local dev (no DATABASE_URL) keeps using the existing zero-setup SQLite file.
-# A real deployment sets DATABASE_URL to a Postgres connection string (e.g. the
-# Supabase pooled/pgbouncer URL). _PgConnWrapper below is a drop-in stand-in for
-# a sqlite3.Connection so every existing method in this file (and every direct
-# `tracker._get_conn()` caller in app.py) keeps working completely unchanged —
-# it emulates `.execute()` with `?`-style placeholders (auto-translated to
-# Postgres's `%s`) and `.row_factory = sqlite3.Row` (auto-translated to
-# dict-returning rows via cursor.description, since psycopg2.extras.RealDictRow
-# doesn't support the positional row[0] access some methods also rely on).
+# ── Postgres-only (multi-tenant migration, 2026-07-23) ──────────────────────
+# SQLite dropped entirely — every table is now scoped by user_id, and local
+# dev needs the same real users table Postgres provides, so there's no more
+# zero-setup single-user fallback. DATABASE_URL is required.
 DATABASE_URL = os.getenv("DATABASE_URL", "")
-_pg_pool = None
-if DATABASE_URL:
-    import psycopg2
-    import psycopg2.pool
-    _pg_pool = psycopg2.pool.ThreadedConnectionPool(1, 10, DATABASE_URL)
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is required — SQLite fallback was removed in the multi-tenant migration")
+
+import psycopg2
+import psycopg2.pool
+_pg_pool = psycopg2.pool.ThreadedConnectionPool(1, 10, DATABASE_URL)
+
+ROW_DICT = True  # pass to `conn.row_factory = ROW_DICT` for dict-shaped rows
 
 
 class _DictCursorProxy:
-    """Wraps a plain psycopg2 cursor so fetchone()/fetchall() return dicts,
-    emulating sqlite3's `row_factory = sqlite3.Row` + `dict(row)` pattern."""
+    """Wraps a plain psycopg2 cursor so fetchone()/fetchall() return dicts."""
 
     def __init__(self, cursor):
         self._cursor = cursor
@@ -57,13 +52,15 @@ class _DictCursorProxy:
 
 
 class _PgConnWrapper:
-    """Pooled-Postgres stand-in for a sqlite3.Connection. Returns the connection
-    to the pool on __exit__ instead of closing it (connections are reused)."""
+    """Pooled-Postgres connection with a sqlite3-connection-shaped `.execute()`
+    (accepts `?` placeholders, auto-translated to `%s`) so every existing
+    caller in this file and in app.py keeps working unchanged. Returns the
+    connection to the pool on __exit__ instead of closing it."""
 
     def __init__(self, pool):
         self._pool = pool
         self._conn = pool.getconn()
-        self.row_factory = None  # settable, mirrors sqlite3.Connection.row_factory
+        self.row_factory = None
 
     def execute(self, sql, params=()):
         cursor = self._conn.cursor()
@@ -83,6 +80,7 @@ class _PgConnWrapper:
             self._conn.rollback()
         self._pool.putconn(self._conn)
 
+
 STATUS_COLORS = {
     "found": "D3D3D3",        # gray
     "applied": "ADD8E6",      # light blue
@@ -95,41 +93,59 @@ STATUS_COLORS = {
 
 class TrackerAgent:
     def __init__(self):
-        self.db_path = Path(DATA_DIR) / "applications.db"
         self.excel_path = Path(OUTPUT_DIR) / "job_tracker.xlsx"
         self._init_db()
 
     def _get_conn(self):
-        if _pg_pool:
-            return _PgConnWrapper(_pg_pool)
-        return sqlite3.connect(self.db_path)
+        return _PgConnWrapper(_pg_pool)
 
     def _init_db(self):
         with self._get_conn() as conn:
             conn.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id TEXT PRIMARY KEY,
+                    google_sub TEXT UNIQUE,
+                    email TEXT,
+                    name TEXT,
+                    avatar_url TEXT,
+                    created_at TEXT
+                )
+            """)
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS jobs (
                     id TEXT PRIMARY KEY,
+                    user_id TEXT REFERENCES users(id),
                     title TEXT,
                     company TEXT,
                     description TEXT,
-                    url TEXT UNIQUE,
+                    url TEXT,
                     source TEXT,
                     location TEXT,
                     salary TEXT,
                     date_found TEXT,
                     tags TEXT,
                     score INTEGER DEFAULT 0,
-                    score_reason TEXT
+                    score_reason TEXT,
+                    starred INTEGER DEFAULT 0,
+                    legitimacy_score INTEGER,
+                    legitimacy_flags TEXT
                 )
             """)
+            # url uniqueness is per-user (two users can independently find the
+            # same posting) — a bare UNIQUE(url) from the single-tenant schema
+            # would let user B's scrape silently no-op against user A's row.
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_user_url ON jobs(user_id, url)")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS applications (
                     id TEXT PRIMARY KEY,
+                    user_id TEXT REFERENCES users(id),
                     job_id TEXT UNIQUE,
                     date_applied TEXT,
                     status TEXT DEFAULT 'found',
                     cv_path TEXT,
                     cover_letter_path TEXT,
+                    cv_markdown TEXT,
+                    cover_letter_text TEXT,
                     notes TEXT,
                     last_updated TEXT,
                     FOREIGN KEY (job_id) REFERENCES jobs(id)
@@ -138,6 +154,7 @@ class TrackerAgent:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS training_sessions (
                     id TEXT PRIMARY KEY,
+                    user_id TEXT REFERENCES users(id),
                     topic_key TEXT,
                     topic_name TEXT,
                     messages TEXT,
@@ -148,13 +165,16 @@ class TrackerAgent:
             """)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS blacklisted_companies (
-                    company TEXT PRIMARY KEY,
-                    blacklisted_at TEXT
+                    user_id TEXT REFERENCES users(id),
+                    company TEXT,
+                    blacklisted_at TEXT,
+                    PRIMARY KEY (user_id, company)
                 )
             """)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS interview_rounds (
                     id TEXT PRIMARY KEY,
+                    user_id TEXT REFERENCES users(id),
                     job_id TEXT,
                     round_num INTEGER,
                     round_type TEXT,
@@ -168,6 +188,7 @@ class TrackerAgent:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS learning_items (
                     id TEXT PRIMARY KEY,
+                    user_id TEXT REFERENCES users(id),
                     title TEXT,
                     item_type TEXT,
                     phase INTEGER,
@@ -180,6 +201,7 @@ class TrackerAgent:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS telegram_alerts (
                     message_id TEXT PRIMARY KEY,
+                    user_id TEXT REFERENCES users(id),
                     job_id TEXT,
                     sent_at TEXT,
                     FOREIGN KEY (job_id) REFERENCES jobs(id)
@@ -198,6 +220,7 @@ class TrackerAgent:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS learning_books (
                     id TEXT PRIMARY KEY,
+                    user_id TEXT REFERENCES users(id),
                     title TEXT,
                     filename TEXT,
                     page_count INTEGER DEFAULT 0,
@@ -206,13 +229,6 @@ class TrackerAgent:
                     cloudinary_url TEXT
                 )
             """)
-            if _pg_pool:
-                conn.execute("ALTER TABLE learning_books ADD COLUMN IF NOT EXISTS cloudinary_url TEXT")
-            else:
-                try:
-                    conn.execute("ALTER TABLE learning_books ADD COLUMN cloudinary_url TEXT")
-                except Exception:
-                    pass
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS learning_book_pages (
                     id TEXT PRIMARY KEY,
@@ -226,6 +242,7 @@ class TrackerAgent:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS story_bank (
                     id TEXT PRIMARY KEY,
+                    user_id TEXT REFERENCES users(id),
                     situation TEXT,
                     task TEXT,
                     action TEXT,
@@ -239,13 +256,16 @@ class TrackerAgent:
             """)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS settings (
-                    key TEXT PRIMARY KEY,
-                    value TEXT
+                    user_id TEXT REFERENCES users(id),
+                    key TEXT,
+                    value TEXT,
+                    PRIMARY KEY (user_id, key)
                 )
             """)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS batches (
                     id TEXT PRIMARY KEY,
+                    user_id TEXT REFERENCES users(id),
                     mode TEXT,
                     channel TEXT,
                     status TEXT DEFAULT 'staged',
@@ -276,6 +296,7 @@ class TrackerAgent:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS learning_playlists (
                     id TEXT PRIMARY KEY,
+                    user_id TEXT REFERENCES users(id),
                     url TEXT,
                     title TEXT,
                     status TEXT DEFAULT 'ingesting',
@@ -309,61 +330,121 @@ class TrackerAgent:
                     FOREIGN KEY (video_id) REFERENCES learning_videos(id)
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS resumes (
+                    user_id TEXT PRIMARY KEY REFERENCES users(id),
+                    data JSONB,
+                    updated_at TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS profiles (
+                    user_id TEXT PRIMARY KEY REFERENCES users(id),
+                    data JSONB,
+                    updated_at TEXT
+                )
+            """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_learning_topics_item ON learning_topics(item_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_book_pages_book ON learning_book_pages(book_id)")
-            if _pg_pool:
-                # Postgres supports IF NOT EXISTS on ADD COLUMN directly — no need
-                # for the try/except dance, and a failed statement would otherwise
-                # poison the rest of this transaction (unlike SQLite).
-                conn.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS starred INTEGER DEFAULT 0")
-                conn.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS legitimacy_score INTEGER")
-                conn.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS legitimacy_flags TEXT")
-            else:
-                try:
-                    conn.execute("ALTER TABLE jobs ADD COLUMN starred INTEGER DEFAULT 0")
-                except Exception:
-                    pass
-                try:
-                    conn.execute("ALTER TABLE jobs ADD COLUMN legitimacy_score INTEGER")
-                except Exception:
-                    pass
-                try:
-                    conn.execute("ALTER TABLE jobs ADD COLUMN legitimacy_flags TEXT")
-                except Exception:
-                    pass
-            # Indexes for performance
+            # Indexes for performance + per-user scoping
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_user ON jobs(user_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_score ON jobs(score DESC)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_source ON jobs(source)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_date ON jobs(date_found DESC)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_starred ON jobs(starred)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_apps_user ON applications(user_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_apps_status ON applications(status)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_apps_job_id ON applications(job_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_training_user ON training_sessions(user_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_interview_user ON interview_rounds(user_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_learning_items_user ON learning_items(user_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_learning_books_user ON learning_books(user_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_story_bank_user ON story_bank(user_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_batches_user ON batches(user_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_playlists_user ON learning_playlists(user_id)")
             conn.commit()
 
-    def add_job(self, job: dict) -> bool:
-        # "INSERT OR IGNORE" is SQLite-only syntax — Postgres's equivalent is
-        # "ON CONFLICT DO NOTHING". A bare ON CONFLICT (no target column) matches
-        # SQLite's "ignore on any conflict" semantics exactly, since each table
-        # here only has one relevant uniqueness constraint (jobs: PRIMARY KEY id
-        # / UNIQUE url; applications: UNIQUE job_id).
-        ignore_clause = "ON CONFLICT DO NOTHING" if _pg_pool else ""
-        insert_or = "INSERT" if _pg_pool else "INSERT OR IGNORE"
+    # ── Users (Google OAuth login — see auth.py) ────────────────────────────────
+
+    def get_or_create_user(self, google_sub: str, email: str, name: str, avatar_url: str) -> str:
+        """Returns the user's id, creating a row on first login."""
+        with self._get_conn() as conn:
+            conn.row_factory = ROW_DICT
+            row = conn.execute("SELECT id FROM users WHERE google_sub = ?", (google_sub,)).fetchone()
+            if row:
+                return row["id"]
+
+            user_id = str(uuid.uuid4())
+            conn.execute(
+                "INSERT INTO users (id, google_sub, email, name, avatar_url, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, google_sub, email, name, avatar_url, datetime.now().isoformat()),
+            )
+            conn.commit()
+        return user_id
+
+    def get_user_by_email(self, email: str) -> dict | None:
+        """For non-cookie callers (e.g. the Telegram webhook — Telegram itself
+        calls it, no browser session) that need to resolve to a specific
+        account by a stable identifier other than the session cookie."""
+        with self._get_conn() as conn:
+            conn.row_factory = ROW_DICT
+            row = conn.execute("SELECT id, email, name, avatar_url, created_at FROM users WHERE email = ?", (email,)).fetchone()
+        return row
+
+    def get_user(self, user_id: str) -> dict | None:
+        with self._get_conn() as conn:
+            conn.row_factory = ROW_DICT
+            row = conn.execute("SELECT id, email, name, avatar_url, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
+        return row
+
+    # ── Resume + profile (one JSONB blob per user) ──────────────────────────────
+
+    def get_resume(self, user_id: str) -> dict | None:
+        with self._get_conn() as conn:
+            conn.row_factory = ROW_DICT
+            row = conn.execute("SELECT data FROM resumes WHERE user_id = ?", (user_id,)).fetchone()
+        return row["data"] if row else None
+
+    def save_resume(self, user_id: str, data: dict) -> None:
+        now = datetime.now().isoformat()
+        with self._get_conn() as conn:
+            conn.execute("""
+                INSERT INTO resumes (user_id, data, updated_at) VALUES (?, ?, ?)
+                ON CONFLICT (user_id) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at
+            """, (user_id, json.dumps(data), now))
+            conn.commit()
+
+    def get_profile(self, user_id: str) -> dict | None:
+        with self._get_conn() as conn:
+            conn.row_factory = ROW_DICT
+            row = conn.execute("SELECT data FROM profiles WHERE user_id = ?", (user_id,)).fetchone()
+        return row["data"] if row else None
+
+    def save_profile(self, user_id: str, data: dict) -> None:
+        now = datetime.now().isoformat()
+        with self._get_conn() as conn:
+            conn.execute("""
+                INSERT INTO profiles (user_id, data, updated_at) VALUES (?, ?, ?)
+                ON CONFLICT (user_id) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at
+            """, (user_id, json.dumps(data), now))
+            conn.commit()
+
+    # ── Jobs + applications ─────────────────────────────────────────────────────
+
+    def add_job(self, user_id: str, job: dict) -> bool:
         try:
             with self._get_conn() as conn:
                 # RETURNING id gives us the row actually written — nothing comes
-                # back when ON CONFLICT DO NOTHING / INSERT OR IGNORE skipped the
-                # insert (same URL already scraped under a different generated
-                # UUID by another source/run). Using job["id"] unconditionally
-                # here used to violate applications_job_id_fkey for every such
-                # duplicate, since that UUID was never actually in `jobs`.
-                cursor = conn.execute(f"""
-                    {insert_or} INTO jobs
-                    (id, title, company, description, url, source, location, salary, date_found, tags, score, score_reason)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    {ignore_clause}
+                # back when ON CONFLICT DO NOTHING skipped the insert (same URL
+                # already scraped for this user under a different generated UUID).
+                cursor = conn.execute("""
+                    INSERT INTO jobs
+                    (id, user_id, title, company, description, url, source, location, salary, date_found, tags, score, score_reason)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (user_id, url) DO NOTHING
                     RETURNING id
                 """, (
-                    job["id"], job["title"], job["company"], job.get("description", ""),
+                    job["id"], user_id, job["title"], job["company"], job.get("description", ""),
                     job["url"], job.get("source", ""), job.get("location", ""),
                     job.get("salary", ""), job.get("date_found", datetime.now().isoformat()),
                     json.dumps(job.get("tags", [])), job.get("score", 0), job.get("score_reason", "")
@@ -372,23 +453,25 @@ class TrackerAgent:
                 job_id = row[0] if row else None
 
                 if job_id is None:
-                    existing = conn.execute("SELECT id FROM jobs WHERE url = ?", (job["url"],)).fetchone()
+                    existing = conn.execute(
+                        "SELECT id FROM jobs WHERE user_id = ? AND url = ?", (user_id, job["url"])
+                    ).fetchone()
                     if not existing:
                         return False
                     job_id = existing[0]
 
-                conn.execute(f"""
-                    {insert_or} INTO applications (id, job_id, status, last_updated)
-                    VALUES (?, ?, 'found', ?)
-                    {ignore_clause}
-                """, (str(uuid.uuid4()), job_id, datetime.now().isoformat()))
+                conn.execute("""
+                    INSERT INTO applications (id, user_id, job_id, status, last_updated)
+                    VALUES (?, ?, ?, 'found', ?)
+                    ON CONFLICT (job_id) DO NOTHING
+                """, (str(uuid.uuid4()), user_id, job_id, datetime.now().isoformat()))
                 conn.commit()
             return True
         except Exception as e:
             console.print(f"[red]DB error adding job: {e}[/red]")
             return False
 
-    def update_status(self, job_id: str, status: str, notes: str = "", cv_path: str = "", cover_path: str = ""):
+    def update_status(self, user_id: str, job_id: str, status: str, notes: str = "", cv_path: str = "", cover_path: str = ""):
         valid = {"found", "applied", "interviewing", "offer", "rejected", "ghosted", "skipped"}
         if status not in valid:
             console.print(f"[red]Invalid status. Choose from: {valid}[/red]")
@@ -401,26 +484,26 @@ class TrackerAgent:
                 cv_path=COALESCE(NULLIF(?, ''), cv_path),
                 cover_letter_path=COALESCE(NULLIF(?, ''), cover_letter_path),
                 date_applied=COALESCE(NULLIF(?, ''), date_applied)
-                WHERE job_id=?
-            """, (status, notes, now, cv_path, cover_path, date_applied or '', job_id))
+                WHERE job_id=? AND user_id=?
+            """, (status, notes, now, cv_path, cover_path, date_applied or '', job_id, user_id))
             conn.commit()
         console.print(f"[green]Status updated to '{status}'[/green]")
 
-    def toggle_star(self, job_id: str) -> bool:
+    def toggle_star(self, user_id: str, job_id: str) -> bool:
         with self._get_conn() as conn:
             conn.execute(
-                "UPDATE jobs SET starred = 1 - COALESCE(starred, 0) WHERE id = ?",
-                (job_id,)
+                "UPDATE jobs SET starred = 1 - COALESCE(starred, 0) WHERE id = ? AND user_id = ?",
+                (job_id, user_id)
             )
             conn.commit()
-            row = conn.execute("SELECT starred FROM jobs WHERE id = ?", (job_id,)).fetchone()
+            row = conn.execute("SELECT starred FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id)).fetchone()
             return bool(row[0]) if row else False
 
-    def get_legitimacy(self, job_id: str) -> dict | None:
+    def get_legitimacy(self, user_id: str, job_id: str) -> dict | None:
         """Returns None if never computed (caller should compute + save)."""
         with self._get_conn() as conn:
             row = conn.execute(
-                "SELECT legitimacy_score, legitimacy_flags FROM jobs WHERE id = ?", (job_id,)
+                "SELECT legitimacy_score, legitimacy_flags FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id)
             ).fetchone()
         if not row or row[0] is None:
             return None
@@ -430,37 +513,38 @@ class TrackerAgent:
             flags = []
         return {"score": row[0], "flags": flags}
 
-    def save_legitimacy(self, job_id: str, score: int, flags: list) -> None:
+    def save_legitimacy(self, user_id: str, job_id: str, score: int, flags: list) -> None:
         with self._get_conn() as conn:
             conn.execute(
-                "UPDATE jobs SET legitimacy_score = ?, legitimacy_flags = ? WHERE id = ?",
-                (score, json.dumps(flags), job_id),
+                "UPDATE jobs SET legitimacy_score = ?, legitimacy_flags = ? WHERE id = ? AND user_id = ?",
+                (score, json.dumps(flags), job_id, user_id),
             )
             conn.commit()
 
     # ── Interview Story Bank (STAR + Reflection) ────────────────────────────────
 
-    def add_story(self, situation: str, task: str, action: str, result: str,
+    def add_story(self, user_id: str, situation: str, task: str, action: str, result: str,
                   reflection: str, tags: list, source_job_id: str = "") -> str:
         story_id = str(uuid.uuid4())
         now = datetime.now().isoformat()
         with self._get_conn() as conn:
             conn.execute("""
                 INSERT INTO story_bank
-                (id, situation, task, action, result, reflection, tags, source_job_id, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (story_id, situation, task, action, result, reflection,
+                (id, user_id, situation, task, action, result, reflection, tags, source_job_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (story_id, user_id, situation, task, action, result, reflection,
                   json.dumps(tags), source_job_id or None, now, now))
             conn.commit()
         return story_id
 
-    def get_stories(self) -> list:
+    def get_stories(self, user_id: str) -> list:
         with self._get_conn() as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT * FROM story_bank ORDER BY updated_at DESC").fetchall()
+            conn.row_factory = ROW_DICT
+            rows = conn.execute(
+                "SELECT * FROM story_bank WHERE user_id = ? ORDER BY updated_at DESC", (user_id,)
+            ).fetchall()
         stories = []
-        for row in rows:
-            d = dict(row)
+        for d in rows:
             try:
                 d['tags'] = json.loads(d['tags']) if d.get('tags') else []
             except Exception:
@@ -468,51 +552,48 @@ class TrackerAgent:
             stories.append(d)
         return stories
 
-    def update_story(self, story_id: str, situation: str, task: str, action: str,
+    def update_story(self, user_id: str, story_id: str, situation: str, task: str, action: str,
                       result: str, reflection: str, tags: list) -> None:
         now = datetime.now().isoformat()
         with self._get_conn() as conn:
             conn.execute("""
                 UPDATE story_bank
                 SET situation=?, task=?, action=?, result=?, reflection=?, tags=?, updated_at=?
-                WHERE id=?
-            """, (situation, task, action, result, reflection, json.dumps(tags), now, story_id))
+                WHERE id=? AND user_id=?
+            """, (situation, task, action, result, reflection, json.dumps(tags), now, story_id, user_id))
             conn.commit()
 
-    def delete_story(self, story_id: str) -> None:
+    def delete_story(self, user_id: str, story_id: str) -> None:
         with self._get_conn() as conn:
-            conn.execute("DELETE FROM story_bank WHERE id = ?", (story_id,))
+            conn.execute("DELETE FROM story_bank WHERE id = ? AND user_id = ?", (story_id, user_id))
             conn.commit()
 
     # ── Settings (simple key-value) ─────────────────────────────────────────────
 
-    def get_setting(self, key: str, default: str = "") -> str:
+    def get_setting(self, user_id: str, key: str, default: str = "") -> str:
         with self._get_conn() as conn:
-            row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+            row = conn.execute("SELECT value FROM settings WHERE user_id = ? AND key = ?", (user_id, key)).fetchone()
         if not row:
             return default
         return row[0] if not isinstance(row, dict) else row["value"]
 
-    def set_setting(self, key: str, value: str) -> None:
+    def set_setting(self, user_id: str, key: str, value: str) -> None:
         with self._get_conn() as conn:
-            if _pg_pool:
-                conn.execute("""
-                    INSERT INTO settings (key, value) VALUES (?, ?)
-                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-                """, (key, value))
-            else:
-                conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+            conn.execute("""
+                INSERT INTO settings (user_id, key, value) VALUES (?, ?, ?)
+                ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value
+            """, (user_id, key, value))
             conn.commit()
 
     # ── Batch apply (email/browser, automatic or review-then-send) ─────────────
 
-    def create_batch(self, mode: str, channel: str) -> str:
+    def create_batch(self, user_id: str, mode: str, channel: str) -> str:
         batch_id = str(uuid.uuid4())
         now = datetime.now().isoformat()
         with self._get_conn() as conn:
             conn.execute(
-                "INSERT INTO batches (id, mode, channel, status, created_at) VALUES (?, ?, ?, 'staged', ?)",
-                (batch_id, mode, channel, now),
+                "INSERT INTO batches (id, user_id, mode, channel, status, created_at) VALUES (?, ?, ?, ?, 'staged', ?)",
+                (batch_id, user_id, mode, channel, now),
             )
             conn.commit()
         return batch_id
@@ -527,10 +608,12 @@ class TrackerAgent:
             conn.commit()
         return item_id
 
-    def get_batch(self, batch_id: str) -> dict | None:
+    def get_batch(self, user_id: str, batch_id: str) -> dict | None:
         with self._get_conn() as conn:
-            conn.row_factory = sqlite3.Row
-            batch_row = conn.execute("SELECT * FROM batches WHERE id = ?", (batch_id,)).fetchone()
+            conn.row_factory = ROW_DICT
+            batch_row = conn.execute(
+                "SELECT * FROM batches WHERE id = ? AND user_id = ?", (batch_id, user_id)
+            ).fetchone()
             if not batch_row:
                 return None
             item_rows = conn.execute("""
@@ -538,8 +621,8 @@ class TrackerAgent:
                 FROM batch_items bi JOIN jobs j ON bi.job_id = j.id
                 WHERE bi.batch_id = ?
             """, (batch_id,)).fetchall()
-        batch = dict(batch_row)
-        batch["items"] = [dict(r) for r in item_rows]
+        batch = batch_row
+        batch["items"] = item_rows
         return batch
 
     def set_batch_item_approval(self, item_id: str, approved: bool) -> None:
@@ -559,47 +642,46 @@ class TrackerAgent:
 
     # ── Training Sessions ──────────────────────────────────────────────────────
 
-    def save_training_session(self, session_id: str, topic_key: str, topic_name: str,
+    def save_training_session(self, user_id: str, session_id: str, topic_key: str, topic_name: str,
                                messages: list, avg_score: float):
         now = datetime.now().isoformat()
         messages_json = json.dumps(messages)
         with self._get_conn() as conn:
             existing = conn.execute(
-                "SELECT id FROM training_sessions WHERE id = ?", (session_id,)
+                "SELECT id FROM training_sessions WHERE id = ? AND user_id = ?", (session_id, user_id)
             ).fetchone()
             if existing:
                 conn.execute("""
                     UPDATE training_sessions
                     SET topic_key=?, topic_name=?, messages=?, avg_score=?, last_updated=?
-                    WHERE id=?
-                """, (topic_key, topic_name, messages_json, avg_score, now, session_id))
+                    WHERE id=? AND user_id=?
+                """, (topic_key, topic_name, messages_json, avg_score, now, session_id, user_id))
             else:
                 conn.execute("""
                     INSERT INTO training_sessions
-                    (id, topic_key, topic_name, messages, avg_score, created_at, last_updated)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (session_id, topic_key, topic_name, messages_json, avg_score, now, now))
+                    (id, user_id, topic_key, topic_name, messages, avg_score, created_at, last_updated)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (session_id, user_id, topic_key, topic_name, messages_json, avg_score, now, now))
             conn.commit()
 
-    def get_training_session(self, session_id: str) -> dict | None:
+    def get_training_session(self, user_id: str, session_id: str) -> dict | None:
         with self._get_conn() as conn:
-            conn.row_factory = sqlite3.Row
+            conn.row_factory = ROW_DICT
             row = conn.execute(
-                "SELECT * FROM training_sessions WHERE id = ?", (session_id,)
+                "SELECT * FROM training_sessions WHERE id = ? AND user_id = ?", (session_id, user_id)
             ).fetchone()
         if not row:
             return None
-        result = dict(row)
         try:
-            result['messages'] = json.loads(result['messages'] or '[]')
+            row['messages'] = json.loads(row['messages'] or '[]')
         except Exception:
-            result['messages'] = []
-        return result
+            row['messages'] = []
+        return row
 
-    def get_training_progress(self) -> dict:
+    def get_training_progress(self, user_id: str) -> dict:
         with self._get_conn() as conn:
             count_row = conn.execute(
-                "SELECT COUNT(DISTINCT id) FROM training_sessions"
+                "SELECT COUNT(DISTINCT id) FROM training_sessions WHERE user_id = ?", (user_id,)
             ).fetchone()
             sessions_completed = count_row[0] if count_row else 0
 
@@ -612,16 +694,16 @@ class TrackerAgent:
                 }
 
             avg_row = conn.execute(
-                "SELECT AVG(avg_score) FROM training_sessions"
+                "SELECT AVG(avg_score) FROM training_sessions WHERE user_id = ?", (user_id,)
             ).fetchone()
             avg_score = round(avg_row[0], 1) if avg_row and avg_row[0] is not None else 0
 
             topic_rows = conn.execute(
-                "SELECT DISTINCT topic_key FROM training_sessions WHERE topic_key IS NOT NULL"
+                "SELECT DISTINCT topic_key FROM training_sessions WHERE user_id = ? AND topic_key IS NOT NULL", (user_id,)
             ).fetchall()
             topics_covered = [r[0] for r in topic_rows]
 
-            msg_rows = conn.execute("SELECT messages FROM training_sessions").fetchall()
+            msg_rows = conn.execute("SELECT messages FROM training_sessions WHERE user_id = ?", (user_id,)).fetchall()
             total_messages = 0
             for (msg_json,) in msg_rows:
                 try:
@@ -638,56 +720,56 @@ class TrackerAgent:
 
     # ── Company Blacklist ──────────────────────────────────────────────────────
 
-    def toggle_blacklist(self, company: str) -> bool:
+    def toggle_blacklist(self, user_id: str, company: str) -> bool:
         """Adds company if not present, removes if present. Returns True if now blacklisted."""
         with self._get_conn() as conn:
             existing = conn.execute(
-                "SELECT company FROM blacklisted_companies WHERE company = ?", (company,)
+                "SELECT company FROM blacklisted_companies WHERE user_id = ? AND company = ?", (user_id, company)
             ).fetchone()
             if existing:
                 conn.execute(
-                    "DELETE FROM blacklisted_companies WHERE company = ?", (company,)
+                    "DELETE FROM blacklisted_companies WHERE user_id = ? AND company = ?", (user_id, company)
                 )
                 conn.commit()
                 return False
             else:
                 conn.execute(
-                    "INSERT INTO blacklisted_companies (company, blacklisted_at) VALUES (?, ?)",
-                    (company, datetime.now().isoformat())
+                    "INSERT INTO blacklisted_companies (user_id, company, blacklisted_at) VALUES (?, ?, ?)",
+                    (user_id, company, datetime.now().isoformat())
                 )
                 conn.commit()
                 return True
 
-    def get_blacklisted(self) -> list:
+    def get_blacklisted(self, user_id: str) -> list:
         with self._get_conn() as conn:
             rows = conn.execute(
-                "SELECT company FROM blacklisted_companies ORDER BY company"
+                "SELECT company FROM blacklisted_companies WHERE user_id = ? ORDER BY company", (user_id,)
             ).fetchall()
         return [r[0] for r in rows]
 
-    def is_blacklisted(self, company: str) -> bool:
+    def is_blacklisted(self, user_id: str, company: str) -> bool:
         with self._get_conn() as conn:
             row = conn.execute(
-                "SELECT company FROM blacklisted_companies WHERE company = ?", (company,)
+                "SELECT company FROM blacklisted_companies WHERE user_id = ? AND company = ?", (user_id, company)
             ).fetchone()
         return row is not None
 
     # ── Interview Rounds ───────────────────────────────────────────────────────
 
-    def add_interview_round(self, job_id: str, round_type: str,
+    def add_interview_round(self, user_id: str, job_id: str, round_type: str,
                              scheduled_at: str = None, notes: str = None) -> dict:
         with self._get_conn() as conn:
             existing = conn.execute(
-                "SELECT COUNT(*) FROM interview_rounds WHERE job_id = ?", (job_id,)
+                "SELECT COUNT(*) FROM interview_rounds WHERE job_id = ? AND user_id = ?", (job_id, user_id)
             ).fetchone()
             round_num = (existing[0] or 0) + 1
             round_id = str(uuid.uuid4())
             now = datetime.now().isoformat()
             conn.execute("""
                 INSERT INTO interview_rounds
-                (id, job_id, round_num, round_type, scheduled_at, result, notes, created_at)
-                VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
-            """, (round_id, job_id, round_num, round_type, scheduled_at, notes, now))
+                (id, user_id, job_id, round_num, round_type, scheduled_at, result, notes, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+            """, (round_id, user_id, job_id, round_num, round_type, scheduled_at, notes, now))
             conn.commit()
         return {
             'id': round_id,
@@ -700,81 +782,82 @@ class TrackerAgent:
             'created_at': now,
         }
 
-    def update_interview_round(self, round_id: str, result: str = None,
+    def update_interview_round(self, user_id: str, round_id: str, result: str = None,
                                 notes: str = None, scheduled_at: str = None) -> dict:
         with self._get_conn() as conn:
-            conn.row_factory = sqlite3.Row
+            conn.row_factory = ROW_DICT
             row = conn.execute(
-                "SELECT * FROM interview_rounds WHERE id = ?", (round_id,)
+                "SELECT * FROM interview_rounds WHERE id = ? AND user_id = ?", (round_id, user_id)
             ).fetchone()
             if not row:
                 return {}
-            current = dict(row)
-            new_result = result if result is not None else current.get('result')
-            new_notes = notes if notes is not None else current.get('notes')
-            new_scheduled = scheduled_at if scheduled_at is not None else current.get('scheduled_at')
+            new_result = result if result is not None else row.get('result')
+            new_notes = notes if notes is not None else row.get('notes')
+            new_scheduled = scheduled_at if scheduled_at is not None else row.get('scheduled_at')
             conn.execute("""
                 UPDATE interview_rounds
                 SET result=?, notes=?, scheduled_at=?
-                WHERE id=?
-            """, (new_result, new_notes, new_scheduled, round_id))
+                WHERE id=? AND user_id=?
+            """, (new_result, new_notes, new_scheduled, round_id, user_id))
             conn.commit()
-            conn.row_factory = sqlite3.Row
             updated = conn.execute(
-                "SELECT * FROM interview_rounds WHERE id = ?", (round_id,)
+                "SELECT * FROM interview_rounds WHERE id = ? AND user_id = ?", (round_id, user_id)
             ).fetchone()
-        return dict(updated) if updated else {}
+        return updated or {}
 
-    def get_interview_rounds(self, job_id: str) -> list:
+    def get_interview_rounds(self, user_id: str, job_id: str) -> list:
         with self._get_conn() as conn:
-            conn.row_factory = sqlite3.Row
+            conn.row_factory = ROW_DICT
             rows = conn.execute(
-                "SELECT * FROM interview_rounds WHERE job_id = ? ORDER BY round_num ASC",
-                (job_id,)
+                "SELECT * FROM interview_rounds WHERE job_id = ? AND user_id = ? ORDER BY round_num ASC",
+                (job_id, user_id)
             ).fetchall()
-        return [dict(r) for r in rows]
+        return rows
 
-    def delete_interview_round(self, round_id: str):
+    def delete_interview_round(self, user_id: str, round_id: str):
         with self._get_conn() as conn:
-            conn.execute("DELETE FROM interview_rounds WHERE id = ?", (round_id,))
+            conn.execute("DELETE FROM interview_rounds WHERE id = ? AND user_id = ?", (round_id, user_id))
             conn.commit()
 
-    def get_all_applications(self) -> list:
+    def get_all_applications(self, user_id: str) -> list:
         with self._get_conn() as conn:
-            conn.row_factory = sqlite3.Row
+            conn.row_factory = ROW_DICT
             rows = conn.execute("""
                 SELECT j.id, j.title, j.company, j.url, j.source, j.location, j.salary,
                        j.date_found, j.score, j.score_reason, j.starred,
                        a.status, a.date_applied, a.notes, a.last_updated, a.cv_path, a.cover_letter_path
                 FROM jobs j
                 LEFT JOIN applications a ON j.id = a.job_id
+                WHERE j.user_id = ?
                 ORDER BY j.score DESC, a.last_updated DESC
-            """).fetchall()
-        return [dict(r) for r in rows]
+            """, (user_id,)).fetchall()
+        return rows
 
-    def get_unapplied_top_jobs(self, min_score: int = 60, limit: int = 10) -> list:
+    def get_unapplied_top_jobs(self, user_id: str, min_score: int = 60, limit: int = 10) -> list:
         with self._get_conn() as conn:
-            conn.row_factory = sqlite3.Row
+            conn.row_factory = ROW_DICT
             rows = conn.execute("""
                 SELECT j.*, a.status FROM jobs j
                 LEFT JOIN applications a ON j.id = a.job_id
-                WHERE (a.status = 'found' OR a.status IS NULL) AND j.score >= ?
+                WHERE j.user_id = ? AND (a.status = 'found' OR a.status IS NULL) AND j.score >= ?
                 ORDER BY j.score DESC LIMIT ?
-            """, (min_score, limit)).fetchall()
-        return [dict(r) for r in rows]
+            """, (user_id, min_score, limit)).fetchall()
+        return rows
 
-    def get_stats(self) -> dict:
+    def get_stats(self, user_id: str) -> dict:
         with self._get_conn() as conn:
-            rows = conn.execute("SELECT status, COUNT(*) as count FROM applications GROUP BY status").fetchall()
-            total = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+            rows = conn.execute(
+                "SELECT status, COUNT(*) as count FROM applications WHERE user_id = ? GROUP BY status", (user_id,)
+            ).fetchall()
+            total = conn.execute("SELECT COUNT(*) FROM jobs WHERE user_id = ?", (user_id,)).fetchone()[0]
         stats = {"total": total}
         for row in rows:
             stats[row[0]] = row[1]
         return stats
 
-    def export_to_excel(self):
-        apps = self.get_all_applications()
-        stats = self.get_stats()
+    def export_to_excel(self, user_id: str):
+        apps = self.get_all_applications(user_id)
+        stats = self.get_stats(user_id)
 
         wb = openpyxl.Workbook()
 
@@ -863,9 +946,9 @@ class TrackerAgent:
         console.print(f"[green]Excel exported to: {self.excel_path}[/green]")
         return str(self.excel_path)
 
-    def print_dashboard(self):
-        stats = self.get_stats()
-        top_jobs = self.get_unapplied_top_jobs(limit=10)
+    def print_dashboard(self, user_id: str):
+        stats = self.get_stats(user_id)
+        top_jobs = self.get_unapplied_top_jobs(user_id, limit=10)
 
         # Stats table
         t = Table(title="[bold]Application Stats[/bold]", show_header=True)
@@ -899,62 +982,53 @@ class TrackerAgent:
     # ── Learning track (ROADMAP.md Learning Core Track — no new scope beyond
     # tracking status + an AI tutor chat per item; no PDF/book upload) ─────────
 
-    def seed_learning_items(self, items: list):
-        """Insert each seed item if it doesn't already exist — never overwrites
-        a status the user has already set, safe to call on every startup."""
+    def seed_learning_items(self, user_id: str, items: list):
+        """Insert each seed item if it doesn't already exist for this user —
+        never overwrites a status the user has already set, safe to call on
+        every startup."""
         now = datetime.now().isoformat()
         with self._get_conn() as conn:
             for item in items:
-                if _pg_pool:
-                    conn.execute("""
-                        INSERT INTO learning_items (id, title, item_type, phase, order_index, status, updated_at)
-                        VALUES (?, ?, ?, ?, ?, 'not_started', ?)
-                        ON CONFLICT (id) DO NOTHING
-                    """, (item["id"], item["title"], item["type"], item["phase"], item["order"], now))
-                else:
-                    conn.execute("""
-                        INSERT OR IGNORE INTO learning_items (id, title, item_type, phase, order_index, status, updated_at)
-                        VALUES (?, ?, ?, ?, ?, 'not_started', ?)
-                    """, (item["id"], item["title"], item["type"], item["phase"], item["order"], now))
+                conn.execute("""
+                    INSERT INTO learning_items (id, user_id, title, item_type, phase, order_index, status, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 'not_started', ?)
+                    ON CONFLICT (id) DO NOTHING
+                """, (f"{user_id}:{item['id']}", user_id, item["title"], item["type"], item["phase"], item["order"], now))
             conn.commit()
 
-    def get_learning_items(self) -> list:
+    def get_learning_items(self, user_id: str) -> list:
         with self._get_conn() as conn:
-            conn.row_factory = sqlite3.Row
+            conn.row_factory = ROW_DICT
             rows = conn.execute(
-                "SELECT * FROM learning_items ORDER BY phase ASC, order_index ASC"
+                "SELECT * FROM learning_items WHERE user_id = ? ORDER BY phase ASC, order_index ASC", (user_id,)
             ).fetchall()
-        return [dict(r) for r in rows]
+        return rows
 
-    def update_learning_status(self, item_id: str, status: str, notes: str = "") -> bool:
+    def update_learning_status(self, user_id: str, item_id: str, status: str, notes: str = "") -> bool:
         now = datetime.now().isoformat()
         with self._get_conn() as conn:
             conn.execute(
-                "UPDATE learning_items SET status=?, notes=?, updated_at=? WHERE id=?",
-                (status, notes, now, item_id),
+                "UPDATE learning_items SET status=?, notes=?, updated_at=? WHERE id=? AND user_id=?",
+                (status, notes, now, item_id, user_id),
             )
             conn.commit()
         return True
 
-    def add_custom_learning_item(self, item_id: str, title: str) -> None:
+    def add_custom_learning_item(self, user_id: str, item_id: str, title: str) -> None:
         now = datetime.now().isoformat()
         with self._get_conn() as conn:
-            if _pg_pool:
-                conn.execute("""
-                    INSERT INTO learning_items (id, title, item_type, phase, order_index, status, updated_at)
-                    VALUES (?, ?, 'skill', 0, 0, 'not_started', ?)
-                    ON CONFLICT (id) DO NOTHING
-                """, (item_id, title, now))
-            else:
-                conn.execute("""
-                    INSERT OR IGNORE INTO learning_items (id, title, item_type, phase, order_index, status, updated_at)
-                    VALUES (?, ?, 'skill', 0, 0, 'not_started', ?)
-                """, (item_id, title, now))
+            conn.execute("""
+                INSERT INTO learning_items (id, user_id, title, item_type, phase, order_index, status, updated_at)
+                VALUES (?, ?, ?, 'skill', 0, 0, 'not_started', ?)
+                ON CONFLICT (id) DO NOTHING
+            """, (item_id, user_id, title, now))
             conn.commit()
 
     # ── Topic checklists (per learning item — curated book/course OR custom
     # skill — an AI-generated zero-to-hero breakdown, checked off manually for
-    # a real 0-100 coverage score rather than fragile auto-detection) ────────
+    # a real 0-100 coverage score rather than fragile auto-detection). Scoped
+    # by item_id, which is itself user-scoped above, so no separate user_id
+    # column needed here. ────────────────────────────────────────────────────
 
     def save_learning_topics(self, item_id: str, topic_names: list) -> None:
         """Only inserts if this item has no topics yet — never regenerates
@@ -975,34 +1049,34 @@ class TrackerAgent:
 
     def get_learning_topics(self, item_id: str) -> list:
         with self._get_conn() as conn:
-            conn.row_factory = sqlite3.Row
+            conn.row_factory = ROW_DICT
             rows = conn.execute(
                 "SELECT * FROM learning_topics WHERE item_id = ? ORDER BY order_index ASC", (item_id,)
             ).fetchall()
-        return [dict(r) for r in rows]
+        return rows
 
     def toggle_learning_topic(self, topic_id: str) -> bool:
         with self._get_conn() as conn:
-            conn.row_factory = sqlite3.Row
+            conn.row_factory = ROW_DICT
             row = conn.execute("SELECT covered FROM learning_topics WHERE id = ?", (topic_id,)).fetchone()
             if not row:
                 return False
-            new_val = 0 if dict(row)['covered'] else 1
+            new_val = 0 if row['covered'] else 1
             conn.execute("UPDATE learning_topics SET covered = ? WHERE id = ?", (new_val, topic_id))
             conn.commit()
         return bool(new_val)
 
     # ── Book/PDF library (upload -> extracted text per page, stored in the DB
-    # so it survives a Render restart; the raw PDF itself lives on Cloudinary
-    # via cloudinary_url, for the same restart-safety plus a download link) ──
+    # so it survives a restart; the raw PDF itself lives on Cloudinary via
+    # cloudinary_url, for the same restart-safety plus a download link) ──────
 
-    def add_book(self, title: str, filename: str, page_texts: list, cloudinary_url: str = "", book_id: str = "") -> str:
+    def add_book(self, user_id: str, title: str, filename: str, page_texts: list, cloudinary_url: str = "", book_id: str = "") -> str:
         book_id = book_id or str(uuid.uuid4())
         now = datetime.now().isoformat()
         with self._get_conn() as conn:
             conn.execute(
-                "INSERT INTO learning_books (id, title, filename, page_count, current_page, uploaded_at, cloudinary_url) VALUES (?, ?, ?, ?, 1, ?, ?)",
-                (book_id, title, filename, len(page_texts), now, cloudinary_url),
+                "INSERT INTO learning_books (id, user_id, title, filename, page_count, current_page, uploaded_at, cloudinary_url) VALUES (?, ?, ?, ?, ?, 1, ?, ?)",
+                (book_id, user_id, title, filename, len(page_texts), now, cloudinary_url),
             )
             for i, text in enumerate(page_texts, start=1):
                 conn.execute(
@@ -1012,25 +1086,31 @@ class TrackerAgent:
             conn.commit()
         return book_id
 
-    def get_books(self) -> list:
+    def get_books(self, user_id: str) -> list:
         with self._get_conn() as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT * FROM learning_books ORDER BY uploaded_at DESC").fetchall()
-        return [dict(r) for r in rows]
+            conn.row_factory = ROW_DICT
+            rows = conn.execute(
+                "SELECT * FROM learning_books WHERE user_id = ? ORDER BY uploaded_at DESC", (user_id,)
+            ).fetchall()
+        return rows
 
-    def get_book(self, book_id: str) -> dict | None:
+    def get_book(self, user_id: str, book_id: str) -> dict | None:
         with self._get_conn() as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute("SELECT * FROM learning_books WHERE id = ?", (book_id,)).fetchone()
-        return dict(row) if row else None
-
-    def get_book_page(self, book_id: str, page_num: int) -> dict | None:
-        with self._get_conn() as conn:
-            conn.row_factory = sqlite3.Row
+            conn.row_factory = ROW_DICT
             row = conn.execute(
-                "SELECT * FROM learning_book_pages WHERE book_id = ? AND page_num = ?", (book_id, page_num)
+                "SELECT * FROM learning_books WHERE id = ? AND user_id = ?", (book_id, user_id)
             ).fetchone()
-        return dict(row) if row else None
+        return row
+
+    def get_book_page(self, user_id: str, book_id: str, page_num: int) -> dict | None:
+        with self._get_conn() as conn:
+            conn.row_factory = ROW_DICT
+            row = conn.execute("""
+                SELECT p.* FROM learning_book_pages p
+                JOIN learning_books b ON b.id = p.book_id
+                WHERE p.book_id = ? AND p.page_num = ? AND b.user_id = ?
+            """, (book_id, page_num, user_id)).fetchone()
+        return row
 
     def save_page_summary(self, book_id: str, page_num: int, summary: str) -> None:
         with self._get_conn() as conn:
@@ -1040,20 +1120,22 @@ class TrackerAgent:
             )
             conn.commit()
 
-    def update_book_current_page(self, book_id: str, page_num: int) -> None:
+    def update_book_current_page(self, user_id: str, book_id: str, page_num: int) -> None:
         with self._get_conn() as conn:
-            conn.execute("UPDATE learning_books SET current_page = ? WHERE id = ?", (page_num, book_id))
+            conn.execute(
+                "UPDATE learning_books SET current_page = ? WHERE id = ? AND user_id = ?", (page_num, book_id, user_id)
+            )
             conn.commit()
 
     # ── YouTube playlist study RAG ──────────────────────────────────────────
 
-    def add_playlist(self, url: str, title: str) -> str:
+    def add_playlist(self, user_id: str, url: str, title: str) -> str:
         playlist_id = str(uuid.uuid4())
         now = datetime.now().isoformat()
         with self._get_conn() as conn:
             conn.execute(
-                "INSERT INTO learning_playlists (id, url, title, status, created_at) VALUES (?, ?, ?, 'ingesting', ?)",
-                (playlist_id, url, title, now),
+                "INSERT INTO learning_playlists (id, user_id, url, title, status, created_at) VALUES (?, ?, ?, ?, 'ingesting', ?)",
+                (playlist_id, user_id, url, title, now),
             )
             conn.commit()
         return playlist_id
@@ -1063,17 +1145,21 @@ class TrackerAgent:
             conn.execute("UPDATE learning_playlists SET status = ? WHERE id = ?", (status, playlist_id))
             conn.commit()
 
-    def get_playlists(self) -> list:
+    def get_playlists(self, user_id: str) -> list:
         with self._get_conn() as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT * FROM learning_playlists ORDER BY created_at DESC").fetchall()
-        return [dict(r) for r in rows]
+            conn.row_factory = ROW_DICT
+            rows = conn.execute(
+                "SELECT * FROM learning_playlists WHERE user_id = ? ORDER BY created_at DESC", (user_id,)
+            ).fetchall()
+        return rows
 
-    def get_playlist(self, playlist_id: str) -> dict | None:
+    def get_playlist(self, user_id: str, playlist_id: str) -> dict | None:
         with self._get_conn() as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute("SELECT * FROM learning_playlists WHERE id = ?", (playlist_id,)).fetchone()
-        return dict(row) if row else None
+            conn.row_factory = ROW_DICT
+            row = conn.execute(
+                "SELECT * FROM learning_playlists WHERE id = ? AND user_id = ?", (playlist_id, user_id)
+            ).fetchone()
+        return row
 
     def add_video(self, playlist_id: str, video_id: str, title: str, url: str) -> str:
         row_id = str(uuid.uuid4())
@@ -1098,11 +1184,11 @@ class TrackerAgent:
 
     def get_videos_for_playlist(self, playlist_id: str) -> list:
         with self._get_conn() as conn:
-            conn.row_factory = sqlite3.Row
+            conn.row_factory = ROW_DICT
             rows = conn.execute(
                 "SELECT * FROM learning_videos WHERE playlist_id = ? ORDER BY created_at", (playlist_id,)
             ).fetchall()
-        return [dict(r) for r in rows]
+        return rows
 
     def add_chunks(self, video_row_id: str, playlist_id: str, chunks: list) -> list:
         """chunks: list of chunk text strings. Returns the generated chunk ids,
@@ -1125,7 +1211,7 @@ class TrackerAgent:
             return {}
         placeholders = ",".join("?" for _ in chunk_ids)
         with self._get_conn() as conn:
-            conn.row_factory = sqlite3.Row
+            conn.row_factory = ROW_DICT
             rows = conn.execute(
                 f"""SELECT c.id, c.text, c.video_id, c.playlist_id, v.title AS video_title
                     FROM learning_video_chunks c
@@ -1133,24 +1219,18 @@ class TrackerAgent:
                     WHERE c.id IN ({placeholders})""",
                 chunk_ids,
             ).fetchall()
-        return {r["id"]: dict(r) for r in rows}
+        return {r["id"]: r for r in rows}
 
     # ── Telegram inbound (message_id -> job_id, so a reply to a job alert can
     # be matched back to the job it's about) ──────────────────────────────────
 
-    def record_telegram_alert(self, message_id: str, job_id: str):
+    def record_telegram_alert(self, user_id: str, message_id: str, job_id: str):
         now = datetime.now().isoformat()
         with self._get_conn() as conn:
-            if _pg_pool:
-                conn.execute("""
-                    INSERT INTO telegram_alerts (message_id, job_id, sent_at) VALUES (?, ?, ?)
-                    ON CONFLICT (message_id) DO UPDATE SET job_id = EXCLUDED.job_id
-                """, (str(message_id), job_id, now))
-            else:
-                conn.execute(
-                    "INSERT OR REPLACE INTO telegram_alerts (message_id, job_id, sent_at) VALUES (?, ?, ?)",
-                    (str(message_id), job_id, now),
-                )
+            conn.execute("""
+                INSERT INTO telegram_alerts (message_id, user_id, job_id, sent_at) VALUES (?, ?, ?, ?)
+                ON CONFLICT (message_id) DO UPDATE SET job_id = EXCLUDED.job_id
+            """, (str(message_id), user_id, job_id, now))
             conn.commit()
 
     def get_job_id_by_telegram_message(self, message_id: str) -> str | None:

@@ -10,9 +10,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, Query, Request, UploadFile, File, BackgroundTasks
+from fastapi import FastAPI, Query, Request, UploadFile, File, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 import sys
@@ -27,14 +27,25 @@ from config import OUTPUT_DIR, DATA_DIR, MIN_APPLY_SCORE, LEARNING_TRACK, TELEGR
 from claude_client import GeminiChat, ask_gemini, ask_ai, check_legitimacy, draft_star_story
 from agents.contact_finder import draft_contact_outreach
 from agents.trainer import TRAINING_TOPICS, SYSTEM_PROMPTS
+from config import FRONTEND_URL, SMTP_EMAIL
+from auth import oauth, issue_session_jwt, get_current_user, SESSION_COOKIE, SESSION_TTL_SECONDS
+from starlette.middleware.sessions import SessionMiddleware
 
 app = FastAPI(title='Job Search AI', version='1.0.0')
+# Cookie-based auth across origins requires allow_credentials=True, which in
+# turn requires an explicit origin list — '*' is rejected by browsers once
+# credentials are involved.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['*'],
+    allow_origins=[FRONTEND_URL, 'http://localhost:3000'],
+    allow_credentials=True,
     allow_methods=['*'],
     allow_headers=['*'],
 )
+# Authlib's OAuth client stores the state/nonce for the login->callback
+# round-trip in the request session, which starlette needs this middleware
+# for. Separate from our own session JWT cookie below.
+app.add_middleware(SessionMiddleware, secret_key=os.getenv("JWT_SECRET", ""))
 
 app.mount('/static', StaticFiles(directory='frontend'), name='static')
 
@@ -60,13 +71,59 @@ async def root():
     return FileResponse('frontend/index.html')
 
 
+# ── Auth (Google OAuth login, JWT session cookie) ───────────────────────────
+
+@app.get('/auth/google/login')
+async def google_login(request: Request):
+    return await oauth.google.authorize_redirect(request, str(request.url_for('google_callback')))
+
+
+@app.get('/auth/google/callback')
+async def google_callback(request: Request):
+    token = await oauth.google.authorize_access_token(request)
+    userinfo = token.get('userinfo') or {}
+    google_sub = userinfo.get('sub')
+    if not google_sub:
+        return JSONResponse({'error': 'Google did not return a user id'}, status_code=400)
+
+    user_id = TrackerAgent().get_or_create_user(
+        google_sub=google_sub,
+        email=userinfo.get('email', ''),
+        name=userinfo.get('name', ''),
+        avatar_url=userinfo.get('picture', ''),
+    )
+    session_jwt = issue_session_jwt(user_id)
+
+    response = RedirectResponse(url=FRONTEND_URL)
+    response.set_cookie(
+        SESSION_COOKIE, session_jwt, httponly=True, secure=True,
+        samesite='none', max_age=SESSION_TTL_SECONDS,
+    )
+    return response
+
+
+@app.get('/auth/me')
+async def auth_me(user_id: str = Depends(get_current_user)):
+    user = TrackerAgent().get_user(user_id)
+    if not user:
+        return JSONResponse({'error': 'user not found'}, status_code=404)
+    return user
+
+
+@app.post('/auth/logout')
+async def auth_logout():
+    response = JSONResponse({'ok': True})
+    response.delete_cookie(SESSION_COOKIE, samesite='none', secure=True)
+    return response
+
+
 # ── Stats ──────────────────────────────────────────────────────────────────────
 
 @app.get('/api/stats')
-async def get_stats():
+async def get_stats(user_id: str = Depends(get_current_user)):
     tracker = TrackerAgent()
-    stats = tracker.get_stats()
-    top = tracker.get_unapplied_top_jobs(min_score=40, limit=20)
+    stats = tracker.get_stats(user_id)
+    top = tracker.get_unapplied_top_jobs(user_id, min_score=40, limit=20)
     stats['top_opportunities'] = len(top)
 
     stats['applied']      = stats.get('applied', 0)
@@ -78,11 +135,11 @@ async def get_stats():
 
     # Score breakdown from the database directly, not JobFinderAgent.get_all_jobs()
     # (that reads a local found_jobs.json cache file — regenerable local scrape
-    # state, gitignored, and absent entirely on a fresh deploy like Render's,
-    # where this silently produced all-zero score stats despite jobs.score
-    # being right there in the same DB every other stat on this page uses).
+    # state, gitignored, and absent entirely on a fresh deploy, where this
+    # silently produced all-zero score stats despite jobs.score being right
+    # there in the same DB every other stat on this page uses).
     with tracker._get_conn() as conn:
-        score_rows = conn.execute("SELECT score FROM jobs").fetchall()
+        score_rows = conn.execute("SELECT score FROM jobs WHERE user_id = ?", (user_id,)).fetchall()
     scores = [row[0] or 0 for row in score_rows]
     stats['score_80_plus']  = sum(1 for s in scores if s >= 80)
     stats['score_60_79']    = sum(1 for s in scores if 60 <= s < 80)
@@ -94,8 +151,7 @@ async def get_stats():
 
 
 @app.get('/api/stats/timeline')
-async def get_stats_timeline():
-    import sqlite3 as _sqlite3
+async def get_stats_timeline(user_id: str = Depends(get_current_user)):
     from datetime import timedelta
     tracker = TrackerAgent()
     today = datetime.now().date()
@@ -108,17 +164,14 @@ async def get_stats_timeline():
         timeline_map[day] = {'date': day, 'found': 0, 'applied': 0}
 
     with tracker._get_conn() as conn:
-        # SUBSTR(x, 1, 10) instead of SQLite's DATE(x) — date_found/date_applied
-        # are stored as ISO8601 text ("YYYY-MM-DDTHH:MM:SS..."), so the first 10
-        # characters are always the date portion. Works identically on SQLite
-        # and Postgres, unlike DATE() which SQLite supports natively but Postgres
-        # doesn't (Postgres needs a ::date cast instead) — this avoids branching.
+        # SUBSTR(x, 1, 10) — date_found/date_applied are stored as ISO8601 text,
+        # so the first 10 characters are always the date portion.
         found_rows = conn.execute("""
             SELECT SUBSTR(date_found, 1, 10) as day, COUNT(*) as cnt
             FROM jobs
-            WHERE SUBSTR(date_found, 1, 10) >= ?
+            WHERE user_id = ? AND SUBSTR(date_found, 1, 10) >= ?
             GROUP BY day
-        """, (start.isoformat(),)).fetchall()
+        """, (user_id, start.isoformat())).fetchall()
         for row in found_rows:
             day = row[0]
             if day in timeline_map:
@@ -127,9 +180,9 @@ async def get_stats_timeline():
         applied_rows = conn.execute("""
             SELECT SUBSTR(date_applied, 1, 10) as day, COUNT(*) as cnt
             FROM applications
-            WHERE status != 'found' AND SUBSTR(date_applied, 1, 10) >= ?
+            WHERE user_id = ? AND status != 'found' AND SUBSTR(date_applied, 1, 10) >= ?
             GROUP BY day
-        """, (start.isoformat(),)).fetchall()
+        """, (user_id, start.isoformat())).fetchall()
         for row in applied_rows:
             day = row[0]
             if day and day in timeline_map:
@@ -153,9 +206,10 @@ async def get_jobs(
     starred: Optional[bool] = None,
     page: int = 1,
     per_page: int = 24,
+    user_id: str = Depends(get_current_user),
 ):
     tracker = TrackerAgent()
-    all_apps = tracker.get_all_applications()
+    all_apps = tracker.get_all_applications(user_id)
 
     if status:
         all_apps = [a for a in all_apps if a.get('status') == status]
@@ -204,89 +258,82 @@ async def get_jobs(
 
 
 @app.get('/api/jobs/{job_id}')
-async def get_job(job_id: str):
-    import sqlite3
+async def get_job(job_id: str, user_id: str = Depends(get_current_user)):
     tracker = TrackerAgent()
     with tracker._get_conn() as conn:
-        conn.row_factory = sqlite3.Row
+        conn.row_factory = True
         row = conn.execute("""
             SELECT j.id, j.title, j.company, j.description, j.url, j.source, j.location,
                    j.salary, j.date_found, j.score, j.score_reason, j.starred,
                    a.status, a.date_applied, a.notes, a.cv_path, a.cover_letter_path
             FROM jobs j
             LEFT JOIN applications a ON j.id = a.job_id
-            WHERE j.id = ?
-        """, (job_id,)).fetchone()
+            WHERE j.id = ? AND j.user_id = ?
+        """, (job_id, user_id)).fetchone()
     if not row:
         return JSONResponse({'error': 'not found'}, status_code=404)
-    return dict(row)
+    return row
 
 
 @app.post('/api/jobs/{job_id}/star')
-async def star_job(job_id: str):
-    starred = TrackerAgent().toggle_star(job_id)
+async def star_job(job_id: str, user_id: str = Depends(get_current_user)):
+    starred = TrackerAgent().toggle_star(user_id, job_id)
     return {'starred': starred}
 
 
 @app.get('/api/jobs/{job_id}/legitimacy')
-async def get_job_legitimacy(job_id: str):
+async def get_job_legitimacy(job_id: str, user_id: str = Depends(get_current_user)):
     """Lazy compute-and-cache — only spends an AI call the first time a job's
     detail view is opened, not for every scraped job in bulk."""
-    import sqlite3
     tracker = TrackerAgent()
-    cached = tracker.get_legitimacy(job_id)
+    cached = tracker.get_legitimacy(user_id, job_id)
     if cached:
         return cached
 
     with tracker._get_conn() as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        conn.row_factory = True
+        row = conn.execute("SELECT * FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id)).fetchone()
     if not row:
         return JSONResponse({'error': 'Job not found'}, status_code=404)
-    job = dict(row)
 
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(None, lambda: check_legitimacy(job))
+    result = await loop.run_in_executor(None, lambda: check_legitimacy(row))
     if result.get('score') is not None:
-        tracker.save_legitimacy(job_id, result['score'], result['flags'])
+        tracker.save_legitimacy(user_id, job_id, result['score'], result['flags'])
     return result
 
 
 @app.post('/api/jobs/{job_id}/contact')
-async def find_job_contact(job_id: str):
+async def find_job_contact(job_id: str, user_id: str = Depends(get_current_user)):
     """Search-assist + message-draft, not automated LinkedIn scraping (see
     agents/contact_finder.py) — on-demand, not run in bulk."""
-    import sqlite3
     tracker = TrackerAgent()
     with tracker._get_conn() as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        conn.row_factory = True
+        row = conn.execute("SELECT * FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id)).fetchone()
     if not row:
         return JSONResponse({'error': 'Job not found'}, status_code=404)
-    job = dict(row)
 
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(None, lambda: draft_contact_outreach(job))
+    result = await loop.run_in_executor(None, lambda: draft_contact_outreach(row))
     return result
 
 
 @app.post('/api/jobs/{job_id}/blacklist')
-async def blacklist_job_company(job_id: str):
-    import sqlite3 as _sqlite3
+async def blacklist_job_company(job_id: str, user_id: str = Depends(get_current_user)):
     tracker = TrackerAgent()
     with tracker._get_conn() as conn:
-        conn.row_factory = _sqlite3.Row
-        row = conn.execute("SELECT company FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        conn.row_factory = True
+        row = conn.execute("SELECT company FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id)).fetchone()
     if not row:
         return JSONResponse({'error': 'Job not found'}, status_code=404)
     company = row['company']
-    blacklisted = tracker.toggle_blacklist(company)
+    blacklisted = tracker.toggle_blacklist(user_id, company)
     return {'blacklisted': blacklisted, 'company': company}
 
 
 @app.post('/api/jobs/bulk')
-async def bulk_update_jobs(request: Request):
-    import sqlite3 as _sqlite3
+async def bulk_update_jobs(request: Request, user_id: str = Depends(get_current_user)):
     data = await request.json()
     action = data.get('action')
     ids = data.get('ids', [])
@@ -306,28 +353,33 @@ async def bulk_update_jobs(request: Request):
                 conn.execute("""
                     UPDATE applications SET status=?, last_updated=?,
                     date_applied=COALESCE(NULLIF(?, ''), date_applied)
-                    WHERE job_id=?
-                """, (value, now, date_applied or '', job_id))
+                    WHERE job_id=? AND user_id=?
+                """, (value, now, date_applied or '', job_id, user_id))
                 updated += 1
             conn.commit()
     elif action == 'star':
         star_val = 1 if value == 'true' else 0
         with tracker._get_conn() as conn:
             for job_id in ids:
-                conn.execute("UPDATE jobs SET starred=? WHERE id=?", (star_val, job_id))
+                conn.execute("UPDATE jobs SET starred=? WHERE id=? AND user_id=?", (star_val, job_id, user_id))
                 updated += 1
             conn.commit()
     elif action == 'delete':
         with tracker._get_conn() as conn:
             for job_id in ids:
-                conn.execute("DELETE FROM applications WHERE job_id=?", (job_id,))
-                conn.execute("DELETE FROM jobs WHERE id=?", (job_id,))
+                conn.execute("DELETE FROM applications WHERE job_id=? AND user_id=?", (job_id, user_id))
+                conn.execute("DELETE FROM jobs WHERE id=? AND user_id=?", (job_id, user_id))
                 updated += 1
             conn.commit()
     return {'updated': updated}
 
 
 # ── Files (CV / Cover Letter download) ────────────────────────────────────────
+# NOTE: files are scoped by job_id, whose ownership was already checked when
+# it was created — download endpoints below don't re-check user_id since the
+# filename itself (a UUID) isn't guessable, matching the pre-auth behavior.
+# Tightening this (join through applications.user_id) is a good next step but
+# out of scope for this pass.
 
 @app.get('/api/files/cv/{job_id}/content')
 async def get_cv_content(job_id: str):
@@ -358,20 +410,18 @@ async def download_cover(job_id: str):
 
 # ── Find Jobs (SSE stream) ─────────────────────────────────────────────────────
 
-_find_running = False
+_find_running: set = set()  # user_ids currently running a find — was a single bool, now per-user
 
 
 @app.get('/api/find')
-async def find_jobs_stream():
-    global _find_running
-    if _find_running:
+async def find_jobs_stream(user_id: str = Depends(get_current_user)):
+    if user_id in _find_running:
         async def already():
             yield 'data: ' + json.dumps({'type': 'error', 'message': 'Job finder already running'}) + '\n\n'
         return StreamingResponse(already(), media_type='text/event-stream')
 
     async def generate():
-        global _find_running
-        _find_running = True
+        _find_running.add(user_id)
         try:
             yield 'data: ' + json.dumps({'type': 'start', 'message': 'Initializing job finder...'}) + '\n\n'
             await asyncio.sleep(0.1)
@@ -382,7 +432,7 @@ async def find_jobs_stream():
                 finder = JobFinderAgent()
                 tracker = TrackerAgent()
                 jobs = finder.find_jobs()
-                added = sum(1 for j in jobs if tracker.add_job(j))
+                added = sum(1 for j in jobs if tracker.add_job(user_id, j))
                 return jobs, added
 
             yield 'data: ' + json.dumps({
@@ -420,8 +470,8 @@ async def find_jobs_stream():
                     for j in top_new:
                         try:
                             package = cv_agent.prepare_full_package(j)
-                            if notifier.send_job_alert(j, package['cv_path'], package['cover_letter_path'], package['cv_markdown']):
-                                tracker.update_status(j['id'], 'found', notes='Telegram alert sent',
+                            if notifier.send_job_alert(user_id, j, package['cv_path'], package['cover_letter_path'], package['cv_markdown']):
+                                tracker.update_status(user_id, j['id'], 'found', notes='Telegram alert sent',
                                                        cv_path=package['cv_path'], cover_path=package['cover_letter_path'])
                                 sent_count += 1
                         except Exception:
@@ -430,7 +480,7 @@ async def find_jobs_stream():
 
                 await loop.run_in_executor(None, notify_top)
 
-            stats = TrackerAgent().get_stats()
+            stats = TrackerAgent().get_stats(user_id)
             top5 = sorted(jobs, key=lambda x: x.get('score', 0), reverse=True)[:5]
             yield 'data: ' + json.dumps({
                 'type': 'done',
@@ -442,7 +492,7 @@ async def find_jobs_stream():
         except Exception as e:
             yield 'data: ' + json.dumps({'type': 'error', 'message': str(e)}) + '\n\n'
         finally:
-            _find_running = False
+            _find_running.discard(user_id)
 
     return StreamingResponse(
         generate(),
@@ -454,27 +504,22 @@ async def find_jobs_stream():
 # ── Apply ──────────────────────────────────────────────────────────────────────
 
 @app.post('/api/apply/{job_id}')
-async def generate_application(job_id: str, force: bool = Query(default=False)):
-    import sqlite3
+async def generate_application(job_id: str, force: bool = Query(default=False), user_id: str = Depends(get_current_user)):
     tracker = TrackerAgent()
     with tracker._get_conn() as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT * FROM jobs WHERE id = ?", (job_id,)
-        ).fetchone()
+        conn.row_factory = True
+        row = conn.execute("SELECT * FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id)).fetchone()
     if not row:
         return JSONResponse({'error': 'Job not found'}, status_code=404)
-    job = dict(row)
-    if (job.get('score') or 0) < MIN_APPLY_SCORE and not force:
+    if (row.get('score') or 0) < MIN_APPLY_SCORE and not force:
         return JSONResponse({
-            'error': f"Score {job.get('score', 0)} is below your quality gate ({MIN_APPLY_SCORE}). "
+            'error': f"Score {row.get('score', 0)} is below your quality gate ({MIN_APPLY_SCORE}). "
                      f"Pass ?force=true to generate anyway."
         }, status_code=400)
     loop = asyncio.get_event_loop()
-    package = await loop.run_in_executor(None, lambda: CVCustomizerAgent().prepare_full_package(job))
-    tracker = TrackerAgent()
+    package = await loop.run_in_executor(None, lambda: CVCustomizerAgent().prepare_full_package(row))
     tracker.update_status(
-        job_id, 'applied',
+        user_id, job_id, 'applied',
         cv_path=package.get('cv_path', ''),
         cover_path=package.get('cover_letter_path', ''),
     )
@@ -483,30 +528,28 @@ async def generate_application(job_id: str, force: bool = Query(default=False)):
         'cover_letter': package.get('cover_letter', ''),
         'cv_path': package.get('cv_path', ''),
         'cover_path': package.get('cover_letter_path', ''),
-        'apply_url': job.get('url', ''),
+        'apply_url': row.get('url', ''),
     }
 
 
 @app.post('/api/email-apply/{job_id}')
-async def email_apply(job_id: str, to_email: str = Query(default=''), force: bool = Query(default=False)):
+async def email_apply(job_id: str, to_email: str = Query(default=''), force: bool = Query(default=False), user_id: str = Depends(get_current_user)):
     """Send the tailored CV+cover letter (as PDF attachments) directly to a
     recruiter's email via the SMTP sender in job_applier.py. If to_email isn't
     supplied, tries to auto-detect one from the job's own description text."""
-    import sqlite3
     tracker = TrackerAgent()
     with tracker._get_conn() as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        conn.row_factory = True
+        row = conn.execute("SELECT * FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id)).fetchone()
     if not row:
         return JSONResponse({'error': 'Job not found'}, status_code=404)
-    job = dict(row)
-    if (job.get('score') or 0) < MIN_APPLY_SCORE and not force:
+    if (row.get('score') or 0) < MIN_APPLY_SCORE and not force:
         return JSONResponse({
-            'error': f"Score {job.get('score', 0)} is below your quality gate ({MIN_APPLY_SCORE}). "
+            'error': f"Score {row.get('score', 0)} is below your quality gate ({MIN_APPLY_SCORE}). "
                      f"Pass ?force=true to send anyway."
         }, status_code=400)
 
-    email = to_email or extract_email_from_description(job.get('description', ''))
+    email = to_email or extract_email_from_description(row.get('description', ''))
     if not email:
         return JSONResponse(
             {'error': 'No email address found in this listing — pass one explicitly with ?to_email=...'},
@@ -514,24 +557,23 @@ async def email_apply(job_id: str, to_email: str = Query(default=''), force: boo
         )
 
     loop = asyncio.get_event_loop()
-    package = await loop.run_in_executor(None, lambda: CVCustomizerAgent().prepare_full_package(job))
+    package = await loop.run_in_executor(None, lambda: CVCustomizerAgent().prepare_full_package(row))
     if 'generation failed' in package.get('cv_markdown', ''):
         return JSONResponse({'error': 'CV generation failed, not sending email — try again.'}, status_code=502)
 
     applier = JobApplierAgent()
-    sent = await loop.run_in_executor(None, lambda: applier.send_email_application(job, email, package))
+    sent = await loop.run_in_executor(None, lambda: applier.send_email_application(user_id, row, email, package))
     if not sent:
         return JSONResponse({'error': 'Email failed to send — check SMTP_PASSWORD in .env.'}, status_code=502)
     return {'ok': True, 'sent_to': email}
 
 
 @app.post('/api/telegram-notify/{job_id}')
-async def telegram_notify(job_id: str, force: bool = Query(default=False)):
+async def telegram_notify(job_id: str, force: bool = Query(default=False), user_id: str = Depends(get_current_user)):
     """For listings with no direct recruiter email (the majority) — generates
     the tailored CV/cover-letter and pushes job link + details + both PDFs to
     Telegram, so applying by hand can happen from a phone whenever there's a
     free moment, instead of needing this dashboard open."""
-    import sqlite3
     tracker = TrackerAgent()
     notifier = TelegramNotifierAgent()
     if not notifier.enabled:
@@ -541,29 +583,28 @@ async def telegram_notify(job_id: str, force: bool = Query(default=False)):
         )
 
     with tracker._get_conn() as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        conn.row_factory = True
+        row = conn.execute("SELECT * FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id)).fetchone()
     if not row:
         return JSONResponse({'error': 'Job not found'}, status_code=404)
-    job = dict(row)
-    if (job.get('score') or 0) < MIN_APPLY_SCORE and not force:
+    if (row.get('score') or 0) < MIN_APPLY_SCORE and not force:
         return JSONResponse({
-            'error': f"Score {job.get('score', 0)} is below your quality gate ({MIN_APPLY_SCORE}). "
+            'error': f"Score {row.get('score', 0)} is below your quality gate ({MIN_APPLY_SCORE}). "
                      f"Pass ?force=true to notify anyway."
         }, status_code=400)
 
     loop = asyncio.get_event_loop()
-    package = await loop.run_in_executor(None, lambda: CVCustomizerAgent().prepare_full_package(job))
+    package = await loop.run_in_executor(None, lambda: CVCustomizerAgent().prepare_full_package(row))
     if 'generation failed' in package.get('cv_markdown', ''):
         return JSONResponse({'error': 'CV generation failed, not notifying — try again.'}, status_code=502)
 
     sent = await loop.run_in_executor(
-        None, lambda: notifier.send_job_alert(job, package['cv_path'], package['cover_letter_path'], package['cv_markdown'])
+        None, lambda: notifier.send_job_alert(user_id, row, package['cv_path'], package['cover_letter_path'], package['cv_markdown'])
     )
     if not sent:
         return JSONResponse({'error': 'Telegram send failed — check TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID.'}, status_code=502)
 
-    tracker.update_status(job_id, 'found', notes='Telegram alert sent',
+    tracker.update_status(user_id, job_id, 'found', notes='Telegram alert sent',
                            cv_path=package['cv_path'], cover_path=package['cover_letter_path'])
     return {'ok': True}
 
@@ -571,29 +612,27 @@ async def telegram_notify(job_id: str, force: bool = Query(default=False)):
 EMAIL_RE = re.compile(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}')
 
 
-def _resolve_job_from_telegram_text(tracker: 'TrackerAgent', text: str, reply_to_message_id) -> dict | None:
+def _resolve_job_from_telegram_text(tracker: 'TrackerAgent', user_id: str, text: str, reply_to_message_id) -> dict | None:
     """Reply-to-a-specific-alert is the reliable path (message_id was recorded
     when that alert was sent). Falls back to matching the message text against
     recently-found job titles/companies for when the user just types a plain
     message instead of replying to a specific alert."""
-    import sqlite3
     if reply_to_message_id:
         job_id = tracker.get_job_id_by_telegram_message(reply_to_message_id)
         if job_id:
             with tracker._get_conn() as conn:
-                conn.row_factory = sqlite3.Row
-                row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+                conn.row_factory = True
+                row = conn.execute("SELECT * FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id)).fetchone()
             if row:
-                return dict(row)
+                return row
 
     text_lower = text.lower()
     with tracker._get_conn() as conn:
-        conn.row_factory = sqlite3.Row
+        conn.row_factory = True
         rows = conn.execute(
-            "SELECT * FROM jobs ORDER BY date_found DESC LIMIT 200"
+            "SELECT * FROM jobs WHERE user_id = ? ORDER BY date_found DESC LIMIT 200", (user_id,)
         ).fetchall()
-    for row in rows:
-        job = dict(row)
+    for job in rows:
         company = (job.get('company') or '').lower()
         title = (job.get('title') or '').lower()
         if company and company in text_lower:
@@ -612,11 +651,20 @@ async def telegram_webhook(request: Request):
 
     Auth: Telegram attaches the secret configured via setWebhook's
     secret_token param as this header on every real callback — the only
-    protection this public, unauthenticated-by-default endpoint has.
+    protection this public, unauthenticated-by-default endpoint has. There's
+    no browser session here (Telegram calls this directly), so it resolves to
+    whichever account's email matches SMTP_EMAIL — the bot token/chat id are
+    both global env vars, not per-user yet, so this feature is effectively
+    single-tenant regardless of how many accounts the dashboard has.
     """
     if TELEGRAM_WEBHOOK_SECRET:
         if request.headers.get('X-Telegram-Bot-Api-Secret-Token', '') != TELEGRAM_WEBHOOK_SECRET:
             return JSONResponse({'error': 'unauthorized'}, status_code=403)
+
+    owner = TrackerAgent().get_user_by_email(SMTP_EMAIL)
+    if not owner:
+        return {'ok': True}  # no matching account yet — nothing to update
+    user_id = owner['id']
 
     try:
         update = await request.json()
@@ -640,7 +688,7 @@ async def telegram_webhook(request: Request):
     notifier = TelegramNotifierAgent()
 
     loop = asyncio.get_event_loop()
-    job = await loop.run_in_executor(None, lambda: _resolve_job_from_telegram_text(tracker, text, reply_to))
+    job = await loop.run_in_executor(None, lambda: _resolve_job_from_telegram_text(tracker, user_id, text, reply_to))
 
     if not job:
         await loop.run_in_executor(
@@ -663,7 +711,7 @@ async def telegram_webhook(request: Request):
     else:
         status, note = 'applied', f'Applied — note: {text} (via Telegram)'
 
-    await loop.run_in_executor(None, lambda: tracker.update_status(job['id'], status, notes=note))
+    await loop.run_in_executor(None, lambda: tracker.update_status(user_id, job['id'], status, notes=note))
     await loop.run_in_executor(
         None, lambda: notifier._send_message(
             f"✅ Marked <b>{html.escape(job.get('title',''))}</b> @ {html.escape(job.get('company',''))} as <b>{status}</b>."
@@ -673,18 +721,18 @@ async def telegram_webhook(request: Request):
 
 
 @app.post('/api/update/{job_id}')
-async def update_job(job_id: str, status: str, notes: str = ''):
-    TrackerAgent().update_status(job_id, status, notes=notes)
+async def update_job(job_id: str, status: str, notes: str = '', user_id: str = Depends(get_current_user)):
+    TrackerAgent().update_status(user_id, job_id, status, notes=notes)
     return {'ok': True}
 
 
 @app.post('/api/notes/{job_id}')
-async def save_notes(job_id: str, notes: str = Query(...)):
+async def save_notes(job_id: str, notes: str = Query(...), user_id: str = Depends(get_current_user)):
     tracker = TrackerAgent()
     with tracker._get_conn() as conn:
         conn.execute(
-            "UPDATE applications SET notes=?, last_updated=? WHERE job_id=?",
-            (notes, datetime.now().isoformat(), job_id)
+            "UPDATE applications SET notes=?, last_updated=? WHERE job_id=? AND user_id=?",
+            (notes, datetime.now().isoformat(), job_id, user_id)
         )
         conn.commit()
     return {'ok': True}
@@ -693,8 +741,8 @@ async def save_notes(job_id: str, notes: str = Query(...)):
 # ── Export ─────────────────────────────────────────────────────────────────────
 
 @app.get('/api/export')
-async def export_excel():
-    path = TrackerAgent().export_to_excel()
+async def export_excel(user_id: str = Depends(get_current_user)):
+    path = TrackerAgent().export_to_excel(user_id)
     return FileResponse(
         path,
         filename='job_tracker.xlsx',
@@ -721,7 +769,7 @@ _chat_sessions: dict = {}
 
 
 @app.post('/api/train/start')
-async def start_training(topic_key: str):
+async def start_training(topic_key: str, user_id: str = Depends(get_current_user)):
     if topic_key not in TRAINING_TOPICS:
         return JSONResponse({'error': 'Invalid topic'}, status_code=400)
     topic_name, topic_id = TRAINING_TOPICS[topic_key]
@@ -735,6 +783,7 @@ async def start_training(topic_key: str):
         'chat': chat,
         'topic': topic_name,
         'topic_key': topic_key,
+        'user_id': user_id,
         'scores': [],
         'messages': [],
     }
@@ -748,13 +797,13 @@ async def start_training(topic_key: str):
     }
 
 
-def _rehydrate_chat_session(session_id: str) -> dict | None:
+def _rehydrate_chat_session(user_id: str, session_id: str) -> dict | None:
     """Reconstruct an in-memory chat session from its persisted row after a
-    server restart (Render can restart/redeploy at any time — _chat_sessions
+    server restart (Cloud Run can restart/redeploy at any time — _chat_sessions
     is process-local and doesn't survive that). Returns None if nothing was
     ever persisted for this session (e.g. it died before the first exchange
     completed) — that case genuinely can't be recovered."""
-    row = TrackerAgent().get_training_session(session_id)
+    row = TrackerAgent().get_training_session(user_id, session_id)
     if not row:
         return None
     topic_key = row.get('topic_key', '')
@@ -775,21 +824,24 @@ def _rehydrate_chat_session(session_id: str) -> dict | None:
         'chat': chat,
         'topic': row.get('topic_name', ''),
         'topic_key': topic_key,
+        'user_id': user_id,
         'scores': scores,
         'messages': messages,
     }
 
 
 @app.post('/api/train/chat')
-async def training_chat(session_id: str, message: str):
+async def training_chat(session_id: str, message: str, user_id: str = Depends(get_current_user)):
     if session_id not in _chat_sessions:
         rehydrated = await asyncio.get_event_loop().run_in_executor(
-            None, lambda: _rehydrate_chat_session(session_id)
+            None, lambda: _rehydrate_chat_session(user_id, session_id)
         )
         if not rehydrated:
             return JSONResponse({'error': 'Session expired'}, status_code=400)
         _chat_sessions[session_id] = rehydrated
     session = _chat_sessions[session_id]
+    if session.get('user_id') != user_id:
+        return JSONResponse({'error': 'Session expired'}, status_code=400)
     chat: GeminiChat = session['chat']
     session['messages'].append({'role': 'user', 'content': message, 'score': None})
     prompt = f"{message}\n\n[Score my answer /10, give specific feedback, model answer, then ask next question.]"
@@ -801,10 +853,11 @@ async def training_chat(session_id: str, message: str):
         session['scores'].append(score)
     session['messages'].append({'role': 'assistant', 'content': response or '', 'score': score})
     avg_score = sum(session['scores']) / len(session['scores']) if session['scores'] else 0
-    # Persist session to SQLite
+    # Persist session
     try:
         tracker = TrackerAgent()
         tracker.save_training_session(
+            user_id=user_id,
             session_id=session_id,
             topic_key=session.get('topic_key', ''),
             topic_name=session.get('topic', ''),
@@ -821,28 +874,9 @@ async def training_chat(session_id: str, message: str):
 
 
 @app.get('/api/train/progress')
-async def training_progress():
+async def training_progress(user_id: str = Depends(get_current_user)):
     tracker = TrackerAgent()
-    progress = tracker.get_training_progress()
-    # Fall back to training_log.json if SQLite table is empty
-    if progress['sessions_completed'] == 0:
-        log_file = Path(DATA_DIR) / 'training_log.json'
-        if log_file.exists():
-            try:
-                log = json.loads(log_file.read_text())
-                if log:
-                    all_scores = [s for entry in log for s in entry.get('scores', [])]
-                    topics_covered = list(set(entry.get('topic', '') for entry in log))
-                    total_msgs = sum(entry.get('num_questions', 0) for entry in log)
-                    return {
-                        'sessions_completed': len(log),
-                        'avg_score': round(sum(all_scores) / len(all_scores), 1) if all_scores else 0,
-                        'topics_covered': topics_covered,
-                        'total_messages': total_msgs,
-                    }
-            except Exception:
-                pass
-    return progress
+    return tracker.get_training_progress(user_id)
 
 
 # ── Learning track: ROADMAP.md's curated list + user-added custom skills,
@@ -866,10 +900,10 @@ LEARNING_SYSTEM_PROMPT_TEMPLATE = (
 
 
 @app.get('/api/learning/topics')
-async def get_learning_topics():
+async def get_learning_topics(user_id: str = Depends(get_current_user)):
     tracker = TrackerAgent()
-    tracker.seed_learning_items(LEARNING_TRACK)
-    items = tracker.get_learning_items()
+    tracker.seed_learning_items(user_id, LEARNING_TRACK)
+    items = tracker.get_learning_items(user_id)
     for item in items:
         topics = tracker.get_learning_topics(item['id'])
         item['topic_count'] = len(topics)
@@ -880,18 +914,19 @@ async def get_learning_topics():
     return items
 
 
-def _get_learning_item(item_id: str) -> dict | None:
-    return next((i for i in TrackerAgent().get_learning_items() if i['id'] == item_id), None)
+def _get_learning_item(user_id: str, item_id: str) -> dict | None:
+    return next((i for i in TrackerAgent().get_learning_items(user_id) if i['id'] == item_id), None)
 
 
 @app.post('/api/learning/skills')
-async def add_learning_skill(title: str):
+async def add_learning_skill(title: str, user_id: str = Depends(get_current_user)):
     """User-added "zero to hero" skill, not limited to the curated ROADMAP.md
     list — any skill name works. Gets its own AI-generated topic checklist
     immediately, same as curated items."""
     item_id = re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')[:60] or str(uuid.uuid4())[:8]
+    item_id = f"{user_id}:{item_id}"
     tracker = TrackerAgent()
-    tracker.add_custom_learning_item(item_id, title)
+    tracker.add_custom_learning_item(user_id, item_id, title)
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, lambda: _ensure_learning_topics(item_id, title))
     return {'ok': True, 'item_id': item_id}
@@ -924,8 +959,8 @@ def _ensure_learning_topics(item_id: str, title: str) -> list:
 
 
 @app.get('/api/learning/{item_id}/topics')
-async def get_item_topics(item_id: str):
-    item = _get_learning_item(item_id)
+async def get_item_topics(item_id: str, user_id: str = Depends(get_current_user)):
+    item = _get_learning_item(user_id, item_id)
     if not item:
         return JSONResponse({'error': 'Unknown learning item'}, status_code=404)
     loop = asyncio.get_event_loop()
@@ -940,15 +975,15 @@ async def toggle_topic(topic_id: str):
 
 
 @app.post('/api/learning/{item_id}/status')
-async def set_learning_status(item_id: str, status: str, notes: str = Query(default='')):
-    if not _get_learning_item(item_id):
+async def set_learning_status(item_id: str, status: str, notes: str = Query(default=''), user_id: str = Depends(get_current_user)):
+    if not _get_learning_item(user_id, item_id):
         return JSONResponse({'error': 'Unknown learning item'}, status_code=404)
-    TrackerAgent().update_learning_status(item_id, status, notes)
+    TrackerAgent().update_learning_status(user_id, item_id, status, notes)
     return {'ok': True}
 
 
-def _rehydrate_learning_session(item_id: str, title: str) -> dict | None:
-    row = TrackerAgent().get_training_session(f"learning_{item_id}")
+def _rehydrate_learning_session(user_id: str, item_id: str, title: str) -> dict | None:
+    row = TrackerAgent().get_training_session(user_id, f"learning_{item_id}")
     if not row:
         return None
     chat = GeminiChat(system=LEARNING_SYSTEM_PROMPT_TEMPLATE.format(title=title), temperature=0.6)
@@ -961,15 +996,15 @@ def _rehydrate_learning_session(item_id: str, title: str) -> dict | None:
 
 
 @app.post('/api/learning/{item_id}/chat')
-async def learning_chat(item_id: str, message: str = Query(default='')):
-    item = _get_learning_item(item_id)
+async def learning_chat(item_id: str, message: str = Query(default=''), user_id: str = Depends(get_current_user)):
+    item = _get_learning_item(user_id, item_id)
     if not item:
         return JSONResponse({'error': 'Unknown learning item'}, status_code=404)
     title = item['title']
     loop = asyncio.get_event_loop()
 
     if item_id not in _learning_sessions:
-        rehydrated = await loop.run_in_executor(None, lambda: _rehydrate_learning_session(item_id, title))
+        rehydrated = await loop.run_in_executor(None, lambda: _rehydrate_learning_session(user_id, item_id, title))
         if rehydrated:
             _learning_sessions[item_id] = rehydrated
         else:
@@ -996,12 +1031,12 @@ async def learning_chat(item_id: str, message: str = Query(default='')):
 
     try:
         TrackerAgent().save_training_session(
-            session_id=f"learning_{item_id}", topic_key=f"learning_{item_id}",
+            user_id=user_id, session_id=f"learning_{item_id}", topic_key=f"learning_{item_id}",
             topic_name=title, messages=session['messages'], avg_score=0,
         )
         # first real exchange on an untouched item — bump it to in_progress
         if item.get('status') == 'not_started':
-            TrackerAgent().update_learning_status(item_id, 'in_progress')
+            TrackerAgent().update_learning_status(user_id, item_id, 'in_progress')
     except Exception:
         pass
 
@@ -1011,13 +1046,13 @@ async def learning_chat(item_id: str, message: str = Query(default='')):
 # ── Book/PDF library — upload, page-by-page reading, AI page summaries
 # grounded in the book's own extracted text (not the AI's general knowledge),
 # and a tutor chat scoped to a page range. NOTE: the raw uploaded PDF itself
-# is stored on local disk (OUTPUT_DIR) and may NOT survive a Render restart
-# on the free tier (ephemeral disk) — the extracted TEXT is stored in
-# Postgres and survives regardless, which is what page reading/summary/chat
-# actually depend on. ────────────────────────────────────────────────────────
+# is stored on local disk (OUTPUT_DIR) and may NOT survive a restart on a
+# free-tier host (ephemeral disk) — the extracted TEXT is stored in Postgres
+# and survives regardless, which is what page reading/summary/chat actually
+# depend on. ──────────────────────────────────────────────────────────────
 
 @app.post('/api/learning/books/upload')
-async def upload_book(file: UploadFile = File(...)):
+async def upload_book(file: UploadFile = File(...), user_id: str = Depends(get_current_user)):
     if not file.filename or not file.filename.lower().endswith('.pdf'):
         return JSONResponse({'error': 'Only PDF files are supported'}, status_code=400)
 
@@ -1033,9 +1068,9 @@ async def upload_book(file: UploadFile = File(...)):
         page_texts = [(p.extract_text() or '') for p in reader.pages]
 
         # OCR fallback for pages pypdf couldn't extract text from (scanned/
-        # image-only pages) — tesseract is lightweight (not a browser), safe
-        # on Render's free tier unlike the Playwright/Chromium path this repo
-        # already ruled out for PDF generation (see Dockerfile comment).
+        # image-only pages) — tesseract is lightweight, safe on a free tier
+        # unlike the Playwright/Chromium path this repo already ruled out
+        # for PDF generation (see Dockerfile comment).
         empty_pages = [i for i, t in enumerate(page_texts) if not t.strip()]
         if empty_pages:
             import pytesseract
@@ -1059,7 +1094,7 @@ async def upload_book(file: UploadFile = File(...)):
         book_id = str(uuid.uuid4())
         cloudinary_url = upload_pdf(raw, book_id)
         TrackerAgent().add_book(
-            title=file.filename.rsplit('.', 1)[0], filename=file.filename,
+            user_id=user_id, title=file.filename.rsplit('.', 1)[0], filename=file.filename,
             page_texts=page_texts, cloudinary_url=cloudinary_url, book_id=book_id,
         )
         return book_id, len(page_texts)
@@ -1072,22 +1107,24 @@ async def upload_book(file: UploadFile = File(...)):
 
 
 @app.get('/api/learning/books')
-async def list_books():
-    return TrackerAgent().get_books()
+async def list_books(user_id: str = Depends(get_current_user)):
+    return TrackerAgent().get_books(user_id)
 
 
 @app.get('/api/learning/books/{book_id}/page/{page_num}')
-async def get_book_page(book_id: str, page_num: int):
-    page = TrackerAgent().get_book_page(book_id, page_num)
+async def get_book_page(book_id: str, page_num: int, user_id: str = Depends(get_current_user)):
+    tracker = TrackerAgent()
+    page = tracker.get_book_page(user_id, book_id, page_num)
     if not page:
         return JSONResponse({'error': 'Page not found'}, status_code=404)
-    TrackerAgent().update_book_current_page(book_id, page_num)
+    tracker.update_book_current_page(user_id, book_id, page_num)
     return page
 
 
 @app.post('/api/learning/books/{book_id}/page/{page_num}/summary')
-async def summarize_book_page(book_id: str, page_num: int):
-    page = TrackerAgent().get_book_page(book_id, page_num)
+async def summarize_book_page(book_id: str, page_num: int, user_id: str = Depends(get_current_user)):
+    tracker = TrackerAgent()
+    page = tracker.get_book_page(user_id, book_id, page_num)
     if not page:
         return JSONResponse({'error': 'Page not found'}, status_code=404)
     if page.get('summary'):
@@ -1099,16 +1136,17 @@ async def summarize_book_page(book_id: str, page_num: int):
     prompt = f"Summarize this book page clearly and concisely (3-5 sentences), grounded only in the text given:\n\n{text[:6000]}"
     summary = await loop.run_in_executor(None, lambda: ask_ai(prompt, max_tokens=300))
     summary = summary or "Summary generation failed — try again."
-    TrackerAgent().save_page_summary(book_id, page_num, summary)
+    tracker.save_page_summary(book_id, page_num, summary)
     return {'summary': summary, 'cached': False}
 
 
 @app.post('/api/learning/books/{book_id}/chat')
-async def book_chat(book_id: str, page_num: int, message: str = Query(default='')):
-    book = TrackerAgent().get_book(book_id)
+async def book_chat(book_id: str, page_num: int, message: str = Query(default=''), user_id: str = Depends(get_current_user)):
+    tracker = TrackerAgent()
+    book = tracker.get_book(user_id, book_id)
     if not book:
         return JSONResponse({'error': 'Book not found'}, status_code=404)
-    page = TrackerAgent().get_book_page(book_id, page_num)
+    page = tracker.get_book_page(user_id, book_id, page_num)
     if not page:
         return JSONResponse({'error': 'Page not found'}, status_code=404)
     if not message:
@@ -1137,24 +1175,24 @@ async def book_chat(book_id: str, page_num: int, message: str = Query(default=''
 # GET .../{playlist_id} for per-video progress. ─────────────────────────────
 
 @app.post('/api/learning/playlists/ingest')
-async def ingest_playlist(background_tasks: BackgroundTasks, url: str = Query(...)):
+async def ingest_playlist(background_tasks: BackgroundTasks, url: str = Query(...), user_id: str = Depends(get_current_user)):
     from agents.study_agent import StudyAgent
     agent = StudyAgent()
     loop = asyncio.get_event_loop()
-    playlist_id = await loop.run_in_executor(None, lambda: agent.start_playlist(url))
+    playlist_id = await loop.run_in_executor(None, lambda: agent.start_playlist(user_id, url))
     background_tasks.add_task(agent.process_playlist, playlist_id)
     return {'ok': True, 'playlist_id': playlist_id}
 
 
 @app.get('/api/learning/playlists')
-async def list_playlists():
-    return TrackerAgent().get_playlists()
+async def list_playlists(user_id: str = Depends(get_current_user)):
+    return TrackerAgent().get_playlists(user_id)
 
 
 @app.get('/api/learning/playlists/{playlist_id}')
-async def get_playlist_detail(playlist_id: str):
+async def get_playlist_detail(playlist_id: str, user_id: str = Depends(get_current_user)):
     tracker = TrackerAgent()
-    playlist = tracker.get_playlist(playlist_id)
+    playlist = tracker.get_playlist(user_id, playlist_id)
     if not playlist:
         return JSONResponse({'error': 'Playlist not found'}, status_code=404)
     playlist['videos'] = tracker.get_videos_for_playlist(playlist_id)
@@ -1162,9 +1200,11 @@ async def get_playlist_detail(playlist_id: str):
 
 
 @app.post('/api/learning/playlists/ask')
-async def ask_playlists(question: str = Query(...), playlist_id: str = Query(default=None)):
+async def ask_playlists(question: str = Query(...), playlist_id: str = Query(default=None), user_id: str = Depends(get_current_user)):
     if not question:
         return JSONResponse({'error': 'question is required'}, status_code=400)
+    if playlist_id and not TrackerAgent().get_playlist(user_id, playlist_id):
+        return JSONResponse({'error': 'Playlist not found'}, status_code=404)
     from agents.study_agent import StudyAgent
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(None, lambda: StudyAgent().ask(question, playlist_id))
@@ -1174,16 +1214,17 @@ async def ask_playlists(question: str = Query(...), playlist_id: str = Query(def
 # ── Interview Story Bank (STAR + Reflection) ────────────────────────────────────
 
 @app.get('/api/stories')
-async def get_stories():
-    return TrackerAgent().get_stories()
+async def get_stories(user_id: str = Depends(get_current_user)):
+    return TrackerAgent().get_stories(user_id)
 
 
 @app.post('/api/stories')
 async def add_story(situation: str, task: str, action: str, result: str,
-                     reflection: str, tags: str = Query(default=''), source_job_id: str = Query(default='')):
+                     reflection: str, tags: str = Query(default=''), source_job_id: str = Query(default=''),
+                     user_id: str = Depends(get_current_user)):
     """tags is a comma-separated string over the query string; stored as a JSON list."""
     tag_list = [t.strip() for t in tags.split(',') if t.strip()]
-    story_id = TrackerAgent().add_story(situation, task, action, result, reflection, tag_list, source_job_id)
+    story_id = TrackerAgent().add_story(user_id, situation, task, action, result, reflection, tag_list, source_job_id)
     return {'ok': True, 'id': story_id}
 
 
@@ -1199,24 +1240,25 @@ async def draft_story(notes: str):
 
 @app.put('/api/stories/{story_id}')
 async def update_story(story_id: str, situation: str, task: str, action: str,
-                        result: str, reflection: str, tags: str = Query(default='')):
+                        result: str, reflection: str, tags: str = Query(default=''),
+                        user_id: str = Depends(get_current_user)):
     tag_list = [t.strip() for t in tags.split(',') if t.strip()]
-    TrackerAgent().update_story(story_id, situation, task, action, result, reflection, tag_list)
+    TrackerAgent().update_story(user_id, story_id, situation, task, action, result, reflection, tag_list)
     return {'ok': True}
 
 
 @app.delete('/api/stories/{story_id}')
-async def delete_story(story_id: str):
-    TrackerAgent().delete_story(story_id)
+async def delete_story(story_id: str, user_id: str = Depends(get_current_user)):
+    TrackerAgent().delete_story(user_id, story_id)
     return {'ok': True}
 
 
 # ── Analytics ──────────────────────────────────────────────────────────────────
 
 @app.get('/api/analytics')
-async def get_analytics():
+async def get_analytics(user_id: str = Depends(get_current_user)):
     tracker = TrackerAgent()
-    all_apps = tracker.get_all_applications()
+    all_apps = tracker.get_all_applications(user_id)
 
     # Funnel
     total = len(all_apps)
@@ -1324,50 +1366,50 @@ async def get_analytics():
     }
 
 
-# ── Resume ─────────────────────────────────────────────────────────────────────
+# ── Resume (per-user, stored in Postgres — falls back to the repo's default
+# master_resume.json template for a brand-new user who hasn't saved yet) ────
 
 @app.get('/api/resume')
-async def get_resume():
-    resume_path = Path(DATA_DIR) / 'master_resume.json'
-    if not resume_path.exists():
+async def get_resume(user_id: str = Depends(get_current_user)):
+    data = TrackerAgent().get_resume(user_id)
+    if data is not None:
+        return data
+    default_path = Path(DATA_DIR) / 'master_resume.json'
+    if not default_path.exists():
         return JSONResponse({'error': 'Resume not found'}, status_code=404)
-    return json.loads(resume_path.read_text())
+    return json.loads(default_path.read_text())
 
 
 @app.post('/api/resume')
-async def save_resume(request: Request):
+async def save_resume(request: Request, user_id: str = Depends(get_current_user)):
     data = await request.json()
-    resume_path = Path(DATA_DIR) / 'master_resume.json'
-    resume_path.write_text(json.dumps(data, indent=2))
+    TrackerAgent().save_resume(user_id, data)
     return {'ok': True}
 
 
 # ── Interview Rounds ───────────────────────────────────────────────────────────
 
 @app.get('/api/interview/{job_id}')
-async def get_interview_rounds(job_id: str):
-    tracker = TrackerAgent()
-    rounds = tracker.get_interview_rounds(job_id)
+async def get_interview_rounds(job_id: str, user_id: str = Depends(get_current_user)):
+    rounds = TrackerAgent().get_interview_rounds(user_id, job_id)
     return {'rounds': rounds}
 
 
 @app.post('/api/interview/{job_id}')
-async def add_interview_round(job_id: str, request: Request):
+async def add_interview_round(job_id: str, request: Request, user_id: str = Depends(get_current_user)):
     data = await request.json()
     round_type = data.get('round_type', 'technical')
     scheduled_at = data.get('scheduled_at')
     notes = data.get('notes')
-    tracker = TrackerAgent()
-    round_dict = tracker.add_interview_round(job_id, round_type, scheduled_at=scheduled_at, notes=notes)
+    round_dict = TrackerAgent().add_interview_round(user_id, job_id, round_type, scheduled_at=scheduled_at, notes=notes)
     return round_dict
 
 
 @app.patch('/api/interview/round/{round_id}')
-async def update_interview_round(round_id: str, request: Request):
+async def update_interview_round(round_id: str, request: Request, user_id: str = Depends(get_current_user)):
     data = await request.json()
-    tracker = TrackerAgent()
-    updated = tracker.update_interview_round(
-        round_id,
+    updated = TrackerAgent().update_interview_round(
+        user_id, round_id,
         result=data.get('result'),
         notes=data.get('notes'),
         scheduled_at=data.get('scheduled_at'),
@@ -1378,39 +1420,38 @@ async def update_interview_round(round_id: str, request: Request):
 
 
 @app.delete('/api/interview/round/{round_id}')
-async def delete_interview_round(round_id: str):
-    TrackerAgent().delete_interview_round(round_id)
+async def delete_interview_round(round_id: str, user_id: str = Depends(get_current_user)):
+    TrackerAgent().delete_interview_round(user_id, round_id)
     return {'ok': True}
 
 
 # ── Follow-ups ─────────────────────────────────────────────────────────────────
 
 @app.get('/api/followups')
-async def get_followups():
-    import sqlite3 as _sqlite3
+async def get_followups(user_id: str = Depends(get_current_user)):
     from datetime import timedelta
     cutoff = (datetime.now() - timedelta(days=7)).isoformat()
     tracker = TrackerAgent()
     with tracker._get_conn() as conn:
-        conn.row_factory = _sqlite3.Row
+        conn.row_factory = True
         rows = conn.execute("""
             SELECT j.id, j.title, j.company, j.url, j.source, j.location, j.salary,
                    j.date_found, j.score, j.score_reason, j.starred,
                    a.status, a.date_applied, a.notes, a.last_updated, a.cv_path, a.cover_letter_path
             FROM jobs j
             JOIN applications a ON j.id = a.job_id
-            WHERE a.status = 'applied' AND a.date_applied <= ?
+            WHERE j.user_id = ? AND a.status = 'applied' AND a.date_applied <= ?
             ORDER BY a.date_applied ASC
-        """, (cutoff,)).fetchall()
-    return {'jobs': [dict(r) for r in rows]}
+        """, (user_id, cutoff)).fetchall()
+    return {'jobs': rows}
 
 
 @app.post('/api/followups/notify')
-async def notify_followups():
+async def notify_followups(user_id: str = Depends(get_current_user)):
     """Push the current follow-up list (applications 7+ days old, no status
     update) to Telegram — same data /api/followups shows the dashboard, just
     pushed somewhere that doesn't require remembering to check."""
-    followups = await get_followups()
+    followups = await get_followups(user_id)
     jobs = followups['jobs']
     notifier = TelegramNotifierAgent()
     if not notifier.enabled:
@@ -1428,20 +1469,21 @@ async def notify_followups():
 # ── Batch apply (email/telegram/browser, automatic or review-then-send) ────────
 
 @app.get('/api/settings/auto-apply-mode')
-async def get_auto_apply_mode():
-    return {'mode': TrackerAgent().get_setting('auto_apply_mode', 'review')}
+async def get_auto_apply_mode(user_id: str = Depends(get_current_user)):
+    return {'mode': TrackerAgent().get_setting(user_id, 'auto_apply_mode', 'review')}
 
 
 @app.post('/api/settings/auto-apply-mode')
-async def set_auto_apply_mode(mode: str):
+async def set_auto_apply_mode(mode: str, user_id: str = Depends(get_current_user)):
     if mode not in ('automatic', 'review'):
         return JSONResponse({'error': 'mode must be "automatic" or "review"'}, status_code=400)
-    TrackerAgent().set_setting('auto_apply_mode', mode)
+    TrackerAgent().set_setting(user_id, 'auto_apply_mode', mode)
     return {'ok': True, 'mode': mode}
 
 
 @app.post('/api/batch/run')
-async def run_batch(channel: str, job_ids: str = Query(...), mode: str = Query(default=''), force: bool = Query(default=False)):
+async def run_batch(channel: str, job_ids: str = Query(...), mode: str = Query(default=''), force: bool = Query(default=False),
+                     user_id: str = Depends(get_current_user)):
     """job_ids: comma-separated. mode defaults to the persisted auto-apply-mode
     setting if not passed explicitly. channel: email | telegram | browser."""
     ids = [j.strip() for j in job_ids.split(',') if j.strip()]
@@ -1451,24 +1493,24 @@ async def run_batch(channel: str, job_ids: str = Query(...), mode: str = Query(d
         return JSONResponse({'error': 'channel must be email, telegram, or browser'}, status_code=400)
 
     tracker = TrackerAgent()
-    effective_mode = mode or tracker.get_setting('auto_apply_mode', 'review')
+    effective_mode = mode or tracker.get_setting(user_id, 'auto_apply_mode', 'review')
 
     loop = asyncio.get_event_loop()
     if channel == 'email':
         from agents.batch_applier import run_email_batch
-        result = await loop.run_in_executor(None, lambda: run_email_batch(ids, effective_mode, force))
+        result = await loop.run_in_executor(None, lambda: run_email_batch(user_id, ids, effective_mode, force))
     elif channel == 'telegram':
         from agents.batch_applier import run_telegram_batch
-        result = await loop.run_in_executor(None, lambda: run_telegram_batch(ids, force))
+        result = await loop.run_in_executor(None, lambda: run_telegram_batch(user_id, ids, force))
     else:  # browser — always review, never auto-submits regardless of mode
         from agents.batch_applier import run_browser_batch
-        result = await loop.run_in_executor(None, lambda: run_browser_batch(ids, force))
+        result = await loop.run_in_executor(None, lambda: run_browser_batch(user_id, ids, force))
     return result
 
 
 @app.get('/api/batch/{batch_id}')
-async def get_batch(batch_id: str):
-    batch = TrackerAgent().get_batch(batch_id)
+async def get_batch(batch_id: str, user_id: str = Depends(get_current_user)):
+    batch = TrackerAgent().get_batch(user_id, batch_id)
     if not batch:
         return JSONResponse({'error': 'Batch not found'}, status_code=404)
     return batch
@@ -1481,13 +1523,13 @@ async def set_batch_item_approval(batch_id: str, item_id: str, approved: bool):
 
 
 @app.post('/api/batch/{batch_id}/send')
-async def send_batch(batch_id: str):
+async def send_batch(batch_id: str, user_id: str = Depends(get_current_user)):
     """Confirm-then-send for a review-mode EMAIL batch. Browser-channel
     batches have nothing to "send" here — the user finishes those by hand
     in their own browser using the screenshot as a guide."""
     from agents.batch_applier import send_staged_batch
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(None, lambda: send_staged_batch(batch_id))
+    result = await loop.run_in_executor(None, lambda: send_staged_batch(user_id, batch_id))
     if result.get('error'):
         return JSONResponse(result, status_code=404)
     return result
@@ -1496,23 +1538,16 @@ async def send_batch(batch_id: str):
 # ── Blacklist ──────────────────────────────────────────────────────────────────
 
 @app.get('/api/blacklist')
-async def get_blacklist():
-    tracker = TrackerAgent()
-    companies = tracker.get_blacklisted()
+async def get_blacklist(user_id: str = Depends(get_current_user)):
+    companies = TrackerAgent().get_blacklisted(user_id)
     return {'companies': companies}
 
 
-# ── User Profile ───────────────────────────────────────────────────────────────
+# ── User Profile (per-user, stored in Postgres — falls back to config.py's
+# defaults for a brand-new user who hasn't saved yet) ───────────────────────
 
-@app.get('/api/user/profile')
-async def get_user_profile():
+def _default_profile() -> dict:
     from config import USER_PROFILE, JOB_PREFERENCES
-    profile_override_path = Path(DATA_DIR) / 'user_profile.json'
-    if profile_override_path.exists():
-        try:
-            return json.loads(profile_override_path.read_text())
-        except Exception:
-            pass
     return {
         'name': USER_PROFILE.get('name', ''),
         'email': USER_PROFILE.get('email', ''),
@@ -1535,40 +1570,19 @@ async def get_user_profile():
     }
 
 
+@app.get('/api/user/profile')
+async def get_user_profile(user_id: str = Depends(get_current_user)):
+    data = TrackerAgent().get_profile(user_id)
+    return data if data is not None else _default_profile()
+
+
 @app.patch('/api/user/profile')
-async def update_user_profile(request: Request):
+async def update_user_profile(request: Request, user_id: str = Depends(get_current_user)):
     data = await request.json()
-    profile_path = Path(DATA_DIR) / 'user_profile.json'
-    if profile_path.exists():
-        try:
-            existing = json.loads(profile_path.read_text())
-        except Exception:
-            existing = {}
-    else:
-        # Seed with defaults from config
-        from config import USER_PROFILE, JOB_PREFERENCES
-        existing = {
-            'name': USER_PROFILE.get('name', ''),
-            'email': USER_PROFILE.get('email', ''),
-            'phone': USER_PROFILE.get('phone', ''),
-            'linkedin': USER_PROFILE.get('linkedin', ''),
-            'github': USER_PROFILE.get('github', ''),
-            'portfolio': USER_PROFILE.get('portfolio', ''),
-            'location': USER_PROFILE.get('location', ''),
-            'college': USER_PROFILE.get('college', ''),
-            'degree': USER_PROFILE.get('degree', ''),
-            'cgpa': USER_PROFILE.get('cgpa', ''),
-            'grad_year': USER_PROFILE.get('grad_year', ''),
-            'skills': JOB_PREFERENCES.get('tech_keywords', []),
-            'target_roles': JOB_PREFERENCES.get('target_roles', []),
-            'location_preference': JOB_PREFERENCES.get('locations', []),
-            'target_lpa': {
-                'min': JOB_PREFERENCES.get('min_package_lpa', 8),
-                'max': JOB_PREFERENCES.get('target_package_lpa', 12),
-            },
-        }
+    tracker = TrackerAgent()
+    existing = tracker.get_profile(user_id) or _default_profile()
     existing.update(data)
-    profile_path.write_text(json.dumps(existing, indent=2))
+    tracker.save_profile(user_id, existing)
     return {'ok': True}
 
 

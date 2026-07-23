@@ -43,5 +43,9 @@ RUN python -m playwright install --with-deps chromium
 COPY . .
 
 # Cloud Run (like Render before it) injects $PORT at runtime — shell form
-# (not exec form) so it expands.
-CMD uvicorn app:app --host 0.0.0.0 --port $PORT
+# (not exec form) so it expands. --proxy-headers/--forwarded-allow-ips trust
+# Cloud Run's X-Forwarded-Proto, since it terminates TLS at the edge and
+# forwards internally as plain HTTP — without this, request.url_for() in the
+# Google OAuth callback route would build an http:// redirect_uri, which
+# doesn't match the https:// one registered in Google's console.
+CMD uvicorn app:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'

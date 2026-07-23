@@ -87,8 +87,8 @@ Commands:
             if not job:
                 console.print(f"[red]Job ID '{args.job_id}' not found.[/red]")
                 sys.exit(1)
-            package = orch.applier.prepare_application(job)
-            orch.applier.open_apply_link(job, package)
+            package = orch.applier.prepare_application(orch.user_id, job)
+            orch.applier.open_apply_link(orch.user_id, job, package)
         else:
             orch.apply_to_top_jobs(n=args.top, min_score=args.min_score)
 
@@ -96,7 +96,7 @@ Commands:
         orch.show_dashboard()
 
     elif args.command == "export":
-        path = orch.tracker.export_to_excel()
+        path = orch.tracker.export_to_excel(orch.user_id)
         console.print(f"[green]Excel file: {path}[/green]")
 
     elif args.command == "train":
@@ -106,7 +106,7 @@ Commands:
             orch.start_training(topic=args.topic)
 
     elif args.command == "status":
-        stats = orch.tracker.get_stats()
+        stats = orch.tracker.get_stats(orch.user_id)
         console.print(Panel(
             f"Total Jobs Found: [bold]{stats.get('total', 0)}[/bold]\n"
             f"Applied: [blue]{stats.get('applied', 0)}[/blue]\n"
@@ -118,7 +118,7 @@ Commands:
         ))
 
     elif args.command == "update":
-        orch.tracker.update_status(args.job_id, args.status, notes=args.notes)
+        orch.tracker.update_status(orch.user_id, args.job_id, args.status, notes=args.notes)
 
     elif args.command == "links":
         from agents.job_finder import JobFinderAgent

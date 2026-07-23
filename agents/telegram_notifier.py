@@ -77,7 +77,7 @@ class TelegramNotifierAgent:
         except Exception:
             return None
 
-    def send_job_alert(self, job: dict, cv_path: str = "", cover_path: str = "", cv_markdown: str = "") -> bool:
+    def send_job_alert(self, user_id: str, job: dict, cv_path: str = "", cover_path: str = "", cv_markdown: str = "") -> bool:
         if not self.enabled:
             console.print("[yellow]Telegram not configured — set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env[/yellow]")
             return False
@@ -97,7 +97,7 @@ class TelegramNotifierAgent:
             if alert_message_id and job.get("id"):
                 try:
                     from agents.tracker import TrackerAgent
-                    TrackerAgent().record_telegram_alert(alert_message_id, job["id"])
+                    TrackerAgent().record_telegram_alert(user_id, alert_message_id, job["id"])
                 except Exception:
                     pass  # non-fatal — reply-matching just falls back to text search
 
