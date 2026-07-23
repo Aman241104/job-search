@@ -1,5 +1,12 @@
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+// Backend auth is an httpOnly session cookie on the API's own domain (Cloud
+// Run), separate from the frontend's (Vercel) — every request needs
+// credentials: 'include' or the browser won't attach it cross-origin.
+function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(input, { ...init, credentials: 'include' });
+}
+
 if (typeof window !== 'undefined' && process.env.NODE_ENV === 'production' && !process.env.NEXT_PUBLIC_API_URL) {
   // Loud on purpose — a silent fallback to localhost:8000 in a deployed build
   // means every API call fails, but looks like a generic network error with
@@ -197,50 +204,66 @@ export interface Batch {
   items: BatchItem[];
 }
 
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  avatar_url: string;
+  created_at: string;
+}
+
+export const AUTH_LOGIN_URL = `${API}/auth/google/login`;
+
 export const api = {
+  me: (): Promise<AuthUser | null> =>
+    apiFetch(`${API}/auth/me`).then((r) => (r.ok ? r.json() : null)),
+
+  logout: (): Promise<{ ok: boolean }> =>
+    apiFetch(`${API}/auth/logout`, { method: 'POST' }).then((r) => r.json()),
+
   stats: (): Promise<Stats> =>
-    fetch(`${API}/api/stats`).then((r) => {
+    apiFetch(`${API}/api/stats`).then((r) => {
       if (!r.ok) throw new Error(`Stats failed: ${r.status}`);
       return r.json();
     }),
 
   jobs: (params: Record<string, string | number | boolean>): Promise<JobsResponse> =>
-    fetch(`${API}/api/jobs?${new URLSearchParams(params as Record<string, string>)}`).then((r) => {
+    apiFetch(`${API}/api/jobs?${new URLSearchParams(params as Record<string, string>)}`).then((r) => {
       if (!r.ok) throw new Error(`Jobs failed: ${r.status}`);
       return r.json();
     }),
 
   job: (id: string): Promise<Job> =>
-    fetch(`${API}/api/jobs/${id}`).then((r) => {
+    apiFetch(`${API}/api/jobs/${id}`).then((r) => {
       if (!r.ok) throw new Error(`Job failed: ${r.status}`);
       return r.json();
     }),
 
   jobLegitimacy: (id: string): Promise<{ score: number | null; flags: string[] }> =>
-    fetch(`${API}/api/jobs/${id}/legitimacy`).then((r) => {
+    apiFetch(`${API}/api/jobs/${id}/legitimacy`).then((r) => {
       if (!r.ok) throw new Error(`Legitimacy check failed: ${r.status}`);
       return r.json();
     }),
 
   jobContact: (id: string): Promise<{ search_query: string; search_url: string; message_draft: string }> =>
-    fetch(`${API}/api/jobs/${id}/contact`, { method: 'POST' }).then((r) => {
+    apiFetch(`${API}/api/jobs/${id}/contact`, { method: 'POST' }).then((r) => {
       if (!r.ok) throw new Error(`Contact discovery failed: ${r.status}`);
       return r.json();
     }),
 
   apply: (id: string): Promise<{ cv: string; cover_letter: string; cv_path: string; cover_path: string; apply_url: string }> =>
-    fetch(`${API}/api/apply/${id}`, { method: 'POST' }).then((r) => {
+    apiFetch(`${API}/api/apply/${id}`, { method: 'POST' }).then((r) => {
       if (!r.ok) throw new Error(`Apply failed: ${r.status}`);
       return r.json();
     }),
 
   emailApply: (id: string, toEmail?: string): Promise<{ ok: boolean; sent_to: string } | { error: string }> =>
-    fetch(`${API}/api/email-apply/${id}${toEmail ? `?to_email=${encodeURIComponent(toEmail)}` : ''}`, {
+    apiFetch(`${API}/api/email-apply/${id}${toEmail ? `?to_email=${encodeURIComponent(toEmail)}` : ''}`, {
       method: 'POST',
     }).then((r) => r.json()),
 
   update: (id: string, status: string, notes = ''): Promise<{ ok: boolean }> =>
-    fetch(`${API}/api/update/${id}?status=${status}&notes=${encodeURIComponent(notes)}`, {
+    apiFetch(`${API}/api/update/${id}?status=${status}&notes=${encodeURIComponent(notes)}`, {
       method: 'POST',
     }).then((r) => {
       if (!r.ok) throw new Error(`Update failed: ${r.status}`);
@@ -248,7 +271,7 @@ export const api = {
     }),
 
   saveNotes: (id: string, notes: string): Promise<{ ok: boolean }> =>
-    fetch(`${API}/api/notes/${id}?notes=${encodeURIComponent(notes)}`, {
+    apiFetch(`${API}/api/notes/${id}?notes=${encodeURIComponent(notes)}`, {
       method: 'POST',
     }).then((r) => {
       if (!r.ok) throw new Error(`Notes save failed: ${r.status}`);
@@ -256,12 +279,12 @@ export const api = {
     }),
 
   starJob: (id: string): Promise<{ starred: boolean }> =>
-    fetch(`${API}/api/jobs/${id}/star`, { method: 'POST' }).then((r) => {
+    apiFetch(`${API}/api/jobs/${id}/star`, { method: 'POST' }).then((r) => {
       if (!r.ok) throw new Error(`Star failed: ${r.status}`);
       return r.json();
     }),
 
-  findStream: (): EventSource => new EventSource(`${API}/api/find`),
+  findStream: (): EventSource => new EventSource(`${API}/api/find`, { withCredentials: true }),
 
   export: (): void => {
     window.open(`${API}/api/export`);
@@ -276,13 +299,13 @@ export const api = {
   },
 
   trainTopics: (): Promise<TrainTopic[]> =>
-    fetch(`${API}/api/train/topics`).then((r) => {
+    apiFetch(`${API}/api/train/topics`).then((r) => {
       if (!r.ok) throw new Error(`Topics failed: ${r.status}`);
       return r.json();
     }),
 
   trainStart: (topicKey: string): Promise<TrainSession> =>
-    fetch(`${API}/api/train/start?topic_key=${topicKey}`, { method: 'POST' }).then((r) => {
+    apiFetch(`${API}/api/train/start?topic_key=${topicKey}`, { method: 'POST' }).then((r) => {
       if (!r.ok) throw new Error(`Train start failed: ${r.status}`);
       return r.json();
     }),
@@ -291,7 +314,7 @@ export const api = {
     sessionId: string,
     message: string
   ): Promise<{ response: string; score?: number; avg_score?: number }> =>
-    fetch(
+    apiFetch(
       `${API}/api/train/chat?session_id=${sessionId}&message=${encodeURIComponent(message)}`,
       { method: 'POST' }
     ).then((r) => {
@@ -300,25 +323,25 @@ export const api = {
     }),
 
   trainProgress: (): Promise<TrainProgress> =>
-    fetch(`${API}/api/train/progress`).then((r) => {
+    apiFetch(`${API}/api/train/progress`).then((r) => {
       if (!r.ok) throw new Error(`Progress failed: ${r.status}`);
       return r.json();
     }),
 
   learningTopics: (): Promise<LearningItem[]> =>
-    fetch(`${API}/api/learning/topics`).then((r) => {
+    apiFetch(`${API}/api/learning/topics`).then((r) => {
       if (!r.ok) throw new Error(`Learning topics failed: ${r.status}`);
       return r.json();
     }),
 
   setLearningStatus: (itemId: string, status: string): Promise<{ ok: boolean }> =>
-    fetch(`${API}/api/learning/${itemId}/status?status=${status}`, { method: 'POST' }).then((r) => {
+    apiFetch(`${API}/api/learning/${itemId}/status?status=${status}`, { method: 'POST' }).then((r) => {
       if (!r.ok) throw new Error(`Learning status update failed: ${r.status}`);
       return r.json();
     }),
 
   learningChat: (itemId: string, message: string): Promise<{ response: string }> =>
-    fetch(`${API}/api/learning/${itemId}/chat?message=${encodeURIComponent(message)}`, {
+    apiFetch(`${API}/api/learning/${itemId}/chat?message=${encodeURIComponent(message)}`, {
       method: 'POST',
     }).then((r) => {
       if (!r.ok) throw new Error(`Learning chat failed: ${r.status}`);
@@ -326,19 +349,19 @@ export const api = {
     }),
 
   addLearningSkill: (title: string): Promise<{ ok: boolean; item_id: string }> =>
-    fetch(`${API}/api/learning/skills?title=${encodeURIComponent(title)}`, { method: 'POST' }).then((r) => {
+    apiFetch(`${API}/api/learning/skills?title=${encodeURIComponent(title)}`, { method: 'POST' }).then((r) => {
       if (!r.ok) throw new Error(`Add skill failed: ${r.status}`);
       return r.json();
     }),
 
   getItemTopics: (itemId: string): Promise<LearningTopic[]> =>
-    fetch(`${API}/api/learning/${itemId}/topics`).then((r) => {
+    apiFetch(`${API}/api/learning/${itemId}/topics`).then((r) => {
       if (!r.ok) throw new Error(`Get topics failed: ${r.status}`);
       return r.json();
     }),
 
   toggleTopic: (topicId: string): Promise<{ ok: boolean; covered: boolean }> =>
-    fetch(`${API}/api/learning/topics/${topicId}/toggle`, { method: 'POST' }).then((r) => {
+    apiFetch(`${API}/api/learning/topics/${topicId}/toggle`, { method: 'POST' }).then((r) => {
       if (!r.ok) throw new Error(`Toggle topic failed: ${r.status}`);
       return r.json();
     }),
@@ -346,32 +369,32 @@ export const api = {
   uploadBook: (file: File): Promise<{ ok: boolean; book_id: string; page_count: number }> => {
     const formData = new FormData();
     formData.append('file', file);
-    return fetch(`${API}/api/learning/books/upload`, { method: 'POST', body: formData }).then((r) => {
+    return apiFetch(`${API}/api/learning/books/upload`, { method: 'POST', body: formData }).then((r) => {
       if (!r.ok) throw new Error(`Book upload failed: ${r.status}`);
       return r.json();
     });
   },
 
   listBooks: (): Promise<LearningBook[]> =>
-    fetch(`${API}/api/learning/books`).then((r) => {
+    apiFetch(`${API}/api/learning/books`).then((r) => {
       if (!r.ok) throw new Error(`List books failed: ${r.status}`);
       return r.json();
     }),
 
   getBookPage: (bookId: string, pageNum: number): Promise<BookPage> =>
-    fetch(`${API}/api/learning/books/${bookId}/page/${pageNum}`).then((r) => {
+    apiFetch(`${API}/api/learning/books/${bookId}/page/${pageNum}`).then((r) => {
       if (!r.ok) throw new Error(`Get page failed: ${r.status}`);
       return r.json();
     }),
 
   summarizeBookPage: (bookId: string, pageNum: number): Promise<{ summary: string; cached: boolean }> =>
-    fetch(`${API}/api/learning/books/${bookId}/page/${pageNum}/summary`, { method: 'POST' }).then((r) => {
+    apiFetch(`${API}/api/learning/books/${bookId}/page/${pageNum}/summary`, { method: 'POST' }).then((r) => {
       if (!r.ok) throw new Error(`Summarize page failed: ${r.status}`);
       return r.json();
     }),
 
   bookChat: (bookId: string, pageNum: number, message: string): Promise<{ response: string }> =>
-    fetch(
+    apiFetch(
       `${API}/api/learning/books/${bookId}/chat?page_num=${pageNum}&message=${encodeURIComponent(message)}`,
       { method: 'POST' }
     ).then((r) => {
@@ -380,25 +403,25 @@ export const api = {
     }),
 
   ingestPlaylist: (url: string): Promise<{ ok: boolean; playlist_id: string }> =>
-    fetch(`${API}/api/learning/playlists/ingest?url=${encodeURIComponent(url)}`, { method: 'POST' }).then((r) => {
+    apiFetch(`${API}/api/learning/playlists/ingest?url=${encodeURIComponent(url)}`, { method: 'POST' }).then((r) => {
       if (!r.ok) throw new Error(`Playlist ingest failed: ${r.status}`);
       return r.json();
     }),
 
   listPlaylists: (): Promise<StudyPlaylist[]> =>
-    fetch(`${API}/api/learning/playlists`).then((r) => {
+    apiFetch(`${API}/api/learning/playlists`).then((r) => {
       if (!r.ok) throw new Error(`List playlists failed: ${r.status}`);
       return r.json();
     }),
 
   getPlaylist: (id: string): Promise<StudyPlaylist> =>
-    fetch(`${API}/api/learning/playlists/${id}`).then((r) => {
+    apiFetch(`${API}/api/learning/playlists/${id}`).then((r) => {
       if (!r.ok) throw new Error(`Get playlist failed: ${r.status}`);
       return r.json();
     }),
 
   askPlaylists: (question: string, playlistId?: string): Promise<{ answer: string; sources: string[] }> =>
-    fetch(
+    apiFetch(
       `${API}/api/learning/playlists/ask?question=${encodeURIComponent(question)}` +
         (playlistId ? `&playlist_id=${playlistId}` : ''),
       { method: 'POST' }
@@ -408,13 +431,13 @@ export const api = {
     }),
 
   stories: (): Promise<Story[]> =>
-    fetch(`${API}/api/stories`).then((r) => {
+    apiFetch(`${API}/api/stories`).then((r) => {
       if (!r.ok) throw new Error(`Stories fetch failed: ${r.status}`);
       return r.json();
     }),
 
   draftStory: (notes: string): Promise<Omit<Story, 'id' | 'source_job_id' | 'created_at' | 'updated_at'>> =>
-    fetch(`${API}/api/stories/draft?notes=${encodeURIComponent(notes)}`, { method: 'POST' }).then((r) => {
+    apiFetch(`${API}/api/stories/draft?notes=${encodeURIComponent(notes)}`, { method: 'POST' }).then((r) => {
       if (!r.ok) throw new Error(`Draft story failed: ${r.status}`);
       return r.json();
     }),
@@ -426,7 +449,7 @@ export const api = {
       situation: story.situation, task: story.task, action: story.action,
       result: story.result, reflection: story.reflection, tags: story.tags.join(','),
     });
-    return fetch(`${API}/api/stories?${params.toString()}`, { method: 'POST' }).then((r) => {
+    return apiFetch(`${API}/api/stories?${params.toString()}`, { method: 'POST' }).then((r) => {
       if (!r.ok) throw new Error(`Add story failed: ${r.status}`);
       return r.json();
     });
@@ -439,26 +462,26 @@ export const api = {
       situation: story.situation, task: story.task, action: story.action,
       result: story.result, reflection: story.reflection, tags: story.tags.join(','),
     });
-    return fetch(`${API}/api/stories/${id}?${params.toString()}`, { method: 'PUT' }).then((r) => {
+    return apiFetch(`${API}/api/stories/${id}?${params.toString()}`, { method: 'PUT' }).then((r) => {
       if (!r.ok) throw new Error(`Update story failed: ${r.status}`);
       return r.json();
     });
   },
 
   deleteStory: (id: string): Promise<{ ok: boolean }> =>
-    fetch(`${API}/api/stories/${id}`, { method: 'DELETE' }).then((r) => {
+    apiFetch(`${API}/api/stories/${id}`, { method: 'DELETE' }).then((r) => {
       if (!r.ok) throw new Error(`Delete story failed: ${r.status}`);
       return r.json();
     }),
 
   resume: (): Promise<Record<string, unknown>> =>
-    fetch(`${API}/api/resume`).then((r) => {
+    apiFetch(`${API}/api/resume`).then((r) => {
       if (!r.ok) throw new Error(`Resume fetch failed: ${r.status}`);
       return r.json();
     }),
 
   saveResume: (data: Record<string, unknown>): Promise<{ ok: boolean }> =>
-    fetch(`${API}/api/resume`, {
+    apiFetch(`${API}/api/resume`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -468,13 +491,13 @@ export const api = {
     }),
 
   statsTimeline: (): Promise<{ timeline: { date: string; found: number; applied: number }[] }> =>
-    fetch(`${API}/api/stats/timeline`).then((r) => {
+    apiFetch(`${API}/api/stats/timeline`).then((r) => {
       if (!r.ok) throw new Error(`Timeline failed: ${r.status}`);
       return r.json();
     }),
 
   analytics: (): Promise<Record<string, unknown>> =>
-    fetch(`${API}/api/analytics`).then((r) => {
+    apiFetch(`${API}/api/analytics`).then((r) => {
       if (!r.ok) throw new Error(`Analytics failed: ${r.status}`);
       return r.json();
     }),
@@ -484,7 +507,7 @@ export const api = {
     avg_mentioned: number;
     jobs_with_salary: number;
   }> => {
-    const r = await fetch(`${API}/api/jobs?per_page=500`);
+    const r = await apiFetch(`${API}/api/jobs?per_page=500`);
     if (!r.ok) throw new Error(`Jobs failed: ${r.status}`);
     const data: JobsResponse = await r.json();
     const jobs: Job[] = data.jobs || [];
@@ -537,19 +560,19 @@ export const api = {
   },
 
   followups: (): Promise<{ jobs: Job[] }> =>
-    fetch(`${API}/api/followups`).then((r) => {
+    apiFetch(`${API}/api/followups`).then((r) => {
       if (!r.ok) throw new Error(`Followups failed: ${r.status}`);
       return r.json();
     }),
 
   getAutoApplyMode: (): Promise<{ mode: 'automatic' | 'review' }> =>
-    fetch(`${API}/api/settings/auto-apply-mode`).then((r) => {
+    apiFetch(`${API}/api/settings/auto-apply-mode`).then((r) => {
       if (!r.ok) throw new Error(`Get mode failed: ${r.status}`);
       return r.json();
     }),
 
   setAutoApplyMode: (mode: 'automatic' | 'review'): Promise<{ ok: boolean; mode: string }> =>
-    fetch(`${API}/api/settings/auto-apply-mode?mode=${mode}`, { method: 'POST' }).then((r) => {
+    apiFetch(`${API}/api/settings/auto-apply-mode?mode=${mode}`, { method: 'POST' }).then((r) => {
       if (!r.ok) throw new Error(`Set mode failed: ${r.status}`);
       return r.json();
     }),
@@ -558,38 +581,38 @@ export const api = {
     const params = new URLSearchParams({ channel, job_ids: jobIds.join(',') });
     if (mode) params.set('mode', mode);
     if (force) params.set('force', 'true');
-    return fetch(`${API}/api/batch/run?${params.toString()}`, { method: 'POST' }).then((r) => {
+    return apiFetch(`${API}/api/batch/run?${params.toString()}`, { method: 'POST' }).then((r) => {
       if (!r.ok) throw new Error(`Run batch failed: ${r.status}`);
       return r.json();
     });
   },
 
   getBatch: (batchId: string): Promise<Batch> =>
-    fetch(`${API}/api/batch/${batchId}`).then((r) => {
+    apiFetch(`${API}/api/batch/${batchId}`).then((r) => {
       if (!r.ok) throw new Error(`Get batch failed: ${r.status}`);
       return r.json();
     }),
 
   setBatchItemApproval: (batchId: string, itemId: string, approved: boolean): Promise<{ ok: boolean }> =>
-    fetch(`${API}/api/batch/${batchId}/items/${itemId}/approval?approved=${approved}`, { method: 'POST' }).then((r) => {
+    apiFetch(`${API}/api/batch/${batchId}/items/${itemId}/approval?approved=${approved}`, { method: 'POST' }).then((r) => {
       if (!r.ok) throw new Error(`Approval update failed: ${r.status}`);
       return r.json();
     }),
 
   sendBatch: (batchId: string): Promise<Batch> =>
-    fetch(`${API}/api/batch/${batchId}/send`, { method: 'POST' }).then((r) => {
+    apiFetch(`${API}/api/batch/${batchId}/send`, { method: 'POST' }).then((r) => {
       if (!r.ok) throw new Error(`Send batch failed: ${r.status}`);
       return r.json();
     }),
 
   userProfile: (): Promise<Record<string, unknown>> =>
-    fetch(`${API}/api/user/profile`).then((r) => {
+    apiFetch(`${API}/api/user/profile`).then((r) => {
       if (!r.ok) throw new Error(`Profile failed: ${r.status}`);
       return r.json();
     }),
 
   saveProfile: (data: Record<string, unknown>): Promise<{ ok: boolean }> =>
-    fetch(`${API}/api/user/profile`, {
+    apiFetch(`${API}/api/user/profile`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -599,7 +622,7 @@ export const api = {
     }),
 
   updateStatus: (id: string, status: string): Promise<{ ok: boolean }> =>
-    fetch(`${API}/api/update/${id}`, {
+    apiFetch(`${API}/api/update/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
@@ -609,23 +632,23 @@ export const api = {
     }),
 
   bulkAction: (action: string, ids: string[], value?: string): Promise<{ updated: number }> =>
-    fetch(`${API}/api/jobs/bulk`, {
+    apiFetch(`${API}/api/jobs/bulk`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, ids, value }),
     }).then((r) => r.json()),
 
   cvContent: (jobId: string): Promise<{ content: string | null }> =>
-    fetch(`${API}/api/files/cv/${jobId}/content`).then((r) => r.json()),
+    apiFetch(`${API}/api/files/cv/${jobId}/content`).then((r) => r.json()),
 
   getInterviews: (jobId: string): Promise<{ rounds: InterviewRound[] }> =>
-    fetch(`${API}/api/interview/${jobId}`).then((r) => r.json()),
+    apiFetch(`${API}/api/interview/${jobId}`).then((r) => r.json()),
 
   addInterview: (
     jobId: string,
     data: { round_type: string; scheduled_at?: string; notes?: string }
   ): Promise<InterviewRound> =>
-    fetch(`${API}/api/interview/${jobId}`, {
+    apiFetch(`${API}/api/interview/${jobId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -635,12 +658,12 @@ export const api = {
     roundId: string,
     data: { result?: string; notes?: string; scheduled_at?: string }
   ): Promise<InterviewRound> =>
-    fetch(`${API}/api/interview/round/${roundId}`, {
+    apiFetch(`${API}/api/interview/round/${roundId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     }).then((r) => r.json()),
 
   blacklistCompany: (jobId: string): Promise<{ blacklisted: boolean; company: string }> =>
-    fetch(`${API}/api/jobs/${jobId}/blacklist`, { method: 'POST' }).then((r) => r.json()),
+    apiFetch(`${API}/api/jobs/${jobId}/blacklist`, { method: 'POST' }).then((r) => r.json()),
 };

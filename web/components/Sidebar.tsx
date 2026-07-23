@@ -6,9 +6,10 @@ import { usePathname } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { motion } from 'framer-motion';
 import gsap from 'gsap';
-import { SquaresFour, Briefcase, Brain, LinkSimple, DownloadSimple, ChartBar, FileText, User, MagnifyingGlass, DotsThree, GraduationCap, BookmarkSimple, PaperPlaneTilt, BookOpen, Sun, Moon, X as CloseIcon } from '@phosphor-icons/react';
+import { SquaresFour, Briefcase, Brain, LinkSimple, DownloadSimple, ChartBar, FileText, User, MagnifyingGlass, DotsThree, GraduationCap, BookmarkSimple, PaperPlaneTilt, BookOpen, Sun, Moon, SignOut, X as CloseIcon } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import { useGlobalSearch } from '@/components/GlobalSearch';
+import { useAuth } from '@/components/AuthProvider';
 import clsx from 'clsx';
 
 const navItems = [
@@ -34,6 +35,7 @@ const mobileMoreItems = navItems.filter((n) => !mobilePrimaryHrefs.includes(n.hr
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { user, logout } = useAuth();
   const sidebarRef = useRef<HTMLDivElement>(null);
   const itemsRef = useRef<HTMLDivElement>(null);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -163,15 +165,29 @@ export default function Sidebar() {
 
           {/* User avatar */}
           <div className="flex items-center gap-3 px-3 py-2.5 mt-1">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-accent-green to-accent-cyan flex items-center justify-center flex-shrink-0">
-              <span className="text-bg font-mono font-bold text-xs">AP</span>
-            </div>
-            {isExpanded && (
-              <div className="overflow-hidden">
-                <p className="text-xs font-semibold text-white/90 whitespace-nowrap">Aman Patel</p>
-                <p className="text-xs text-white/30 whitespace-nowrap">Job Seeker</p>
+            {user?.avatar_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={user.avatar_url} alt={user.name} className="w-8 h-8 rounded-full flex-shrink-0" />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-accent-green to-accent-cyan flex items-center justify-center flex-shrink-0">
+                <span className="text-bg font-mono font-bold text-xs">
+                  {(user?.name || '?').slice(0, 2).toUpperCase()}
+                </span>
               </div>
             )}
+            {isExpanded && (
+              <div className="overflow-hidden flex-1">
+                <p className="text-xs font-semibold text-white/90 whitespace-nowrap truncate">{user?.name || 'Loading...'}</p>
+                <p className="text-xs text-white/30 whitespace-nowrap truncate">{user?.email || ''}</p>
+              </div>
+            )}
+            <button
+              onClick={logout}
+              title="Sign out"
+              className="p-1.5 rounded-lg text-white/30 hover:text-accent-pink hover:bg-accent-pink/10 transition-colors flex-shrink-0"
+            >
+              <SignOut size={16} />
+            </button>
           </div>
         </div>
       </aside>
