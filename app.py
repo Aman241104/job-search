@@ -1624,24 +1624,28 @@ async def get_blacklist(user_id: str = Depends(get_current_user)):
     return {'companies': companies}
 
 
-# ── User Profile (per-user, stored in Postgres — falls back to config.py's
-# defaults for a brand-new user who hasn't saved yet) ───────────────────────
+# ── User Profile (per-user, stored in Postgres). Only generic job-search
+# preferences default from config.py's tuned values for a brand-new user —
+# personal-identity fields (name/email/phone/college/etc.) must NEVER default
+# to the operator's own config.py values, or every new signup would see the
+# operator's real PII pre-filled until they overwrite it (real bug, caught via
+# a live second-account test — see project_customization_features.md). ──────
 
 def _default_profile() -> dict:
-    from config import USER_PROFILE, JOB_PREFERENCES
+    from config import JOB_PREFERENCES
     return {
         'onboarding_completed': False,
-        'name': USER_PROFILE.get('name', ''),
-        'email': USER_PROFILE.get('email', ''),
-        'phone': USER_PROFILE.get('phone', ''),
-        'linkedin': USER_PROFILE.get('linkedin', ''),
-        'github': USER_PROFILE.get('github', ''),
-        'portfolio': USER_PROFILE.get('portfolio', ''),
-        'location': USER_PROFILE.get('location', ''),
-        'college': USER_PROFILE.get('college', ''),
-        'degree': USER_PROFILE.get('degree', ''),
-        'cgpa': USER_PROFILE.get('cgpa', ''),
-        'grad_year': USER_PROFILE.get('grad_year', ''),
+        'name': '',
+        'email': '',
+        'phone': '',
+        'linkedin': '',
+        'github': '',
+        'portfolio': '',
+        'location': '',
+        'college': '',
+        'degree': '',
+        'cgpa': '',
+        'grad_year': '',
         'skills': JOB_PREFERENCES.get('tech_keywords', []),
         'target_roles': JOB_PREFERENCES.get('target_roles', []),
         'location_preference': JOB_PREFERENCES.get('locations', []),

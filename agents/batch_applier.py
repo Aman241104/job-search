@@ -155,23 +155,32 @@ def run_telegram_batch(user_id: str, job_ids: list, force: bool = False) -> dict
 
 # ── Browser pre-fill channel (never submits) ────────────────────────────────
 
-# Common form field name/id/placeholder/aria-label fragments -> USER_PROFILE value.
-# Best-effort only — ATS platforms vary too widely for this to be reliable
-# everywhere; unmatched fields are reported, not guessed at.
+# Common form field name/id/placeholder/aria-label fragments -> the calling
+# user's own profile value. Best-effort only — ATS platforms vary too widely
+# for this to be reliable everywhere; unmatched fields are reported, not
+# guessed at.
 _FIELD_MAP_KEYS = ["name", "full_name", "email", "phone", "mobile", "linkedin", "github", "portfolio", "location"]
 
 
-def _field_map() -> dict:
+def _field_map(profile: dict = None) -> dict:
+    """profile: the calling user's own `profiles` row — falls back to the
+    global USER_PROFILE (config.py) for any field the user hasn't set, same
+    fallback pattern as job_applier.py's send_email_application."""
+    profile = profile or {}
+    name = profile.get("name") or USER_PROFILE["name"]
     return {
-        "name": USER_PROFILE["name"], "full_name": USER_PROFILE["name"],
-        "email": USER_PROFILE["email"],
-        "phone": USER_PROFILE["phone"], "mobile": USER_PROFILE["phone"],
-        "linkedin": USER_PROFILE["linkedin"], "github": USER_PROFILE["github"],
-        "portfolio": USER_PROFILE["portfolio"], "location": USER_PROFILE["location"],
+        "name": name, "full_name": name,
+        "email": profile.get("email") or USER_PROFILE["email"],
+        "phone": profile.get("phone") or USER_PROFILE["phone"],
+        "mobile": profile.get("phone") or USER_PROFILE["phone"],
+        "linkedin": profile.get("linkedin") or USER_PROFILE["linkedin"],
+        "github": profile.get("github") or USER_PROFILE["github"],
+        "portfolio": profile.get("portfolio") or USER_PROFILE["portfolio"],
+        "location": profile.get("location") or USER_PROFILE["location"],
     }
 
 
-def prefill_browser_form(job: dict, cv_path: str = "") -> dict:
+def prefill_browser_form(job: dict, cv_path: str = "", profile: dict = None) -> dict:
     """
     Navigates to the job's own URL and fills whatever common fields it can
     match — NEVER clicks submit/next. Returns which fields were filled vs
@@ -184,7 +193,7 @@ def prefill_browser_form(job: dict, cv_path: str = "") -> dict:
         result["error"] = "Playwright not installed"
         return result
 
-    field_map = _field_map()
+    field_map = _field_map(profile)
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
@@ -238,6 +247,7 @@ def run_browser_batch(user_id: str, job_ids: list, force: bool = False) -> dict:
     cv_agent = CVCustomizerAgent()
     batch_id = tracker.create_batch(user_id, mode="review", channel="browser")
     min_score = _min_score(tracker, user_id)
+    profile = tracker.get_profile(user_id) or {}
 
     for job_id in job_ids:
         job = _get_job(tracker, user_id, job_id)
@@ -248,7 +258,7 @@ def run_browser_batch(user_id: str, job_ids: list, force: bool = False) -> dict:
             continue
 
         package = cv_agent.prepare_full_package(job)
-        prefill = prefill_browser_form(job, cv_path=package.get("cv_path", ""))
+        prefill = prefill_browser_form(job, cv_path=package.get("cv_path", ""), profile=profile)
         tracker.add_batch_item(
             batch_id, job_id, cv_path=package.get("cv_path", ""), cover_path=package.get("cover_letter_path", ""),
             cv_markdown=package.get("cv_markdown", ""), cover_letter_text=package.get("cover_letter", ""),
