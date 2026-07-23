@@ -10,7 +10,7 @@ from config import DATA_DIR
 
 INDEX_PATH = os.path.join(DATA_DIR, "study_index.faiss")
 ORDER_PATH = os.path.join(DATA_DIR, "study_index_order.json")
-EMBED_DIM = 1024  # bge-m3 dense embedding size
+EMBED_DIM = 1024  # nv-embedqa-e5-v5 dense embedding size (bge-m3's, before the 2026-07-23 swap, was also 1024)
 
 _cookies_file_cache = None
 

@@ -43,7 +43,10 @@ def ask_nvidia_embedding(texts: list, input_type: str = "passage", retries: int 
     the whole ingest — same fail-open contract as ask_nvidia.
     """
     api_key, model = _nvidia_embed_cfg()
-    if not api_key or not texts:
+    if not api_key:
+        print("[ask_nvidia_embedding] no NVIDIA_API_KEY configured")
+        return []
+    if not texts:
         return []
 
     body = {
@@ -70,10 +73,13 @@ def ask_nvidia_embedding(texts: list, input_type: str = "passage", retries: int 
                 data = resp.json()
                 return [item["embedding"] for item in data["data"]]
             if resp.status_code == 429 and attempt < retries - 1:
+                print(f"[ask_nvidia_embedding] HTTP 429, retrying (attempt {attempt + 1}/{retries})")
                 time.sleep(5 * (attempt + 1))
                 continue
+            print(f"[ask_nvidia_embedding] HTTP {resp.status_code}: {resp.text[:500]}")
             break
-        except Exception:
+        except Exception as e:
+            print(f"[ask_nvidia_embedding] request failed (attempt {attempt + 1}/{retries}): {e!r}")
             if attempt < retries - 1:
                 time.sleep(3)
             continue
