@@ -551,7 +551,8 @@ async def email_apply(job_id: str, to_email: str = Query(default=''), force: boo
         row = conn.execute("SELECT * FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id)).fetchone()
     if not row:
         return JSONResponse({'error': 'Job not found'}, status_code=404)
-    threshold = (tracker.get_profile(user_id) or {}).get('min_score_threshold', MIN_APPLY_SCORE)
+    profile = tracker.get_profile(user_id) or {}
+    threshold = profile.get('min_score_threshold', MIN_APPLY_SCORE)
     if (row.get('score') or 0) < threshold and not force:
         return JSONResponse({
             'error': f"Score {row.get('score', 0)} is below your quality gate ({threshold}). "
@@ -571,9 +572,9 @@ async def email_apply(job_id: str, to_email: str = Query(default=''), force: boo
         return JSONResponse({'error': 'CV generation failed, not sending email — try again.'}, status_code=502)
 
     applier = JobApplierAgent()
-    sent = await loop.run_in_executor(None, lambda: applier.send_email_application(user_id, row, email, package))
+    sent = await loop.run_in_executor(None, lambda: applier.send_email_application(user_id, row, email, package, profile))
     if not sent:
-        return JSONResponse({'error': 'Email failed to send — check SMTP_PASSWORD in .env.'}, status_code=502)
+        return JSONResponse({'error': 'Email failed to send — set up your email in Profile, or check SMTP_PASSWORD in .env.'}, status_code=502)
     return {'ok': True, 'sent_to': email}
 
 
@@ -1583,6 +1584,8 @@ def _default_profile() -> dict:
         'min_score_threshold': MIN_APPLY_SCORE,
         'salary_weight': 50,
         'location_weight': 50,
+        'smtp_email': '',
+        'smtp_app_password': '',
     }
 
 

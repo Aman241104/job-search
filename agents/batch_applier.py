@@ -47,6 +47,7 @@ def run_email_batch(user_id: str, job_ids: list, mode: str, force: bool = False)
     applier = JobApplierAgent()
     batch_id = tracker.create_batch(user_id, mode=mode, channel="email")
     min_score = _min_score(tracker, user_id)
+    profile = tracker.get_profile(user_id) or {}
 
     for job_id in job_ids:
         job = _get_job(tracker, user_id, job_id)
@@ -66,7 +67,7 @@ def run_email_batch(user_id: str, job_ids: list, mode: str, force: bool = False)
             continue
 
         if mode == "automatic":
-            sent = applier.send_email_application(user_id, job, email, package)
+            sent = applier.send_email_application(user_id, job, email, package, profile)
             tracker.add_batch_item(
                 batch_id, job_id, email=email, cv_path=package["cv_path"], cover_path=package["cover_letter_path"],
                 cv_markdown=package["cv_markdown"], cover_letter_text=package["cover_letter"],
@@ -91,6 +92,7 @@ def send_staged_batch(user_id: str, batch_id: str) -> dict:
     batch = tracker.get_batch(user_id, batch_id)
     if not batch:
         return {"error": "Batch not found"}
+    profile = tracker.get_profile(user_id) or {}
 
     for item in batch["items"]:
         if item.get("status") != "staged" or not item.get("approved"):
@@ -102,7 +104,7 @@ def send_staged_batch(user_id: str, batch_id: str) -> dict:
             "cv_path": item["cv_path"], "cover_letter_path": item["cover_path"],
             "cover_letter": item["cover_letter_text"],
         }
-        sent = applier.send_email_application(user_id, job, item["email"], package)
+        sent = applier.send_email_application(user_id, job, item["email"], package, profile)
         tracker.update_batch_item_status(item["id"], "sent" if sent else "send_failed")
 
     tracker.update_batch_status(batch_id, "sent")

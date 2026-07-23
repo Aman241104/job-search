@@ -86,24 +86,39 @@ class JobApplierAgent:
                 return True
         return False
 
-    def send_email_application(self, user_id: str, job: dict, to_email: str, package: dict) -> bool:
-        if not SMTP_PASSWORD:
-            console.print("[red]SMTP password not set. Add SMTP_PASSWORD to .env[/red]")
+    def send_email_application(self, user_id: str, job: dict, to_email: str, package: dict, profile: dict = None) -> bool:
+        """profile: the calling user's own `profiles` row — supplies their own
+        SMTP creds (smtp_email/smtp_app_password, set up in the Profile page's
+        "Email Sending" section) plus name/phone/portfolio/github for the
+        signature. Falls back to the global .env SMTP_EMAIL/SMTP_PASSWORD/
+        USER_PROFILE for any field the user hasn't set — this is what keeps
+        the original single-owner setup working untouched for whoever already
+        had it configured before per-user email existed."""
+        profile = profile or {}
+        smtp_email = profile.get("smtp_email") or SMTP_EMAIL
+        smtp_password = profile.get("smtp_app_password") or SMTP_PASSWORD
+        if not smtp_password:
+            console.print("[red]No email sending configured — set it up in Profile, or SMTP_PASSWORD in .env[/red]")
             return False
 
-        subject = f"Application for {job['title']} - Aman Patel | React/Next.js Developer"
+        name = profile.get("name") or USER_PROFILE["name"]
+        phone = profile.get("phone") or USER_PROFILE["phone"]
+        portfolio = profile.get("portfolio") or USER_PROFILE["portfolio"]
+        github = profile.get("github") or USER_PROFILE["github"]
+
+        subject = f"Application for {job['title']} - {name}"
         body = f"""Dear Hiring Team,
 
 {package['cover_letter']}
 
 Best regards,
-Aman Patel
-{USER_PROFILE['phone']} | {USER_PROFILE['email']}
-Portfolio: {USER_PROFILE['portfolio']} | GitHub: {USER_PROFILE['github']}
+{name}
+{phone} | {smtp_email}
+Portfolio: {portfolio} | GitHub: {github}
 """
         try:
             msg = MIMEMultipart()
-            msg["From"] = SMTP_EMAIL
+            msg["From"] = smtp_email
             msg["To"] = to_email
             msg["Subject"] = subject
             msg.attach(MIMEText(body, "plain"))
@@ -112,8 +127,8 @@ Portfolio: {USER_PROFILE['portfolio']} | GitHub: {USER_PROFILE['github']}
             # PDF, not markdown — attaching package['cv_markdown'] as fake .md
             # text here would silently send stale/wrong content).
             for path_key, filename in [
-                ("cv_path", "Aman_Patel_Resume.pdf"),
-                ("cover_letter_path", "Aman_Patel_Cover_Letter.pdf"),
+                ("cv_path", "Resume.pdf"),
+                ("cover_letter_path", "Cover_Letter.pdf"),
             ]:
                 file_path = package.get(path_key)
                 if not file_path or not Path(file_path).exists():
@@ -128,8 +143,8 @@ Portfolio: {USER_PROFILE['portfolio']} | GitHub: {USER_PROFILE['github']}
             with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
                 server.ehlo()
                 server.starttls()
-                server.login(SMTP_EMAIL, SMTP_PASSWORD)
-                server.sendmail(SMTP_EMAIL, to_email, msg.as_string())
+                server.login(smtp_email, smtp_password)
+                server.sendmail(smtp_email, to_email, msg.as_string())
 
             console.print(f"[green]Email sent to {to_email}![/green]")
             self.tracker.update_status(

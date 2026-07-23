@@ -27,6 +27,8 @@ interface ProfileData {
   min_score_threshold: number;
   salary_weight: number;
   location_weight: number;
+  smtp_email: string;
+  smtp_app_password: string;
 }
 
 // Mirrors JobFinderAgent.ALL_SOURCE_KEYS in agents/job_finder.py — keep in sync.
@@ -65,6 +67,8 @@ const DEFAULT_PROFILE: ProfileData = {
   min_score_threshold: 40,
   salary_weight: 50,
   location_weight: 50,
+  smtp_email: '',
+  smtp_app_password: '',
 };
 
 /* ─────────────────────── main page ──────────────────── */
@@ -424,7 +428,36 @@ export default function ProfilePage() {
           </div>
         </Section>
 
-        {/* 8. Current Offer */}
+        {/* 8. Email Sending */}
+        <Section title="Email Sending">
+          <p className="text-xs text-white/40 -mt-1">
+            Used to send job applications from your own address. Create a Gmail{' '}
+            <a
+              href="https://myaccount.google.com/apppasswords"
+              target="_blank"
+              rel="noreferrer"
+              className="text-accent-green underline underline-offset-2"
+            >
+              App Password
+            </a>{' '}
+            (needs 2-Step Verification on) — regular Gmail passwords won&apos;t work here.
+          </p>
+          <Field
+            label="Gmail Address"
+            value={profile.smtp_email}
+            onChange={(v) => set('smtp_email', v)}
+            placeholder="you@gmail.com"
+          />
+          <Field
+            label="App Password"
+            value={profile.smtp_app_password}
+            onChange={(v) => set('smtp_app_password', v)}
+            type="password"
+            placeholder="xxxx xxxx xxxx xxxx"
+          />
+        </Section>
+
+        {/* 9. Current Offer */}
         <Section title="Current Offer">
           <Field
             label="Offer Details"
