@@ -22,7 +22,30 @@ interface ProfileData {
   location_preference: string[];
   target_lpa: { min: number; max: number };
   current_offer: string;
+  skill_weights: Record<string, number>;
+  enabled_sources: string[];
+  min_score_threshold: number;
+  salary_weight: number;
+  location_weight: number;
 }
+
+// Mirrors JobFinderAgent.ALL_SOURCE_KEYS in agents/job_finder.py — keep in sync.
+const ALL_SOURCES = [
+  { key: 'internshala', label: 'Internshala' },
+  { key: 'jobicy', label: 'Jobicy' },
+  { key: 'adzuna', label: 'Adzuna' },
+  { key: 'jooble', label: 'Jooble' },
+  { key: 'careerjet', label: 'Careerjet' },
+  { key: 'weworkremotely', label: 'WeWorkRemotely' },
+  { key: 'arbeitnow', label: 'Arbeitnow' },
+  { key: 'linkedin', label: 'LinkedIn' },
+  { key: 'remotive', label: 'Remotive' },
+  { key: 'remoteok', label: 'RemoteOK' },
+  { key: 'remoteco', label: 'Remote.co' },
+  { key: 'themuse', label: 'The Muse' },
+  { key: 'himalayas', label: 'Himalayas' },
+  { key: 'hn_hiring', label: "HN Who's Hiring" },
+];
 
 const DEFAULT_PROFILE: ProfileData = {
   name: '',
@@ -37,6 +60,11 @@ const DEFAULT_PROFILE: ProfileData = {
   location_preference: [],
   target_lpa: { min: 8, max: 12 },
   current_offer: '',
+  skill_weights: {},
+  enabled_sources: ALL_SOURCES.map((s) => s.key),
+  min_score_threshold: 40,
+  salary_weight: 50,
+  location_weight: 50,
 };
 
 /* ─────────────────────── main page ──────────────────── */
@@ -86,6 +114,19 @@ export default function ProfilePage() {
     setProfile((prev) => ({
       ...prev,
       target_lpa: { ...prev.target_lpa, [field]: isNaN(n) ? 0 : n },
+    }));
+  };
+
+  const setSkillWeight = (skill: string, weight: number) => {
+    setProfile((prev) => ({ ...prev, skill_weights: { ...prev.skill_weights, [skill]: weight } }));
+  };
+
+  const toggleSource = (key: string) => {
+    setProfile((prev) => ({
+      ...prev,
+      enabled_sources: prev.enabled_sources.includes(key)
+        ? prev.enabled_sources.filter((k) => k !== key)
+        : [...prev.enabled_sources, key],
     }));
   };
 
@@ -241,9 +282,106 @@ export default function ProfilePage() {
             onChange={(v) => set('skills', v)}
             placeholder="React, TypeScript, Node.js…"
           />
+          {profile.skills.length > 0 && (
+            <div className="flex flex-col gap-3 pt-1">
+              <label className="block text-xs font-mono text-white/40 uppercase tracking-wider">
+                Skill Weights — how much each counts toward a job's score
+              </label>
+              {profile.skills.map((skill) => (
+                <div key={skill} className="flex items-center gap-3">
+                  <span className="text-sm text-white/70 w-32 truncate flex-shrink-0">{skill}</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={20}
+                    value={profile.skill_weights[skill] ?? 10}
+                    onChange={(e) => setSkillWeight(skill, parseInt(e.target.value, 10))}
+                    className="flex-1 accent-accent-green"
+                  />
+                  <span className="text-xs font-mono text-white/40 w-6 text-right">
+                    {profile.skill_weights[skill] ?? 10}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </Section>
 
-        {/* 5. Job Preferences */}
+        {/* 5. Job Sources */}
+        <Section title="Job Sources">
+          <p className="text-xs text-white/40 -mt-1 mb-1">
+            Uncheck a source to skip it entirely when finding new jobs.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {ALL_SOURCES.map(({ key, label }) => (
+              <label
+                key={key}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border bg-bg cursor-pointer hover:border-accent-green/30 transition-colors"
+              >
+                <input
+                  type="checkbox"
+                  checked={profile.enabled_sources.includes(key)}
+                  onChange={() => toggleSource(key)}
+                  className="accent-accent-green"
+                />
+                <span className="text-sm text-white/75">{label}</span>
+              </label>
+            ))}
+          </div>
+        </Section>
+
+        {/* 6. Scoring Priorities */}
+        <Section title="Scoring Priorities">
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-mono text-white/40 uppercase tracking-wider">Salary Match Weight</label>
+              <span className="text-xs font-mono text-white/40">{profile.salary_weight}</span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={profile.salary_weight}
+              onChange={(e) => set('salary_weight', parseInt(e.target.value, 10))}
+              className="w-full accent-accent-green"
+            />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-mono text-white/40 uppercase tracking-wider">Location Match Weight</label>
+              <span className="text-xs font-mono text-white/40">{profile.location_weight}</span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={profile.location_weight}
+              onChange={(e) => set('location_weight', parseInt(e.target.value, 10))}
+              className="w-full accent-accent-green"
+            />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-mono text-white/40 uppercase tracking-wider">
+                Minimum Score to Apply
+              </label>
+              <span className="text-xs font-mono text-white/40">{profile.min_score_threshold}</span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={profile.min_score_threshold}
+              onChange={(e) => set('min_score_threshold', parseInt(e.target.value, 10))}
+              className="w-full accent-accent-green"
+            />
+            <p className="text-xs text-white/30 mt-1">
+              Jobs scoring below this need an explicit override before you can generate a CV/apply.
+            </p>
+          </div>
+        </Section>
+
+        {/* 7. Job Preferences */}
         <Section title="Job Preferences">
           <ChipEditor
             label="Target Roles"
@@ -286,7 +424,7 @@ export default function ProfilePage() {
           </div>
         </Section>
 
-        {/* 6. Current Offer */}
+        {/* 8. Current Offer */}
         <Section title="Current Offer">
           <Field
             label="Offer Details"

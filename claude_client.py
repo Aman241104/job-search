@@ -393,13 +393,19 @@ def ask_claude_json(prompt: str, system: str = "", timeout: int = 60) -> dict:
 # context with 9 others — should score more accurately, at the cost of one
 # call per job instead of one per 10 (fine, since calls are no longer scarce).
 
-def score_job_single(job: dict, profile_summary: str) -> dict:
+def score_job_single(job: dict, profile_summary: str, location_preference: list = None) -> dict:
     """
     Score a single job. Returns {"score": int, "reason": str}.
     NVIDIA first, Gemini fallback, keyword fallback if both fail — same
     provider chain as everywhere else in this module.
+
+    location_preference: the calling user's preferred locations (e.g.
+    ["Remote", "Ahmedabad", "Gujarat"]) — was hardcoded to Ahmedabad/Gujarat
+    in this prompt's rules before per-user profiles existed.
     """
     loc = job.get("location", "")
+    prefs = location_preference or ["Remote"]
+    prefs_str = "/".join(prefs)
     prompt = f"""Score this job 0-100 for this candidate. Return ONLY a JSON object:
 {{"score": <int>, "reason": "<10 words max>"}}
 
@@ -408,12 +414,12 @@ Candidate: {profile_summary}
 Job: "{job['title']}" @ {job['company']} | {loc} | Salary: {job.get('salary','?')} | Desc: {job.get('description','')[:300]}
 
 Rules:
-- 80-100: React/Next.js/frontend, fresher-friendly, remote or Gujarat/Ahmedabad
-- 60-79: Full stack JS, acceptable location
+- 80-100: Strong skill match, fresher-friendly, location matches one of the candidate's preferences ({prefs_str})
+- 60-79: Good skill match, acceptable location
 - 40-59: Some overlap but not ideal
 - 0-39: Wrong domain, senior-only, no relevant skills
-- Penalise 15pts if onsite in Bangalore/Mumbai/Delhi/Pune (far from Ahmedabad)
-- Bonus 10pts if location says Remote/WFH/Anywhere
+- Penalise 15pts if onsite far from all of the candidate's preferred locations
+- Bonus 10pts if location says Remote/WFH/Anywhere and that's one of the candidate's preferences
 
 Return ONLY the JSON object, nothing else."""
 

@@ -32,7 +32,14 @@ SENIOR_WORDS = {"staff", "principal", "lead", "senior", "sr.", "head of",
 
 
 class JobFinderAgent:
-    def __init__(self):
+    def __init__(self, profile: dict = None):
+        """profile: the calling user's `profiles` row (skills, skill_weights,
+        location_preference, target_lpa, salary_weight, location_weight,
+        min_score_threshold, enabled_sources) — scoring/source-selection was
+        hardcoded to Aman's own profile as class constants before per-user
+        accounts existed. None (e.g. CLI/legacy callers) falls back to those
+        original defaults."""
+        self.profile = profile or {}
         self.jobs_file = Path(DATA_DIR) / "found_jobs.json"
         self.existing_urls = self._load_existing_urls()
 
@@ -802,14 +809,17 @@ class JobFinderAgent:
             console.print(f"[yellow]Careerjet failed: {e}[/yellow]")
             return []
 
-    PROFILE = (
-        "Aman Patel, fresher 2026, B.E. EC Engineering LDCE Ahmedabad CGPA 8.0. "
-        "Skills: React Next.js TypeScript JavaScript Tailwind Node.js Express MongoDB MySQL GSAP Figma. "
-        "TCS Digital 7 LPA offer. Target 8-12 LPA. Prefers remote or Ahmedabad/Gujarat. "
+    # Fallback only — real values now come from the calling user's profile
+    # (see _profile_summary/_skill_weights/etc below). Kept so a caller with
+    # no profile (CLI, legacy code) still gets a sane default instead of an
+    # empty/broken scorer.
+    DEFAULT_PROFILE_SUMMARY = (
+        "Fresher, 2026 grad. Skills: React Next.js TypeScript JavaScript Tailwind Node.js Express MongoDB MySQL GSAP Figma. "
+        "Target 8-12 LPA. Prefers remote or Ahmedabad/Gujarat. "
         "NOT for: senior 3+yr, DevOps, embedded, data science, non-tech."
     )
 
-    SKILL_WEIGHTS = {
+    DEFAULT_SKILL_WEIGHTS = {
         'react': 18, 'next.js': 15, 'nextjs': 15, 'next js': 15,
         'typescript': 10, 'javascript': 12, 'tailwind': 7,
         'node.js': 9, 'nodejs': 9, 'express': 6,
@@ -839,6 +849,41 @@ class JobFinderAgent:
         (r'5[+]?\s*years', -25), (r'senior', -20), (r'lead', -15),
     ]
 
+    # ── Per-user scoring inputs — all fall back to Aman's original hardcoded
+    # defaults if self.profile is empty (CLI/legacy callers). ────────────────
+
+    def _profile_summary(self) -> str:
+        p = self.profile
+        if not p:
+            return self.DEFAULT_PROFILE_SUMMARY
+        skills = ', '.join(p.get('skills') or []) or 'general software development'
+        roles = ', '.join(p.get('target_roles') or []) or 'developer roles'
+        locs = ', '.join(p.get('location_preference') or []) or 'remote'
+        lpa = p.get('target_lpa') or {'min': 8, 'max': 12}
+        return (
+            f"{p.get('name') or 'Candidate'}. Skills: {skills}. Target roles: {roles}. "
+            f"Target {lpa.get('min', 8)}-{lpa.get('max', 12)} LPA. Prefers: {locs}. "
+            "NOT for: senior 3+yr, DevOps, embedded, data science, non-tech."
+        )
+
+    def _skill_weights(self) -> dict:
+        custom = self.profile.get('skill_weights')
+        return custom if custom else self.DEFAULT_SKILL_WEIGHTS
+
+    def _location_preference(self) -> list:
+        return [l.lower() for l in (self.profile.get('location_preference') or [])] or ['remote', 'ahmedabad', 'gujarat']
+
+    def _location_weight(self) -> float:
+        """0-100 slider -> multiplier, 50 = baseline (matches the original
+        hardcoded point values exactly when unset)."""
+        return self.profile.get('location_weight', 50) / 50
+
+    def _salary_weight(self) -> float:
+        return self.profile.get('salary_weight', 50) / 50
+
+    def _target_lpa(self) -> dict:
+        return self.profile.get('target_lpa') or {'min': 8, 'max': 12}
+
     def keyword_score(self, job: dict) -> tuple:
         """Fast keyword-based scorer — no API needed."""
         import re
@@ -848,10 +893,12 @@ class JobFinderAgent:
         salary_str = job.get('salary', '').lower()
         score = 30  # base
 
-        # Skills
+        # Skills — weights come from the user's own profile if they've set
+        # any, otherwise the original React/frontend-leaning defaults.
+        skill_weights = self._skill_weights()
         skill_score = 0
-        for kw, w in self.SKILL_WEIGHTS.items():
-            if kw in text:
+        for kw, w in skill_weights.items():
+            if kw.lower() in text:
                 skill_score += w
         skill_score = min(skill_score, 45)
         score += skill_score
@@ -866,33 +913,42 @@ class JobFinderAgent:
                 score += pts
                 break
 
-        # Location
-        gujarat = ['ahmedabad', 'gujarat', 'gandhinagar', 'surat', 'vadodara', 'rajkot']
+        # Location — weighted by location_weight (50 = baseline, matches the
+        # original point values). far_cities is still an India-specific
+        # generic penalty list (not user-configurable) — ponytail: fine
+        # while the userbase is India-focused, revisit if that changes.
+        loc_weight = self._location_weight()
+        preferred = self._location_preference()
         far_cities = ['bangalore', 'bengaluru', 'mumbai', 'pune', 'delhi', 'hyderabad', 'chennai', 'kolkata']
         if any(w in location for w in ['remote', 'anywhere', 'worldwide', 'work from home', 'wfh']):
-            score += 20
-        elif any(c in location for c in gujarat):
-            score += 15
-        elif any(c in location for c in far_cities):
-            score -= 12
+            score += round(20 * loc_weight)
+        elif any(c in location for c in preferred):
+            score += round(15 * loc_weight)
+        elif any(c in location for c in far_cities) and not any(c in location for c in preferred):
+            score -= round(12 * loc_weight)
 
-        # Salary parsing (Indian format)
+        # Salary — weighted by salary_weight, bands derived from the user's
+        # own target_lpa instead of a fixed 6/8/10 LPA scale.
+        salary_weight = self._salary_weight()
+        target = self._target_lpa()
+        lo, hi = target.get('min', 8) or 8, target.get('max', 12) or 12
         salary_match = re.search(r'(\d+)[,.]?(\d*)\s*(?:lpa|lakh|lac|l\.p\.a)', salary_str)
         if salary_match:
             try:
                 lpa = float(salary_match.group(1) + ('.' + salary_match.group(2)[:1] if salary_match.group(2) else ''))
-                if lpa >= 10: score += 15
-                elif lpa >= 8: score += 10
-                elif lpa >= 6: score += 5
-                elif lpa < 4: score -= 10
+                if lpa >= hi: score += round(15 * salary_weight)
+                elif lpa >= lo: score += round(10 * salary_weight)
+                elif lpa >= lo * 0.75: score += round(5 * salary_weight)
+                elif lpa < lo * 0.5: score -= round(10 * salary_weight)
             except Exception:
                 pass
         rupee_match = re.search(r'[₹\$]?\s*(\d+)[,\s]*(\d{3})?\s*[-–]\s*[₹\$]?\s*(\d+)[,\s]*(\d{3})?', salary_str)
         if rupee_match and not salary_match:
             try:
                 low = int(rupee_match.group(1).replace(',', '') + (rupee_match.group(2) or ''))
-                if low >= 600000: score += 15
-                elif low >= 400000: score += 8
+                lo_rupees = lo * 100000
+                if low >= lo_rupees * 0.75: score += round(15 * salary_weight)
+                elif low >= lo_rupees * 0.5: score += round(8 * salary_weight)
             except Exception:
                 pass
 
@@ -931,7 +987,7 @@ class JobFinderAgent:
         if uncertain:
             console.print(f'  [dim]AI re-scoring {len(uncertain)} uncertain jobs (individually)...[/dim]')
             for i, (idx, job) in enumerate(zip(uncertain_idx, uncertain)):
-                results[idx] = score_job_single(job, self.PROFILE)
+                results[idx] = score_job_single(job, self._profile_summary(), location_preference=self.profile.get('location_preference'))
                 if i < len(uncertain) - 1:
                     time.sleep(1.5)
 
@@ -993,6 +1049,19 @@ class JobFinderAgent:
             {"platform": "Wellfound",      "url": "https://wellfound.com/jobs?role=frontend-engineer&remote=true",                                                                     "note": "Frontend Engineer — Remote startups"},
         ]
 
+    # All source keys find_jobs() knows about — used both for the
+    # enabled_sources filter and to build the Profile page's source
+    # checkboxes list (frontend hardcodes matching labels/keys).
+    ALL_SOURCE_KEYS = [
+        'internshala', 'jobicy', 'adzuna', 'jooble', 'careerjet',
+        'weworkremotely', 'arbeitnow', 'linkedin', 'remotive', 'remoteok',
+        'remoteco', 'themuse', 'himalayas', 'hn_hiring',
+    ]
+
+    def _source_enabled(self, key: str) -> bool:
+        enabled = self.profile.get('enabled_sources')
+        return key in enabled if enabled is not None else True
+
     # ── Main entry point ──────────────────────────────────────────────────────
 
     def find_jobs(self, keywords: list = None, limit: int = 500) -> list:
@@ -1000,17 +1069,19 @@ class JobFinderAgent:
         console.print("[bold cyan]Fetching jobs from multiple sources...[/bold cyan]")
 
         # ── Internshala (primary — best for Indian freshers) ──
-        for slug, loc in INTERNSHALA_SEARCHES:
-            console.print(f"  [dim]Internshala: {slug}[/dim]")
-            all_jobs.extend(self._scrape_internshala(slug, loc))
+        if self._source_enabled('internshala'):
+            for slug, loc in INTERNSHALA_SEARCHES:
+                console.print(f"  [dim]Internshala: {slug}[/dim]")
+                all_jobs.extend(self._scrape_internshala(slug, loc))
 
         # ── Jobicy (remote international jobs) ──
-        for tag in ["react", "javascript", "frontend", "typescript"]:
-            console.print(f"  [dim]Jobicy remote: '{tag}'[/dim]")
-            all_jobs.extend(self._fetch_jobicy(tag))
+        if self._source_enabled('jobicy'):
+            for tag in ["react", "javascript", "frontend", "typescript"]:
+                console.print(f"  [dim]Jobicy remote: '{tag}'[/dim]")
+                all_jobs.extend(self._fetch_jobicy(tag))
 
         # ── Adzuna (optional — needs free key) ──
-        if ADZUNA_APP_ID:
+        if ADZUNA_APP_ID and self._source_enabled('adzuna'):
             for kw in ["react developer fresher", "frontend developer fresher"]:
                 console.print(f"  [dim]Adzuna India: '{kw}'[/dim]")
                 all_jobs.extend(self._fetch_adzuna(kw))
@@ -1018,52 +1089,61 @@ class JobFinderAgent:
                 all_jobs.extend(self._fetch_adzuna(kw, where="Ahmedabad"))
 
         # ── Jooble (optional — needs free key) ──
-        if JOOBLE_API_KEY:
+        if JOOBLE_API_KEY and self._source_enabled('jooble'):
             for kw in ["react developer", "frontend developer"]:
                 console.print(f"  [dim]Jooble: '{kw}'[/dim]")
                 all_jobs.extend(self._fetch_jooble(kw))
 
         # ── Careerjet (optional — needs free key) ──
-        if CAREERJET_API_KEY:
+        if CAREERJET_API_KEY and self._source_enabled('careerjet'):
             for kw in ["react developer", "frontend developer"]:
                 console.print(f"  [dim]Careerjet: '{kw}'[/dim]")
                 all_jobs.extend(self._fetch_careerjet(kw))
 
         # ── WeWorkRemotely (remote programming jobs) ──
-        console.print("  [dim]WeWorkRemotely: remote programming jobs[/dim]")
-        all_jobs.extend(self._fetch_weworkremotely())
+        if self._source_enabled('weworkremotely'):
+            console.print("  [dim]WeWorkRemotely: remote programming jobs[/dim]")
+            all_jobs.extend(self._fetch_weworkremotely())
 
         # ── Arbeitnow (free API — worldwide remote tech jobs) ──
-        console.print("  [dim]Arbeitnow: worldwide remote tech jobs[/dim]")
-        all_jobs.extend(self._fetch_arbeitnow())
+        if self._source_enabled('arbeitnow'):
+            console.print("  [dim]Arbeitnow: worldwide remote tech jobs[/dim]")
+            all_jobs.extend(self._fetch_arbeitnow())
 
         # ── LinkedIn (guest API — no auth) ──
-        console.print("  [dim]LinkedIn: React/Frontend/FullStack jobs India + Ahmedabad[/dim]")
-        all_jobs.extend(self._fetch_linkedin())
+        if self._source_enabled('linkedin'):
+            console.print("  [dim]LinkedIn: React/Frontend/FullStack jobs India + Ahmedabad[/dim]")
+            all_jobs.extend(self._fetch_linkedin())
 
         # ── Remotive (curated remote tech jobs API) ──
-        console.print("  [dim]Remotive: curated remote tech jobs[/dim]")
-        all_jobs.extend(self._fetch_remotive())
+        if self._source_enabled('remotive'):
+            console.print("  [dim]Remotive: curated remote tech jobs[/dim]")
+            all_jobs.extend(self._fetch_remotive())
 
         # ── RemoteOK (remote dev jobs JSON API) ──
-        console.print("  [dim]RemoteOK: remote dev jobs[/dim]")
-        all_jobs.extend(self._fetch_remoteok())
+        if self._source_enabled('remoteok'):
+            console.print("  [dim]RemoteOK: remote dev jobs[/dim]")
+            all_jobs.extend(self._fetch_remoteok())
 
         # ── Remote.co (vetted remote developer jobs RSS) ──
-        console.print("  [dim]Remote.co: vetted remote developer jobs[/dim]")
-        all_jobs.extend(self._fetch_remoteco())
+        if self._source_enabled('remoteco'):
+            console.print("  [dim]Remote.co: vetted remote developer jobs[/dim]")
+            all_jobs.extend(self._fetch_remoteco())
 
         # ── The Muse (entry-level engineering jobs API) ──
-        console.print("  [dim]TheMuse: entry-level engineering jobs[/dim]")
-        all_jobs.extend(self._fetch_themuse())
+        if self._source_enabled('themuse'):
+            console.print("  [dim]TheMuse: entry-level engineering jobs[/dim]")
+            all_jobs.extend(self._fetch_themuse())
 
         # ── Himalayas (remote-first job board, India-eligible filter) ──
-        console.print("  [dim]Himalayas: remote-first jobs[/dim]")
-        all_jobs.extend(self._fetch_himalayas())
+        if self._source_enabled('himalayas'):
+            console.print("  [dim]Himalayas: remote-first jobs[/dim]")
+            all_jobs.extend(self._fetch_himalayas())
 
         # ── HN "Who is hiring" (monthly thread, real startups posting directly) ──
-        console.print("  [dim]HN Who's Hiring: this month's thread[/dim]")
-        all_jobs.extend(self._fetch_hn_hiring())
+        if self._source_enabled('hn_hiring'):
+            console.print("  [dim]HN Who's Hiring: this month's thread[/dim]")
+            all_jobs.extend(self._fetch_hn_hiring())
 
         # ── Deduplicate + filter ──
         seen_urls:    set  = set()

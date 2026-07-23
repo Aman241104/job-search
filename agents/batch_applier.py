@@ -32,6 +32,10 @@ def _get_job(tracker: TrackerAgent, user_id: str, job_id: str) -> dict | None:
     return row
 
 
+def _min_score(tracker: TrackerAgent, user_id: str) -> int:
+    return (tracker.get_profile(user_id) or {}).get('min_score_threshold', MIN_APPLY_SCORE)
+
+
 # ── Email channel ────────────────────────────────────────────────────────────
 
 def run_email_batch(user_id: str, job_ids: list, mode: str, force: bool = False) -> dict:
@@ -42,12 +46,13 @@ def run_email_batch(user_id: str, job_ids: list, mode: str, force: bool = False)
     cv_agent = CVCustomizerAgent()
     applier = JobApplierAgent()
     batch_id = tracker.create_batch(user_id, mode=mode, channel="email")
+    min_score = _min_score(tracker, user_id)
 
     for job_id in job_ids:
         job = _get_job(tracker, user_id, job_id)
         if not job:
             continue
-        if (job.get("score") or 0) < MIN_APPLY_SCORE and not force:
+        if (job.get("score") or 0) < min_score and not force:
             tracker.add_batch_item(batch_id, job_id, status="below_score_gate")
             continue
         email = extract_email_from_description(job.get("description", ""))
@@ -114,12 +119,13 @@ def run_telegram_batch(user_id: str, job_ids: list, force: bool = False) -> dict
     cv_agent = CVCustomizerAgent()
     notifier = TelegramNotifierAgent()
     batch_id = tracker.create_batch(user_id, mode="automatic", channel="telegram")
+    min_score = _min_score(tracker, user_id)
 
     for job_id in job_ids:
         job = _get_job(tracker, user_id, job_id)
         if not job:
             continue
-        if (job.get("score") or 0) < MIN_APPLY_SCORE and not force:
+        if (job.get("score") or 0) < min_score and not force:
             tracker.add_batch_item(batch_id, job_id, status="below_score_gate")
             continue
         if not notifier.enabled:
@@ -228,12 +234,13 @@ def run_browser_batch(user_id: str, job_ids: list, force: bool = False) -> dict:
     tracker = TrackerAgent()
     cv_agent = CVCustomizerAgent()
     batch_id = tracker.create_batch(user_id, mode="review", channel="browser")
+    min_score = _min_score(tracker, user_id)
 
     for job_id in job_ids:
         job = _get_job(tracker, user_id, job_id)
         if not job:
             continue
-        if (job.get("score") or 0) < MIN_APPLY_SCORE and not force:
+        if (job.get("score") or 0) < min_score and not force:
             tracker.add_batch_item(batch_id, job_id, status="below_score_gate")
             continue
 

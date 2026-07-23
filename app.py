@@ -435,8 +435,9 @@ async def find_jobs_stream(user_id: str = Depends(get_current_user)):
             loop = asyncio.get_event_loop()
 
             def run_finder():
-                finder = JobFinderAgent()
                 tracker = TrackerAgent()
+                profile = tracker.get_profile(user_id) or {}
+                finder = JobFinderAgent(profile=profile)
                 jobs = finder.find_jobs()
                 added = sum(1 for j in jobs if tracker.add_job(user_id, j))
                 return jobs, added
@@ -517,9 +518,10 @@ async def generate_application(job_id: str, force: bool = Query(default=False), 
         row = conn.execute("SELECT * FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id)).fetchone()
     if not row:
         return JSONResponse({'error': 'Job not found'}, status_code=404)
-    if (row.get('score') or 0) < MIN_APPLY_SCORE and not force:
+    threshold = (tracker.get_profile(user_id) or {}).get('min_score_threshold', MIN_APPLY_SCORE)
+    if (row.get('score') or 0) < threshold and not force:
         return JSONResponse({
-            'error': f"Score {row.get('score', 0)} is below your quality gate ({MIN_APPLY_SCORE}). "
+            'error': f"Score {row.get('score', 0)} is below your quality gate ({threshold}). "
                      f"Pass ?force=true to generate anyway."
         }, status_code=400)
     loop = asyncio.get_event_loop()
@@ -549,9 +551,10 @@ async def email_apply(job_id: str, to_email: str = Query(default=''), force: boo
         row = conn.execute("SELECT * FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id)).fetchone()
     if not row:
         return JSONResponse({'error': 'Job not found'}, status_code=404)
-    if (row.get('score') or 0) < MIN_APPLY_SCORE and not force:
+    threshold = (tracker.get_profile(user_id) or {}).get('min_score_threshold', MIN_APPLY_SCORE)
+    if (row.get('score') or 0) < threshold and not force:
         return JSONResponse({
-            'error': f"Score {row.get('score', 0)} is below your quality gate ({MIN_APPLY_SCORE}). "
+            'error': f"Score {row.get('score', 0)} is below your quality gate ({threshold}). "
                      f"Pass ?force=true to send anyway."
         }, status_code=400)
 
@@ -593,9 +596,10 @@ async def telegram_notify(job_id: str, force: bool = Query(default=False), user_
         row = conn.execute("SELECT * FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id)).fetchone()
     if not row:
         return JSONResponse({'error': 'Job not found'}, status_code=404)
-    if (row.get('score') or 0) < MIN_APPLY_SCORE and not force:
+    threshold = (tracker.get_profile(user_id) or {}).get('min_score_threshold', MIN_APPLY_SCORE)
+    if (row.get('score') or 0) < threshold and not force:
         return JSONResponse({
-            'error': f"Score {row.get('score', 0)} is below your quality gate ({MIN_APPLY_SCORE}). "
+            'error': f"Score {row.get('score', 0)} is below your quality gate ({threshold}). "
                      f"Pass ?force=true to notify anyway."
         }, status_code=400)
 
@@ -1574,6 +1578,11 @@ def _default_profile() -> dict:
             'min': JOB_PREFERENCES.get('min_package_lpa', 8),
             'max': JOB_PREFERENCES.get('target_package_lpa', 12),
         },
+        'skill_weights': {},
+        'enabled_sources': list(JobFinderAgent.ALL_SOURCE_KEYS),
+        'min_score_threshold': MIN_APPLY_SCORE,
+        'salary_weight': 50,
+        'location_weight': 50,
     }
 
 
