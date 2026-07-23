@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import gsap from 'gsap';
+import Link from 'next/link';
 import { ArrowRight, CircleNotch } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
@@ -66,6 +67,9 @@ export default function OnboardingPage() {
         <p className="text-sm text-white/40">
           Quick setup so job matching and scoring work for you specifically. You can change all of this later in Profile.
         </p>
+        <Link href="/guide" className="inline-block mt-3 text-xs text-accent-green/70 hover:text-accent-green transition-colors">
+          New here? Read the full guide →
+        </Link>
       </div>
 
       <div className="flex flex-col gap-4">

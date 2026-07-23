@@ -24,6 +24,10 @@ const PUBLIC_PATHS = ['/login'];
 // /onboarding needs a session (it saves to the real per-user profile) but
 // renders standalone, no Sidebar/nav — same treatment as /login below.
 const NO_SHELL_PATHS = ['/onboarding'];
+// Pages exempt from the "onboarding not finished yet" redirect below —
+// /guide needs to be reachable via its own link ON the onboarding page
+// itself, or clicking it would just bounce straight back to /onboarding.
+const ONBOARDING_EXEMPT_PATHS = ['/onboarding', '/guide'];
 
 export default function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -42,7 +46,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       // First login (no saved profile yet) sends a new user through the
       // onboarding wizard once, instead of dropping them on an empty dashboard.
       api.userProfile().then((p) => {
-        if (!p.onboarding_completed && pathname !== '/onboarding') {
+        if (!p.onboarding_completed && !ONBOARDING_EXEMPT_PATHS.includes(pathname)) {
           router.replace('/onboarding');
         }
       });
