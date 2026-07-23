@@ -1206,16 +1206,21 @@ class TrackerAgent:
         return ids
 
     def get_chunks_by_ids(self, chunk_ids: list) -> dict:
-        """Returns {chunk_id: {"text":..., "video_id":..., "playlist_id":..., "video_title":...}}."""
+        """Returns {chunk_id: {"text":..., "video_id":..., "playlist_id":..., "video_title":...,
+        "owner_user_id":...}}. owner_user_id comes from the chunk's playlist (chunks/videos
+        themselves aren't user_id-scoped directly — see tracker.py's schema comment) and lets
+        callers filter a shared FAISS index down to one user's own content, e.g. StudyAgent.ask()."""
         if not chunk_ids:
             return {}
         placeholders = ",".join("?" for _ in chunk_ids)
         with self._get_conn() as conn:
             conn.row_factory = ROW_DICT
             rows = conn.execute(
-                f"""SELECT c.id, c.text, c.video_id, c.playlist_id, v.title AS video_title
+                f"""SELECT c.id, c.text, c.video_id, c.playlist_id, v.title AS video_title,
+                           p.user_id AS owner_user_id
                     FROM learning_video_chunks c
                     JOIN learning_videos v ON v.id = c.video_id
+                    JOIN learning_playlists p ON p.id = c.playlist_id
                     WHERE c.id IN ({placeholders})""",
                 chunk_ids,
             ).fetchall()

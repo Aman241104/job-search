@@ -133,7 +133,16 @@ def _add_to_index(chunk_ids: list, vectors: list) -> None:
 
 
 def _search_index(query_vector: list, k: int = 5) -> list:
-    """Returns [(chunk_id, score), ...] for the k nearest chunks, best first."""
+    """Returns [(chunk_id, score), ...] for the k nearest chunks, best first.
+    index.faiss and order.json are two separate files synced together via
+    Cloudinary (_cloud_sync_down/_up) — best-effort, no atomicity or
+    versioning (see those functions' docstrings), so a request landing
+    between an overwrite and full CDN cache propagation can transiently see
+    a newer index paired with a stale (shorter) order, or vice versa. A
+    position past the end of `order` in that case means "can't identify
+    this chunk right now" — skip it rather than crash the whole request;
+    ask() already overfetches candidates so a few silently dropped ones
+    just means slightly fewer sources, not a failure."""
     index, order = _load_index()
     if index.ntotal == 0:
         return []
@@ -141,7 +150,7 @@ def _search_index(query_vector: list, k: int = 5) -> list:
     scores, positions = index.search(q, min(k, index.ntotal))
     results = []
     for pos, score in zip(positions[0], scores[0]):
-        if pos == -1:
+        if pos == -1 or pos >= len(order):
             continue
         results.append((order[pos], float(score)))
     return results
@@ -282,7 +291,7 @@ class StudyAgent:
         self.tracker.update_playlist_status(playlist_id, "done")
         _cloud_sync_up()  # push this host's index so ask() on another host can find what was just added
 
-    def ask(self, question: str, playlist_id: str = None, k: int = 5) -> dict:
+    def ask(self, user_id: str, question: str, playlist_id: str = None, k: int = 5) -> dict:
         from claude_client import ask_ai, ask_nvidia_embedding
 
         _cloud_sync_down()  # pick up anything ingested on a different host before searching
@@ -291,13 +300,22 @@ class StudyAgent:
         if not vectors:
             return {"answer": "Embedding service unavailable — try again shortly.", "sources": []}
 
-        raw_results = _search_index(vectors[0], k=k * 4 if playlist_id else k)
+        # The FAISS index is shared across every user (chunks/videos aren't
+        # user_id-scoped directly — see tracker.get_chunks_by_ids), so a
+        # generous overfetch is needed before filtering down to just this
+        # user's own chunks, same reasoning as the existing playlist_id
+        # overfetch below.
+        raw_results = _search_index(vectors[0], k=k * 8)
         candidate_ids = [cid for cid, _ in raw_results]
         chunk_map = self.tracker.get_chunks_by_ids(candidate_ids)
-        chunk_ids = [cid for cid in candidate_ids if cid in chunk_map]
+        chunk_ids = [
+            cid for cid in candidate_ids
+            if cid in chunk_map and chunk_map[cid]["owner_user_id"] == user_id
+        ]
 
         if playlist_id:
-            chunk_ids = [cid for cid in chunk_ids if chunk_map[cid]["playlist_id"] == playlist_id][:k]
+            chunk_ids = [cid for cid in chunk_ids if chunk_map[cid]["playlist_id"] == playlist_id]
+        chunk_ids = chunk_ids[:k]
 
         if not chunk_ids:
             return {"answer": "No indexed content matches this question yet.", "sources": []}

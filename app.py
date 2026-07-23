@@ -1213,7 +1213,7 @@ async def ask_playlists(question: str = Query(...), playlist_id: str = Query(def
         return JSONResponse({'error': 'Playlist not found'}, status_code=404)
     from agents.study_agent import StudyAgent
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(None, lambda: StudyAgent().ask(question, playlist_id))
+    result = await loop.run_in_executor(None, lambda: StudyAgent().ask(user_id, question, playlist_id))
     return result
 
 
