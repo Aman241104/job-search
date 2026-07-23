@@ -107,6 +107,16 @@ class TrackerAgent:
     def _init_db(self):
         with self._get_conn() as conn:
             conn.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id TEXT PRIMARY KEY,
+                    google_sub TEXT UNIQUE,
+                    email TEXT,
+                    name TEXT,
+                    avatar_url TEXT,
+                    created_at TEXT
+                )
+            """)
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS jobs (
                     id TEXT PRIMARY KEY,
                     title TEXT,
@@ -339,6 +349,30 @@ class TrackerAgent:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_apps_status ON applications(status)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_apps_job_id ON applications(job_id)")
             conn.commit()
+
+    # ── Users (Google OAuth login — see auth.py) ────────────────────────────────
+
+    def get_or_create_user(self, google_sub: str, email: str, name: str, avatar_url: str) -> str:
+        """Returns the user's id, creating a row on first login."""
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT id FROM users WHERE google_sub = ?", (google_sub,)).fetchone()
+            if row:
+                return row[0] if not isinstance(row, dict) else row["id"]
+
+            user_id = str(uuid.uuid4())
+            conn.execute(
+                "INSERT INTO users (id, google_sub, email, name, avatar_url, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, google_sub, email, name, avatar_url, datetime.now().isoformat()),
+            )
+            conn.commit()
+        return user_id
+
+    def get_user(self, user_id: str) -> dict | None:
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT id, email, name, avatar_url, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
+        return dict(row) if row else None
 
     def add_job(self, job: dict) -> bool:
         # "INSERT OR IGNORE" is SQLite-only syntax — Postgres's equivalent is

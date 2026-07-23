@@ -10,9 +10,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, Query, Request, UploadFile, File, BackgroundTasks
+from fastapi import FastAPI, Query, Request, UploadFile, File, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 import sys
@@ -27,14 +27,25 @@ from config import OUTPUT_DIR, DATA_DIR, MIN_APPLY_SCORE, LEARNING_TRACK, TELEGR
 from claude_client import GeminiChat, ask_gemini, ask_ai, check_legitimacy, draft_star_story
 from agents.contact_finder import draft_contact_outreach
 from agents.trainer import TRAINING_TOPICS, SYSTEM_PROMPTS
+from config import FRONTEND_URL
+from auth import oauth, issue_session_jwt, get_current_user, SESSION_COOKIE, SESSION_TTL_SECONDS
+from starlette.middleware.sessions import SessionMiddleware
 
 app = FastAPI(title='Job Search AI', version='1.0.0')
+# Cookie-based auth across origins requires allow_credentials=True, which in
+# turn requires an explicit origin list — '*' is rejected by browsers once
+# credentials are involved.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['*'],
+    allow_origins=[FRONTEND_URL, 'http://localhost:3000'],
+    allow_credentials=True,
     allow_methods=['*'],
     allow_headers=['*'],
 )
+# Authlib's OAuth client stores the state/nonce for the login->callback
+# round-trip in the request session, which starlette needs this middleware
+# for. Separate from our own session JWT cookie below.
+app.add_middleware(SessionMiddleware, secret_key=os.getenv("JWT_SECRET", ""))
 
 app.mount('/static', StaticFiles(directory='frontend'), name='static')
 
@@ -58,6 +69,52 @@ TOPIC_DESCRIPTIONS = {
 @app.get('/')
 async def root():
     return FileResponse('frontend/index.html')
+
+
+# ── Auth (Google OAuth login, JWT session cookie) ───────────────────────────
+
+@app.get('/auth/google/login')
+async def google_login(request: Request):
+    return await oauth.google.authorize_redirect(request, str(request.url_for('google_callback')))
+
+
+@app.get('/auth/google/callback')
+async def google_callback(request: Request):
+    token = await oauth.google.authorize_access_token(request)
+    userinfo = token.get('userinfo') or {}
+    google_sub = userinfo.get('sub')
+    if not google_sub:
+        return JSONResponse({'error': 'Google did not return a user id'}, status_code=400)
+
+    user_id = TrackerAgent().get_or_create_user(
+        google_sub=google_sub,
+        email=userinfo.get('email', ''),
+        name=userinfo.get('name', ''),
+        avatar_url=userinfo.get('picture', ''),
+    )
+    session_jwt = issue_session_jwt(user_id)
+
+    response = RedirectResponse(url=FRONTEND_URL)
+    response.set_cookie(
+        SESSION_COOKIE, session_jwt, httponly=True, secure=True,
+        samesite='none', max_age=SESSION_TTL_SECONDS,
+    )
+    return response
+
+
+@app.get('/auth/me')
+async def auth_me(user_id: str = Depends(get_current_user)):
+    user = TrackerAgent().get_user(user_id)
+    if not user:
+        return JSONResponse({'error': 'user not found'}, status_code=404)
+    return user
+
+
+@app.post('/auth/logout')
+async def auth_logout():
+    response = JSONResponse({'ok': True})
+    response.delete_cookie(SESSION_COOKIE, samesite='none', secure=True)
+    return response
 
 
 # ── Stats ──────────────────────────────────────────────────────────────────────

@@ -79,6 +79,19 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 # finds the URL could otherwise POST arbitrary fake "applied" updates.
 TELEGRAM_WEBHOOK_SECRET = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
 
+# Google OAuth (multi-tenant login) — see auth.py. Console setup: APIs & Services
+# > OAuth consent screen (External) > Credentials > Create OAuth client ID > Web
+# application, with GOOGLE_REDIRECT_URI as an authorized redirect URI.
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
+# No stable Vercel domain alias exists yet — each deploy gets a new hash URL.
+# Set up a production alias (vercel domains / vercel alias) and point this at
+# it, or CORS breaks on the next deploy.
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+# Signs session JWTs. Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+JWT_SECRET = os.getenv("JWT_SECRET", "")
+
 # Quality gate (ROADMAP.md Phase 1 item, previously never built): don't
 # tailor a CV/cover letter for a job scoring below this without an explicit
 # override. /api/apply, /api/email-apply, /api/telegram-notify all check this.
