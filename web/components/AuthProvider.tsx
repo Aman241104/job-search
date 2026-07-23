@@ -21,6 +21,9 @@ export function useAuth() {
 // /login is the only route that renders without a session — every other
 // page redirects there until api.me() resolves to a real user.
 const PUBLIC_PATHS = ['/login'];
+// /onboarding needs a session (it saves to the real per-user profile) but
+// renders standalone, no Sidebar/nav — same treatment as /login below.
+const NO_SHELL_PATHS = ['/onboarding'];
 
 export default function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -32,9 +35,17 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     api.me().then((u) => {
       setUser(u);
       setLoading(false);
-      if (!u && !PUBLIC_PATHS.includes(pathname)) {
-        router.replace('/login');
+      if (!u) {
+        if (!PUBLIC_PATHS.includes(pathname)) router.replace('/login');
+        return;
       }
+      // First login (no saved profile yet) sends a new user through the
+      // onboarding wizard once, instead of dropping them on an empty dashboard.
+      api.userProfile().then((p) => {
+        if (!p.onboarding_completed && pathname !== '/onboarding') {
+          router.replace('/onboarding');
+        }
+      });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -45,7 +56,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     router.replace('/login');
   };
 
-  if (PUBLIC_PATHS.includes(pathname)) {
+  if (PUBLIC_PATHS.includes(pathname) || NO_SHELL_PATHS.includes(pathname)) {
     return <AuthContext.Provider value={{ user, loading, logout }}>{children}</AuthContext.Provider>;
   }
 

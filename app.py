@@ -1549,6 +1549,7 @@ async def get_blacklist(user_id: str = Depends(get_current_user)):
 def _default_profile() -> dict:
     from config import USER_PROFILE, JOB_PREFERENCES
     return {
+        'onboarding_completed': False,
         'name': USER_PROFILE.get('name', ''),
         'email': USER_PROFILE.get('email', ''),
         'phone': USER_PROFILE.get('phone', ''),
