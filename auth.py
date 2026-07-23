@@ -12,7 +12,14 @@ from fastapi import Request, HTTPException
 
 from config import GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, JWT_SECRET
 
-SESSION_COOKIE = "session"
+# NOT "session" — Starlette's SessionMiddleware (added in app.py for
+# Authlib's OAuth state/nonce) defaults to a cookie also named "session".
+# Reusing that name meant the middleware's own Set-Cookie silently
+# overwrote this JWT on every response, so a real login always appeared to
+# succeed (callback returns 307 fine) but the next /auth/me always 401'd —
+# only surfaced once someone actually completed a real Google login, since
+# every dev-time test up to that point injected a valid cookie manually.
+SESSION_COOKIE = "jobos_session"
 JWT_ALGORITHM = "HS256"
 SESSION_TTL_SECONDS = 30 * 24 * 3600  # 30 days
 
