@@ -75,7 +75,13 @@ async def root():
 
 @app.get('/auth/google/login')
 async def google_login(request: Request):
-    return await oauth.google.authorize_redirect(request, str(request.url_for('google_callback')))
+    # Explicit FRONTEND_URL-based redirect_uri, not request.url_for('google_callback')
+    # (which would reflect this backend's own domain) — both /login and
+    # /callback are reached through the frontend's Next.js rewrite proxy so
+    # the whole OAuth dance, including Authlib's CSRF state cookie, stays
+    # scoped to one origin. Must exactly match what's registered in
+    # Google's console as an authorized redirect URI.
+    return await oauth.google.authorize_redirect(request, f"{FRONTEND_URL}/auth/google/callback")
 
 
 @app.get('/auth/google/callback')
