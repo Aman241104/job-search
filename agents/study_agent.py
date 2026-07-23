@@ -231,11 +231,11 @@ class StudyAgent:
         from agents.tracker import TrackerAgent
         self.tracker = TrackerAgent()
 
-    def start_playlist(self, url: str) -> str:
+    def start_playlist(self, user_id: str, url: str) -> str:
         """Fast step: list videos (no download), create the playlist + pending
         video rows, return immediately. Heavy work happens in process_playlist."""
         videos_meta, playlist_title = _list_playlist_videos(url)
-        playlist_id = self.tracker.add_playlist(url, playlist_title)
+        playlist_id = self.tracker.add_playlist(user_id, url, playlist_title)
         for v in videos_meta:
             self.tracker.add_video(playlist_id, v["video_id"], v["title"], v["url"])
         return playlist_id

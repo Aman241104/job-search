@@ -13,7 +13,6 @@ board layouts. "Automatic" for the browser channel means the pre-fill runs
 without you queuing each one up by hand — not that it submits unattended.
 """
 import json
-import sqlite3
 import sys
 import os
 from pathlib import Path
@@ -26,26 +25,26 @@ from agents.job_applier import JobApplierAgent, extract_email_from_description
 from agents.telegram_notifier import TelegramNotifierAgent
 
 
-def _get_job(tracker: TrackerAgent, job_id: str) -> dict | None:
+def _get_job(tracker: TrackerAgent, user_id: str, job_id: str) -> dict | None:
     with tracker._get_conn() as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
-    return dict(row) if row else None
+        conn.row_factory = True
+        row = conn.execute("SELECT * FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id)).fetchone()
+    return row
 
 
 # ── Email channel ────────────────────────────────────────────────────────────
 
-def run_email_batch(job_ids: list, mode: str, force: bool = False) -> dict:
+def run_email_batch(user_id: str, job_ids: list, mode: str, force: bool = False) -> dict:
     """mode: "automatic" (send immediately) or "review" (stage, wait for a
     separate send_staged_batch call). Returns the created batch (see
     TrackerAgent.get_batch)."""
     tracker = TrackerAgent()
     cv_agent = CVCustomizerAgent()
     applier = JobApplierAgent()
-    batch_id = tracker.create_batch(mode=mode, channel="email")
+    batch_id = tracker.create_batch(user_id, mode=mode, channel="email")
 
     for job_id in job_ids:
-        job = _get_job(tracker, job_id)
+        job = _get_job(tracker, user_id, job_id)
         if not job:
             continue
         if (job.get("score") or 0) < MIN_APPLY_SCORE and not force:
@@ -62,7 +61,7 @@ def run_email_batch(job_ids: list, mode: str, force: bool = False) -> dict:
             continue
 
         if mode == "automatic":
-            sent = applier.send_email_application(job, email, package)
+            sent = applier.send_email_application(user_id, job, email, package)
             tracker.add_batch_item(
                 batch_id, job_id, email=email, cv_path=package["cv_path"], cover_path=package["cover_letter_path"],
                 cv_markdown=package["cv_markdown"], cover_letter_text=package["cover_letter"],
@@ -79,45 +78,45 @@ def run_email_batch(job_ids: list, mode: str, force: bool = False) -> dict:
     return tracker.get_batch(batch_id)
 
 
-def send_staged_batch(batch_id: str) -> dict:
+def send_staged_batch(user_id: str, batch_id: str) -> dict:
     """Confirm-then-send for a review-mode batch — sends the EXACT content
     that was staged (not regenerated), only for items still marked approved."""
     tracker = TrackerAgent()
     applier = JobApplierAgent()
-    batch = tracker.get_batch(batch_id)
+    batch = tracker.get_batch(user_id, batch_id)
     if not batch:
         return {"error": "Batch not found"}
 
     for item in batch["items"]:
         if item.get("status") != "staged" or not item.get("approved"):
             continue
-        job = _get_job(tracker, item["job_id"])
+        job = _get_job(tracker, user_id, item["job_id"])
         if not job:
             continue
         package = {
             "cv_path": item["cv_path"], "cover_letter_path": item["cover_path"],
             "cover_letter": item["cover_letter_text"],
         }
-        sent = applier.send_email_application(job, item["email"], package)
+        sent = applier.send_email_application(user_id, job, item["email"], package)
         tracker.update_batch_item_status(item["id"], "sent" if sent else "send_failed")
 
     tracker.update_batch_status(batch_id, "sent")
-    return tracker.get_batch(batch_id)
+    return tracker.get_batch(user_id, batch_id)
 
 
 # ── Telegram channel ─────────────────────────────────────────────────────────
 
-def run_telegram_batch(job_ids: list, force: bool = False) -> dict:
+def run_telegram_batch(user_id: str, job_ids: list, force: bool = False) -> dict:
     """Generates CV+cover for each job and pushes the alert to Telegram —
     same underlying send_job_alert as the single-job /api/telegram-notify
     endpoint, just looped over a picked batch (e.g. top 50 by score)."""
     tracker = TrackerAgent()
     cv_agent = CVCustomizerAgent()
     notifier = TelegramNotifierAgent()
-    batch_id = tracker.create_batch(mode="automatic", channel="telegram")
+    batch_id = tracker.create_batch(user_id, mode="automatic", channel="telegram")
 
     for job_id in job_ids:
-        job = _get_job(tracker, job_id)
+        job = _get_job(tracker, user_id, job_id)
         if not job:
             continue
         if (job.get("score") or 0) < MIN_APPLY_SCORE and not force:
@@ -132,9 +131,9 @@ def run_telegram_batch(job_ids: list, force: bool = False) -> dict:
             tracker.add_batch_item(batch_id, job_id, status="generation_failed")
             continue
 
-        sent = notifier.send_job_alert(job, package["cv_path"], package["cover_letter_path"], package["cv_markdown"])
+        sent = notifier.send_job_alert(user_id, job, package["cv_path"], package["cover_letter_path"], package["cv_markdown"])
         if sent:
-            tracker.update_status(job_id, "found", notes="Telegram alert sent (batch)",
+            tracker.update_status(user_id, job_id, "found", notes="Telegram alert sent (batch)",
                                    cv_path=package["cv_path"], cover_path=package["cover_letter_path"])
         tracker.add_batch_item(
             batch_id, job_id, cv_path=package["cv_path"], cover_path=package["cover_letter_path"],
@@ -142,7 +141,7 @@ def run_telegram_batch(job_ids: list, force: bool = False) -> dict:
         )
 
     tracker.update_batch_status(batch_id, "sent")
-    return tracker.get_batch(batch_id)
+    return tracker.get_batch(user_id, batch_id)
 
 
 # ── Browser pre-fill channel (never submits) ────────────────────────────────
@@ -221,17 +220,17 @@ def prefill_browser_form(job: dict, cv_path: str = "") -> dict:
     return result
 
 
-def run_browser_batch(job_ids: list, force: bool = False) -> dict:
+def run_browser_batch(user_id: str, job_ids: list, force: bool = False) -> dict:
     """Runs prefill_browser_form for each job (generating a CV first so the
     resume-upload field has something real to attach), stages results for
     review — the browser channel has no "automatic send" concept since it
     never submits regardless of mode."""
     tracker = TrackerAgent()
     cv_agent = CVCustomizerAgent()
-    batch_id = tracker.create_batch(mode="review", channel="browser")
+    batch_id = tracker.create_batch(user_id, mode="review", channel="browser")
 
     for job_id in job_ids:
-        job = _get_job(tracker, job_id)
+        job = _get_job(tracker, user_id, job_id)
         if not job:
             continue
         if (job.get("score") or 0) < MIN_APPLY_SCORE and not force:
@@ -251,4 +250,4 @@ def run_browser_batch(job_ids: list, force: bool = False) -> dict:
         )
 
     tracker.update_batch_status(batch_id, "staged")
-    return tracker.get_batch(batch_id)
+    return tracker.get_batch(user_id, batch_id)

@@ -44,17 +44,17 @@ class JobApplierAgent:
         self.cv_agent = CVCustomizerAgent()
         self.tracker = TrackerAgent()
 
-    def prepare_application(self, job: dict) -> dict:
+    def prepare_application(self, user_id: str, job: dict) -> dict:
         console.print(f"[cyan]Preparing application package for: {job['title']} at {job['company']}[/cyan]")
         package = self.cv_agent.prepare_full_package(job)
         self.tracker.update_status(
-            job["id"], "found",
+            user_id, job["id"], "found",
             cv_path=package["cv_path"],
             cover_path=package["cover_letter_path"]
         )
         return package
 
-    def open_apply_link(self, job: dict, package: dict = None) -> bool:
+    def open_apply_link(self, user_id: str, job: dict, package: dict = None) -> bool:
         detail_lines = (
             f"[bold]Job:[/bold] {job['title']} at {job['company']}\n"
             f"[bold]URL:[/bold] {job['url']}\n"
@@ -78,7 +78,7 @@ class JobApplierAgent:
             if applied == "y":
                 notes = input("Any notes? (press Enter to skip): ").strip()
                 self.tracker.update_status(
-                    job["id"], "applied", notes=notes,
+                    user_id, job["id"], "applied", notes=notes,
                     cv_path=package["cv_path"] if package else "",
                     cover_path=package["cover_letter_path"] if package else ""
                 )
@@ -86,7 +86,7 @@ class JobApplierAgent:
                 return True
         return False
 
-    def send_email_application(self, job: dict, to_email: str, package: dict) -> bool:
+    def send_email_application(self, user_id: str, job: dict, to_email: str, package: dict) -> bool:
         if not SMTP_PASSWORD:
             console.print("[red]SMTP password not set. Add SMTP_PASSWORD to .env[/red]")
             return False
@@ -133,7 +133,7 @@ Portfolio: {USER_PROFILE['portfolio']} | GitHub: {USER_PROFILE['github']}
 
             console.print(f"[green]Email sent to {to_email}![/green]")
             self.tracker.update_status(
-                job["id"], "applied",
+                user_id, job["id"], "applied",
                 notes=f"Email sent to {to_email}",
                 cv_path=package["cv_path"],
                 cover_path=package["cover_letter_path"]
@@ -143,7 +143,7 @@ Portfolio: {USER_PROFILE['portfolio']} | GitHub: {USER_PROFILE['github']}
             console.print(f"[red]Email failed: {e}[/red]")
             return False
 
-    def bulk_apply_queue(self, jobs: list):
+    def bulk_apply_queue(self, user_id: str, jobs: list):
         console.print(f"[bold]Processing {len(jobs)} jobs in apply queue...[/bold]\n")
         applied = 0
         skipped = 0
@@ -163,8 +163,8 @@ Portfolio: {USER_PROFILE['portfolio']} | GitHub: {USER_PROFILE['github']}
                 skipped += 1
                 continue
             if action == "a":
-                package = self.prepare_application(job)
-                result = self.open_apply_link(job, package)
+                package = self.prepare_application(user_id, job)
+                result = self.open_apply_link(user_id, job, package)
                 if result:
                     applied += 1
 
