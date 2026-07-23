@@ -285,7 +285,7 @@ export default function ProfilePage() {
           {profile.skills.length > 0 && (
             <div className="flex flex-col gap-3 pt-1">
               <label className="block text-xs font-mono text-white/40 uppercase tracking-wider">
-                Skill Weights — how much each counts toward a job's score
+                Skill Weights — how much each counts toward a job&apos;s score
               </label>
               {profile.skills.map((skill) => (
                 <div key={skill} className="flex items-center gap-3">
