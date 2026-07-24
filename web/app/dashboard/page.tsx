@@ -121,6 +121,22 @@ function ActivityTooltip({ active, payload, label }: TooltipContentProps) {
   );
 }
 
+// Pulsing ring on hover — plain SVG <animate>, no animation library needed
+// for a single decorative pulse tied to Recharts' own activeDot slot.
+function AnimatedActiveDot(props: { cx?: number; cy?: number; stroke?: string }) {
+  const { cx, cy, stroke } = props;
+  if (cx === undefined || cy === undefined) return null;
+  return (
+    <g>
+      <circle cx={cx} cy={cy} r={3} fill={stroke} stroke="none" />
+      <circle cx={cx} cy={cy} r={3} fill="none" stroke={stroke} strokeWidth={1.5} opacity={0.6}>
+        <animate attributeName="r" values="3;9;3" dur="1.6s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.6;0;0.6" dur="1.6s" repeatCount="indefinite" />
+      </circle>
+    </g>
+  );
+}
+
 function ActivityChart({ data }: { data: TimelineEntry[] }) {
   if (data.length === 0) {
     return (
@@ -151,12 +167,14 @@ function ActivityChart({ data }: { data: TimelineEntry[] }) {
         <AreaChart data={data} margin={{ top: 20, right: 10, bottom: 0, left: -20 }}>
           <defs>
             <linearGradient id="foundFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="rgb(var(--accent-green))" stopOpacity={0.18} />
-              <stop offset="95%" stopColor="rgb(var(--accent-green))" stopOpacity={0} />
+              <stop offset="0%" stopColor="rgb(var(--accent-green))" stopOpacity={0.32} />
+              <stop offset="60%" stopColor="rgb(var(--accent-green))" stopOpacity={0.08} />
+              <stop offset="100%" stopColor="rgb(var(--accent-green))" stopOpacity={0} />
             </linearGradient>
             <linearGradient id="appliedFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="rgb(var(--accent-cyan))" stopOpacity={0.18} />
-              <stop offset="95%" stopColor="rgb(var(--accent-cyan))" stopOpacity={0} />
+              <stop offset="0%" stopColor="rgb(var(--accent-cyan))" stopOpacity={0.32} />
+              <stop offset="60%" stopColor="rgb(var(--accent-cyan))" stopOpacity={0.08} />
+              <stop offset="100%" stopColor="rgb(var(--accent-cyan))" stopOpacity={0} />
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--ink) / 0.06)" vertical={false} />
@@ -180,20 +198,20 @@ function ActivityChart({ data }: { data: TimelineEntry[] }) {
             dataKey="found"
             name="Found"
             stroke="rgb(var(--accent-green))"
-            strokeWidth={1.5}
+            strokeWidth={2}
             fill="url(#foundFill)"
             dot={false}
-            activeDot={{ r: 3, strokeWidth: 0 }}
+            activeDot={<AnimatedActiveDot />}
           />
           <Area
             type="monotone"
             dataKey="applied"
             name="Applied"
             stroke="rgb(var(--accent-cyan))"
-            strokeWidth={1.5}
+            strokeWidth={2}
             fill="url(#appliedFill)"
             dot={false}
-            activeDot={{ r: 3, strokeWidth: 0 }}
+            activeDot={<AnimatedActiveDot />}
           />
         </AreaChart>
       </ResponsiveContainer>
@@ -821,7 +839,7 @@ export default function DashboardPage() {
 
               {/* Activity Chart */}
               {timeline.length > 0 && (
-                <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
+                <div className="anim-card glass border border-white/10 rounded-2xl p-6 shadow-tint-green">
                   <h2 className="font-semibold text-white/90 mb-4">Activity — Last 30 Days</h2>
                   <ActivityChart data={timeline} />
                 </div>
