@@ -568,6 +568,17 @@ class TrackerAgent:
                 "learning_playlists": rows("SELECT * FROM learning_playlists WHERE user_id = ?"),
             }
 
+    def get_auto_find_user_ids(self) -> list:
+        """Users who opted into the daily auto-find cron (see
+        app.py's /internal/cron/auto-find) — opt-in, not opt-on-by-default,
+        so nobody gets automatic scraping/Telegram alerts they didn't ask for."""
+        with self._get_conn() as conn:
+            conn.row_factory = ROW_DICT
+            rows = conn.execute(
+                "SELECT user_id FROM profiles WHERE data->>'auto_find_enabled' = 'true'"
+            ).fetchall()
+        return [r["user_id"] for r in rows]
+
     # ── Rate limiting (per-user, per-action sliding window) ─────────────────────
 
     def check_rate_limit(self, user_id: str, action: str, max_calls: int, window_seconds: int) -> bool:

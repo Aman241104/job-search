@@ -32,6 +32,7 @@ interface ProfileData {
   smtp_app_password: string;
   smtp_app_password_set: boolean;
   telegram_chat_id: string;
+  auto_find_enabled: boolean;
 }
 
 // Mirrors JobFinderAgent.ALL_SOURCE_KEYS in agents/job_finder.py — keep in sync.
@@ -74,6 +75,7 @@ const DEFAULT_PROFILE: ProfileData = {
   smtp_app_password: '',
   smtp_app_password_set: false,
   telegram_chat_id: '',
+  auto_find_enabled: false,
 };
 
 /* ─────────────────────── main page ──────────────────── */
@@ -555,7 +557,35 @@ export default function ProfilePage() {
           </div>
         </Section>
 
-        {/* 10. Current Offer */}
+        {/* 10. Automation */}
+        <Section title="Automation">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm text-white/70">Daily auto-find</p>
+              <p className="text-xs text-white/35">
+                Finds new jobs automatically once a day, no need to click Find Jobs. Connect
+                Telegram above to get instant alerts for your best new matches — without it,
+                new jobs still get scraped and scored, just wait until you open the dashboard.
+              </p>
+            </div>
+            <button
+              onClick={() => set('auto_find_enabled', !profile.auto_find_enabled)}
+              className={clsx(
+                'relative w-11 h-6 rounded-full transition-colors shrink-0',
+                profile.auto_find_enabled ? 'bg-accent-green/60' : 'bg-white/10'
+              )}
+            >
+              <span
+                className={clsx(
+                  'absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform',
+                  profile.auto_find_enabled ? 'translate-x-5' : 'translate-x-0.5'
+                )}
+              />
+            </button>
+          </div>
+        </Section>
+
+        {/* 11. Current Offer */}
         <Section title="Current Offer">
           <Field
             label="Offer Details"
@@ -565,7 +595,7 @@ export default function ProfilePage() {
           />
         </Section>
 
-        {/* 11. Danger Zone */}
+        {/* 12. Danger Zone */}
         <Section title="Danger Zone">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>

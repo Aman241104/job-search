@@ -24,7 +24,7 @@ from agents.job_finder import JobFinderAgent
 from agents.cv_customizer import CVCustomizerAgent
 from agents.job_applier import JobApplierAgent, extract_email_from_description
 from agents.telegram_notifier import TelegramNotifierAgent
-from config import OUTPUT_DIR, DATA_DIR, MIN_APPLY_SCORE, LEARNING_TRACK, TELEGRAM_WEBHOOK_SECRET, TELEGRAM_CHAT_ID
+from config import OUTPUT_DIR, DATA_DIR, MIN_APPLY_SCORE, LEARNING_TRACK, TELEGRAM_WEBHOOK_SECRET, TELEGRAM_CHAT_ID, CRON_SECRET
 from claude_client import GeminiChat, ask_gemini, ask_ai, check_legitimacy, draft_star_story
 from agents.contact_finder import draft_contact_outreach
 from agents.trainer import TRAINING_TOPICS, SYSTEM_PROMPTS
@@ -542,6 +542,72 @@ async def find_jobs_stream(user_id: str = Depends(get_current_user)):
         media_type='text/event-stream',
         headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
     )
+
+
+@app.post('/internal/cron/auto-find')
+async def cron_auto_find(request: Request):
+    """Cloud Scheduler hits this once a day. There's no browser session for
+    a scheduler call, so auth is a shared secret header instead of the
+    cookie-based get_current_user — refuses entirely if CRON_SECRET isn't
+    configured, rather than falling open to an unauthenticated public POST.
+
+    Deliberately scoped to find + Telegram-notify only, mirroring exactly
+    what the manual "Find New Jobs" button already does (see generate()
+    above) — never auto-triggers a real email application to a recruiter.
+    That stays a manual, reviewed action; automating it would mean sending
+    real applications on a user's behalf with no review, which is a much
+    bigger behavioral change than automating the scrape+notify step."""
+    if not CRON_SECRET or request.headers.get('X-Cron-Secret', '') != CRON_SECRET:
+        return JSONResponse({'error': 'unauthorized'}, status_code=403)
+
+    tracker = TrackerAgent()
+    user_ids = tracker.get_auto_find_user_ids()
+    loop = asyncio.get_event_loop()
+    summary = {'users_processed': 0, 'users_failed': 0, 'total_new_jobs': 0, 'total_notified': 0}
+
+    for uid in user_ids:
+        def run_one(user_id=uid):
+            t = TrackerAgent()
+            profile = t.get_profile(user_id) or {}
+            finder = JobFinderAgent(profile=profile)
+            jobs = finder.find_jobs()
+            added_jobs = [j for j in jobs if t.add_job(user_id, j)]
+
+            notified = 0
+            chat_id = profile.get('telegram_chat_id')
+            notifier = TelegramNotifierAgent()
+            if chat_id and notifier.enabled:
+                threshold = profile.get('min_score_threshold', MIN_APPLY_SCORE)
+                top_new = sorted(
+                    [j for j in added_jobs if j.get('score', 0) >= threshold],
+                    key=lambda x: x['score'], reverse=True,
+                )[:5]
+                cv_agent = CVCustomizerAgent()
+                for j in top_new:
+                    try:
+                        package = cv_agent.prepare_full_package(j)
+                        sent = notifier.send_job_alert(
+                            user_id, j, package['cv_path'], package['cover_letter_path'],
+                            package['cv_markdown'], chat_id=chat_id,
+                        )
+                        if sent:
+                            t.update_status(user_id, j['id'], 'found', notes='Telegram alert sent (auto-find)',
+                                            cv_path=package['cv_path'], cover_path=package['cover_letter_path'])
+                            notified += 1
+                    except Exception:
+                        continue
+            return len(added_jobs), notified
+
+        try:
+            added_count, notified_count = await loop.run_in_executor(None, run_one)
+            summary['users_processed'] += 1
+            summary['total_new_jobs'] += added_count
+            summary['total_notified'] += notified_count
+        except Exception as e:
+            summary['users_failed'] += 1
+            print(f"auto-find failed for user {uid}: {e!r}", file=sys.stderr)
+
+    return summary
 
 
 # ── Apply ──────────────────────────────────────────────────────────────────────
@@ -1705,6 +1771,7 @@ def _default_profile() -> dict:
         'smtp_app_password': '',
         'telegram_chat_id': '',
         'telegram_connect_token': '',
+        'auto_find_enabled': False,
     }
 
 
