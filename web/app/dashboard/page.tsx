@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import gsap from 'gsap';
 import Link from 'next/link';
-import { Briefcase, PaperPlaneTilt, ChatCircle, DownloadSimple, LinkSimple, Brain, ArrowRight, ArrowClockwise, Warning, CaretRight, Fire, TrendUp, TrendDown, Bell, CheckCircle, MagnifyingGlass, ClipboardText, Compass, SlidersHorizontal } from '@phosphor-icons/react';
+import { Briefcase, PaperPlaneTilt, ChatCircle, DownloadSimple, LinkSimple, Brain, FileText, ArrowRight, ArrowClockwise, Warning, CaretRight, Fire, TrendUp, TrendDown, Bell, CheckCircle, MagnifyingGlass, ClipboardText, Compass, SlidersHorizontal, type Icon } from '@phosphor-icons/react';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
@@ -40,6 +40,63 @@ function daysSince(dateStr?: string): number {
   if (!dateStr) return 0;
   const diff = Date.now() - new Date(dateStr).getTime();
   return Math.floor(diff / (1000 * 60 * 60 * 24));
+}
+
+/* ─────────── Quick Action Card ─────────── */
+
+interface QuickActionCardProps {
+  icon: Icon;
+  label: string;
+  color: 'yellow' | 'cyan' | 'purple' | 'green';
+  onClick?: () => void;
+  href?: string;
+}
+
+const quickActionColor: Record<QuickActionCardProps['color'], { border: string; text: string; chip: string }> = {
+  yellow: { border: 'hover:border-accent-yellow/30', text: 'group-hover:text-accent-yellow', chip: 'bg-tone-yellow-90 dark:bg-tone-yellow-30' },
+  cyan: { border: 'hover:border-accent-cyan/30', text: 'group-hover:text-accent-cyan', chip: 'bg-tone-blue-90 dark:bg-tone-blue-30' },
+  purple: { border: 'hover:border-accent-purple/30', text: 'group-hover:text-accent-purple', chip: 'bg-tone-purple-90 dark:bg-tone-purple-30' },
+  green: { border: 'hover:border-accent-green/30', text: 'group-hover:text-accent-green', chip: 'bg-tone-green-90 dark:bg-tone-green-30' },
+};
+
+function QuickActionCard({ icon: IconComp, label, color, onClick, href }: QuickActionCardProps) {
+  const ref = useRef<HTMLDivElement>(null);
+  const c = quickActionColor[color];
+
+  // Cheap magnetic hover — nudge toward the cursor, plus the same fixed CSS
+  // 3D tilt used on JobCard, no continuous mousemove tween needed for tilt.
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    const x = (e.clientX - rect.left - rect.width / 2) / rect.width;
+    const y = (e.clientY - rect.top - rect.height / 2) / rect.height;
+    gsap.to(ref.current, { x: x * 6, y: y * 6, rotationX: -y * 4, rotationY: x * 4, transformPerspective: 500, duration: 0.3, ease: 'power2.out' });
+  };
+
+  const handleMouseLeave = () => {
+    if (!ref.current) return;
+    gsap.to(ref.current, { x: 0, y: 0, rotationX: 0, rotationY: 0, duration: 0.4, ease: 'power2.out' });
+  };
+
+  const content = (
+    <div
+      ref={ref}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      onClick={onClick}
+      className={clsx(
+        'group flex flex-col items-start gap-3 p-4 rounded-xl bg-bg-3 border border-border transition-colors duration-150 cursor-pointer h-full',
+        c.border
+      )}
+    >
+      <div className={clsx('w-9 h-9 rounded-lg flex items-center justify-center text-white/70', c.text, c.chip)}>
+        <IconComp size={16} weight="fill" />
+      </div>
+      <span className={clsx('text-sm text-white/60 font-medium', c.text)}>{label}</span>
+    </div>
+  );
+
+  return href ? <Link href={href}>{content}</Link> : content;
 }
 
 /* ─────────── Activity Chart ─────────── */
@@ -802,28 +859,11 @@ export default function DashboardPage() {
               {/* Quick links */}
               <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
                 <h2 className="font-semibold text-white/90 mb-4">Quick Actions</h2>
-                <div className="space-y-2">
-                  <button
-                    onClick={() => api.export()}
-                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-bg-3 border border-border hover:border-accent-yellow/30 text-white/60 hover:text-accent-yellow transition-all duration-150 text-sm"
-                  >
-                    <DownloadSimple size={15} />
-                    Export to Excel
-                  </button>
-                  <Link
-                    href="/links"
-                    className="flex items-center gap-3 px-4 py-3 rounded-xl bg-bg-3 border border-border hover:border-accent-cyan/30 text-white/60 hover:text-accent-cyan transition-all duration-150 text-sm"
-                  >
-                    <LinkSimple size={15} />
-                    Open Job Boards
-                  </Link>
-                  <Link
-                    href="/train"
-                    className="flex items-center gap-3 px-4 py-3 rounded-xl bg-bg-3 border border-border hover:border-accent-purple/30 text-white/60 hover:text-accent-purple transition-all duration-150 text-sm"
-                  >
-                    <Brain size={15} />
-                    Start Training
-                  </Link>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <QuickActionCard icon={DownloadSimple} label="Export to Excel" color="yellow" onClick={() => api.export()} />
+                  <QuickActionCard icon={LinkSimple} label="Open Job Boards" color="cyan" href="/links" />
+                  <QuickActionCard icon={Brain} label="Start Training" color="purple" href="/train" />
+                  <QuickActionCard icon={FileText} label="Resume Builder" color="green" href="/resume" />
                 </div>
               </div>
             </div>
