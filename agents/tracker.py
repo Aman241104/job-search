@@ -150,6 +150,7 @@ class TrackerAgent:
                     location TEXT,
                     salary TEXT,
                     date_found TEXT,
+                    date_posted TEXT,
                     tags TEXT,
                     score INTEGER DEFAULT 0,
                     score_reason TEXT,
@@ -158,6 +159,7 @@ class TrackerAgent:
                     legitimacy_flags TEXT
                 )
             """)
+            conn.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS date_posted TEXT")
             # url uniqueness is per-user (two users can independently find the
             # same posting) — a bare UNIQUE(url) from the single-tenant schema
             # would let user B's scrape silently no-op against user A's row.
@@ -619,14 +621,15 @@ class TrackerAgent:
                 # already scraped for this user under a different generated UUID).
                 cursor = conn.execute("""
                     INSERT INTO jobs
-                    (id, user_id, title, company, description, url, source, location, salary, date_found, tags, score, score_reason)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (id, user_id, title, company, description, url, source, location, salary, date_found, date_posted, tags, score, score_reason)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT (user_id, url) DO NOTHING
                     RETURNING id
                 """, (
                     job["id"], user_id, job["title"], job["company"], job.get("description", ""),
                     job["url"], job.get("source", ""), job.get("location", ""),
                     job.get("salary", ""), job.get("date_found", datetime.now().isoformat()),
+                    job.get("date_posted", ""),
                     json.dumps(job.get("tags", [])), job.get("score", 0), job.get("score_reason", "")
                 ))
                 row = cursor.fetchone()
@@ -1004,7 +1007,7 @@ class TrackerAgent:
             conn.row_factory = ROW_DICT
             rows = conn.execute("""
                 SELECT j.id, j.title, j.company, j.url, j.source, j.location, j.salary,
-                       j.date_found, j.score, j.score_reason, j.starred,
+                       j.date_found, j.date_posted, j.score, j.score_reason, j.starred,
                        a.status, a.date_applied, a.notes, a.last_updated, a.cv_path, a.cover_letter_path
                 FROM jobs j
                 LEFT JOIN applications a ON j.id = a.job_id

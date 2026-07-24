@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import gsap from 'gsap';
 import clsx from 'clsx';
-import { X, MapPin, CurrencyDollar, ArrowSquareOut, Star, Copy, Check, CircleNotch, CaretDown, Calendar, Prohibit, DownloadSimple, CaretRight, Plus, FileText, Envelope, ShieldCheck, UserFocus } from '@phosphor-icons/react';
+import { X, MapPin, CurrencyDollar, ArrowSquareOut, Star, Copy, Check, CircleNotch, CaretDown, Calendar, Clock, Prohibit, DownloadSimple, CaretRight, Plus, FileText, Envelope, ShieldCheck, UserFocus } from '@phosphor-icons/react';
 import ScoreRing from './ScoreRing';
 import { api, Job, InterviewRound } from '@/lib/api';
 import { useToast } from './Toast';
@@ -765,6 +765,11 @@ export default function JobDrawer({ jobId, onClose, onStatusChange, onStarChange
                     {job.date_found && (
                       <span className="flex items-center gap-1 text-xs text-white/25">
                         <Calendar size={11} /> {job.date_found.slice(0, 10)}
+                      </span>
+                    )}
+                    {job.date_posted && (
+                      <span className="flex items-center gap-1 text-xs text-white/25" title="As reported by the source — format varies by job board">
+                        <Clock size={11} /> Posted {job.date_posted}
                       </span>
                     )}
                   </div>

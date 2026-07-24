@@ -1,4 +1,5 @@
 import json
+import re
 import time
 import uuid
 import requests
@@ -32,22 +33,59 @@ SENIOR_WORDS = {"staff", "principal", "lead", "senior", "sr.", "head of",
 
 
 class JobFinderAgent:
-    def __init__(self, profile: dict = None):
+    def __init__(self, profile: dict = None, user_id: str = None):
         """profile: the calling user's `profiles` row (skills, skill_weights,
         location_preference, target_lpa, salary_weight, location_weight,
         min_score_threshold, enabled_sources) — scoring/source-selection was
         hardcoded to Aman's own profile as class constants before per-user
         accounts existed. None (e.g. CLI/legacy callers) falls back to those
-        original defaults."""
-        self.profile = profile or {}
-        self.jobs_file = Path(DATA_DIR) / "found_jobs.json"
-        self.existing_urls = self._load_existing_urls()
+        original defaults.
 
-    def _load_existing_urls(self) -> set:
+        user_id: when set (the web app's real call sites), existing-job
+        dedup checks the user's actual Postgres `jobs` rows instead of the
+        flat `found_jobs.json` cache — that cache lives on Cloud Run's
+        per-container ephemeral filesystem and is effectively always empty
+        there, which silently defeated this dedup check for every web user
+        since the multi-tenant migration (same failure mode already caught
+        once for /api/stats, see app.py's comment near its score-breakdown
+        query — never fixed at the root here until now). CLI/legacy callers
+        (user_id=None) keep using the flat file, since main.py's CLI flow
+        was never migrated to Postgres-backed persistence."""
+        self.profile = profile or {}
+        self.user_id = user_id
+        self.jobs_file = Path(DATA_DIR) / "found_jobs.json"
+        self.existing_urls, self.existing_title_company = self._load_existing()
+
+    @staticmethod
+    def _normalize_key(text: str) -> str:
+        """Loose fuzzy-match key for cross-source dedup — the same posting
+        cross-posted to two source APIs typically has an identical title and
+        company string modulo case/whitespace/punctuation, even though the
+        URLs are completely different."""
+        return re.sub(r"[^a-z0-9]+", "", (text or "").lower())
+
+    def _title_company_key(self, title: str, company: str) -> str:
+        return f"{self._normalize_key(title)}|{self._normalize_key(company)}"
+
+    def _load_existing(self) -> tuple:
+        if self.user_id:
+            from agents.tracker import TrackerAgent
+            with TrackerAgent()._get_conn() as conn:
+                conn.row_factory = True
+                rows = conn.execute(
+                    "SELECT url, title, company FROM jobs WHERE user_id = ?", (self.user_id,)
+                ).fetchall()
+            urls = {r["url"] for r in rows if r.get("url")}
+            title_company = {self._title_company_key(r.get("title", ""), r.get("company", "")) for r in rows}
+            return urls, title_company
+
         if self.jobs_file.exists():
             with open(self.jobs_file) as f:
-                return {j["url"] for j in json.load(f)}
-        return set()
+                existing = json.load(f)
+            urls = {j["url"] for j in existing}
+            title_company = {self._title_company_key(j.get("title", ""), j.get("company", "")) for j in existing}
+            return urls, title_company
+        return set(), set()
 
     def _load_all_jobs(self) -> list:
         if self.jobs_file.exists():
@@ -965,6 +1003,14 @@ class JobFinderAgent:
 
         return min(max(score, 0), 98), reason
 
+    # Hard ceiling on AI re-scoring calls per find_jobs() run — this now runs
+    # unattended once a day per opted-in user (see app.py's auto-find cron),
+    # not just on a manual click, so an unusually large uncertain-band day
+    # (broad search, permissive profile) can't silently balloon into an
+    # unbounded number of LLM calls. Jobs past the cap keep their (less
+    # precise but free) keyword score rather than being dropped.
+    MAX_AI_RESCORE_PER_RUN = 100
+
     def score_jobs(self, jobs: list) -> list:
         results = []
         uncertain = []
@@ -977,6 +1023,14 @@ class JobFinderAgent:
             if 35 <= score <= 65:
                 uncertain.append(job)
                 uncertain_idx.append(i)
+
+        if len(uncertain) > self.MAX_AI_RESCORE_PER_RUN:
+            console.print(
+                f'  [yellow]{len(uncertain)} uncertain jobs exceeds the {self.MAX_AI_RESCORE_PER_RUN}/run '
+                f'AI re-score cap — scoring the first {self.MAX_AI_RESCORE_PER_RUN}, rest keep their keyword score.[/yellow]'
+            )
+            uncertain = uncertain[:self.MAX_AI_RESCORE_PER_RUN]
+            uncertain_idx = uncertain_idx[:self.MAX_AI_RESCORE_PER_RUN]
 
         # Phase 2: AI re-scores only uncertain jobs, individually. Used to
         # batch 10-per-call to conserve Gemini's 20/day smart-model quota —
@@ -992,49 +1046,6 @@ class JobFinderAgent:
                     time.sleep(1.5)
 
         return results
-
-    # ── Source 4: Naukri.com scraper ─────────────────────────────────────────
-
-    def _scrape_naukri(self, keyword: str = 'react developer', location: str = 'ahmedabad') -> list:
-        """Scrape Naukri.com job listings."""
-        import urllib.parse
-        url = f"https://www.naukri.com/{urllib.parse.quote(keyword.replace(' ', '-'))}-jobs-in-{location}"
-        try:
-            r = requests.get(url, headers={**HEADERS,
-                'Accept': 'text/html,application/xhtml+xml',
-                'Accept-Language': 'en-US,en;q=0.9',
-            }, timeout=20)
-            soup = BeautifulSoup(r.text, 'lxml')
-            jobs = []
-            for card in soup.select('article.jobTuple, .job-tuple-wrapper, [class*="jobTuple"]')[:20]:
-                title_el = card.select_one('.title, [class*="title"] a, h2 a')
-                comp_el  = card.select_one('.company-name, [class*="companyName"], .comp-name')
-                loc_el   = card.select_one('.loc, [class*="location"], .loc-name')
-                sal_el   = card.select_one('.salary, [class*="salary"]')
-                exp_el   = card.select_one('.exp, [class*="experience"]')
-                href_el  = card.select_one('a[href*="/job-listings"]') or title_el
-                if not title_el: continue
-                href = href_el.get('href', '') if href_el else ''
-                if href and not href.startswith('http'): href = 'https://www.naukri.com' + href
-                desc = (exp_el.get_text(strip=True) if exp_el else '') + ' ' + (sal_el.get_text(strip=True) if sal_el else '')
-                jobs.append({
-                    'id': str(uuid.uuid4()),
-                    'title': title_el.get_text(strip=True),
-                    'company': comp_el.get_text(strip=True) if comp_el else '',
-                    'description': desc[:2000],
-                    'url': href,
-                    'source': 'Naukri.com',
-                    'location': loc_el.get_text(strip=True) if loc_el else location.title(),
-                    'salary': sal_el.get_text(strip=True) if sal_el else 'Not specified',
-                    'date_posted': '',
-                    'tags': [],
-                    'score': 0, 'score_reason': '',
-                    'date_found': datetime.now().isoformat(),
-                })
-            return jobs
-        except Exception as e:
-            console.print(f'[yellow]Naukri scrape failed: {e}[/yellow]')
-            return []
 
     # ── Gujarat manual links ──────────────────────────────────────────────────
 
@@ -1146,7 +1157,13 @@ class JobFinderAgent:
             all_jobs.extend(self._fetch_hn_hiring())
 
         # ── Deduplicate + filter ──
+        # Two dedup checks: exact URL (handles the same source returning a
+        # posting twice) and a normalized title+company key (handles the
+        # same posting cross-posted to two different sources under two
+        # different URLs — e.g. a company's own listing mirrored on both
+        # LinkedIn and Remotive — which the URL check alone can't catch).
         seen_urls:    set  = set()
+        seen_title_company: set = set()
         company_count: dict = {}
         unique_jobs:  list = []
 
@@ -1159,8 +1176,12 @@ class JobFinderAgent:
             company = j.get("company", "unknown")
             if company_count.get(company, 0) >= 3:
                 continue
+            tc_key = self._title_company_key(j.get("title", ""), company)
+            if tc_key in seen_title_company or tc_key in self.existing_title_company:
+                continue
             company_count[company] = company_count.get(company, 0) + 1
             seen_urls.add(url)
+            seen_title_company.add(tc_key)
             unique_jobs.append(j)
 
         console.print(f"\n[green]Found {len(unique_jobs)} new jobs. Scoring with Gemini (batched)...[/green]")

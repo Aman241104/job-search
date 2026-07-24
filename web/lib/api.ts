@@ -36,6 +36,7 @@ export interface Job {
   cv_path?: string;
   cover_letter_path?: string;
   date_found?: string;
+  date_posted?: string;
   date_applied?: string;
 }
 

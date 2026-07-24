@@ -472,7 +472,7 @@ async def find_jobs_stream(user_id: str = Depends(get_current_user)):
             def run_finder():
                 tracker = TrackerAgent()
                 profile = tracker.get_profile(user_id) or {}
-                finder = JobFinderAgent(profile=profile)
+                finder = JobFinderAgent(profile=profile, user_id=user_id)
                 jobs = finder.find_jobs()
                 added = sum(1 for j in jobs if tracker.add_job(user_id, j))
                 return jobs, added
@@ -569,7 +569,7 @@ async def cron_auto_find(request: Request):
         def run_one(user_id=uid):
             t = TrackerAgent()
             profile = t.get_profile(user_id) or {}
-            finder = JobFinderAgent(profile=profile)
+            finder = JobFinderAgent(profile=profile, user_id=user_id)
             jobs = finder.find_jobs()
             added_jobs = [j for j in jobs if t.add_job(user_id, j)]
 
