@@ -434,6 +434,7 @@ export default function DashboardPage() {
   const [topJobs, setTopJobs] = useState<Job[]>([]);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [firstName, setFirstName] = useState<string>('');
+  const [resume, setResume] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const cardsRef = useRef<HTMLDivElement>(null);
@@ -469,6 +470,8 @@ export default function DashboardPage() {
         if (first) setFirstName(first);
       })
       .catch(() => {});
+
+    api.resume().then(setResume).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -516,6 +519,24 @@ export default function DashboardPage() {
   // Activity graph below already fetches, just a shorter recent window.
   const foundSparkline = timeline.slice(-14).map((d) => d.found);
 
+  // Profile Strength — % of Resume Builder sections actually filled in.
+  // No ATS model exists, so this is a real, honestly-computed completeness
+  // score (section present/non-empty) rather than a fabricated grade.
+  const resumeSections: { key: string; label: string; filled: boolean }[] = resume
+    ? [
+        { key: 'summary', label: 'Summary', filled: Boolean((resume.summary as string)?.trim()) },
+        { key: 'education', label: 'Education', filled: ((resume.education as unknown[]) ?? []).length > 0 },
+        { key: 'skills', label: 'Skills', filled: Object.keys((resume.skills as Record<string, unknown>) ?? {}).length > 0 },
+        { key: 'work_experience', label: 'Work Experience', filled: ((resume.work_experience as unknown[]) ?? []).length > 0 },
+        { key: 'projects', label: 'Projects', filled: ((resume.projects as unknown[]) ?? []).length > 0 },
+        { key: 'achievements', label: 'Achievements', filled: ((resume.achievements as unknown[]) ?? []).length > 0 },
+      ]
+    : [];
+  const profileStrength = resumeSections.length > 0
+    ? Math.round((resumeSections.filter((s) => s.filled).length / resumeSections.length) * 100)
+    : null;
+  const missingSections = resumeSections.filter((s) => !s.filled).map((s) => s.label);
+
   const actions = stats
     ? [
         ...(stats.found > 0 && stats.applied === 0
@@ -529,6 +550,9 @@ export default function DashboardPage() {
           : []),
         ...(stats.applied > 0 && stats.interviewing === 0
           ? [{ label: 'Practice interview skills', sub: 'No interviews yet — keep sharpening', href: '/train', urgent: false }]
+          : []),
+        ...(profileStrength !== null && profileStrength < 100
+          ? [{ label: 'Strengthen your resume', sub: `${profileStrength}% complete — add ${missingSections.slice(0, 2).join(', ')}`, href: '/resume', urgent: profileStrength < 60 }]
           : []),
         { label: 'Check new job boards', sub: 'Browse Cutshort, Wellfound, HackerNews', href: '/links', urgent: false },
       ].slice(0, 3)
@@ -736,9 +760,23 @@ export default function DashboardPage() {
               {/* Action Queue */}
               {actions.length > 0 && (
                 <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
-                  <div className="flex items-center gap-2 mb-4">
-                    <Fire size={15} className="text-accent-yellow" />
-                    <h2 className="font-semibold text-white/90">Do This Next</h2>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Fire size={15} className="text-accent-yellow" />
+                      <h2 className="font-semibold text-white/90">Do This Next</h2>
+                    </div>
+                    {profileStrength !== null && (
+                      <div className="flex items-center gap-2" title={`Profile strength: ${profileStrength}%`}>
+                        <span className="text-[10px] text-white/30 font-mono">Profile</span>
+                        <div className="w-16 h-1.5 bg-bg-3 rounded-full overflow-hidden">
+                          <div
+                            className={clsx('h-full rounded-full transition-all duration-1000', profileStrength >= 80 ? 'bg-accent-green' : profileStrength >= 50 ? 'bg-accent-yellow' : 'bg-accent-pink')}
+                            style={{ width: `${profileStrength}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] text-white/40 font-mono">{profileStrength}%</span>
+                      </div>
+                    )}
                   </div>
                   <div className="space-y-2">
                     {actions.map((action, i) => (
