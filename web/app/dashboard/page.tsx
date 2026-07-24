@@ -11,7 +11,7 @@ import type { TooltipContentProps } from 'recharts/types/component/Tooltip';
 import StatCard from '@/components/StatCard';
 import EmptyState from '@/components/EmptyState';
 import FindButton from '@/components/FindButton';
-import ScoreRing from '@/components/ScoreRing';
+import JobMatchCard from '@/components/JobMatchCard';
 import HeroBackground from '@/components/HeroBackground';
 import Sparkline from '@/components/Sparkline';
 import { ToastProvider } from '@/components/Toast';
@@ -675,31 +675,15 @@ export default function DashboardPage() {
                     description="Click “Find New Jobs” above to start searching."
                   />
                 ) : (
-                  <div className="space-y-2">
+                  <div className="grid sm:grid-cols-2 gap-3">
                     {topJobs.map((job) => (
-                      <div
+                      <JobMatchCard
                         key={job.id}
-                        className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/3 transition-all duration-150 group"
-                      >
-                        <ScoreRing score={job.score} size={36} />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-white/85 truncate">
-                            {job.title}
-                          </p>
-                          <p className="text-xs text-white/35 truncate">{job.company}</p>
-                        </div>
-                        <span className="text-xs text-white/25 font-mono">{job.source}</span>
-                        {job.url && (
-                          <a
-                            href={job.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-white/20 group-hover:text-accent-green transition-colors opacity-0 group-hover:opacity-100"
-                          >
-                            <ArrowRight size={13} />
-                          </a>
-                        )}
-                      </div>
+                        job={job}
+                        onStatusChange={(id, newStatus) =>
+                          setTopJobs((prev) => prev.map((j) => (j.id === id ? { ...j, status: newStatus } : j)))
+                        }
+                      />
                     ))}
                   </div>
                 )}
