@@ -384,6 +384,16 @@ function JobsPageInner() {
   // ── View mode ──
   const [viewMode, setViewMode] = useState<'list' | 'kanban' | 'discover' | 'explore'>('list');
 
+  // Real skill keywords from the user's own Resume Builder — used by the
+  // Explore view's "Most matched skills" insight, never a fabricated list.
+  const [resumeSkills, setResumeSkills] = useState<string[]>([]);
+  useEffect(() => {
+    api.resume().then((r) => {
+      const skills = (r.skills as Record<string, string[] | string>) ?? {};
+      setResumeSkills(Object.values(skills).flat().filter((s): s is string => typeof s === 'string'));
+    }).catch(() => {});
+  }, []);
+
   // ── Bulk selection ──
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -1257,26 +1267,112 @@ function JobsPageInner() {
                     green: 'text-accent-green', cyan: 'text-accent-cyan', purple: 'text-accent-purple', yellow: 'text-accent-yellow',
                   };
 
+                  // Trending companies — real GROUP BY company over the
+                  // user's own already-fetched jobs.
+                  const companyCounts = new Map<string, number>();
+                  kanbanData.forEach((j) => {
+                    if (!j.company) return;
+                    companyCounts.set(j.company, (companyCounts.get(j.company) ?? 0) + 1);
+                  });
+                  const trendingCompanies = Array.from(companyCounts.entries())
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 5);
+
+                  // Most matched skills — real keyword frequency of the
+                  // user's own resume skills against real job titles.
+                  const skillCounts = resumeSkills
+                    .map((skill) => ({
+                      skill,
+                      count: kanbanData.filter((j) => j.title.toLowerCase().includes(skill.toLowerCase())).length,
+                    }))
+                    .filter((s) => s.count > 0)
+                    .sort((a, b) => b.count - a.count)
+                    .slice(0, 6);
+
+                  // Highest paying today — real max parsed number out of
+                  // each job's own real salary string, nothing invented.
+                  const highestPaying = kanbanData
+                    .map((j) => {
+                      const nums = (j.salary ?? '').match(/[\d,]{4,}/g);
+                      const max = nums ? Math.max(...nums.map((n) => parseInt(n.replace(/,/g, ''), 10))) : 0;
+                      return { job: j, max };
+                    })
+                    .filter((x) => x.max > 0)
+                    .sort((a, b) => b.max - a.max)
+                    .slice(0, 3);
+
                   return (
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      {tiles.map((tile) => (
-                        <button
-                          key={tile.label}
-                          onClick={() => {
-                            setSearch(tile.label === 'Fresher-friendly' ? 'fresher' : tile.label === 'AI / ML' ? 'AI' : tile.label);
-                            setViewMode('list');
-                          }}
-                          className={clsx(
-                            'text-left bg-bg-2 border border-border rounded-2xl p-5 hover:border-white/15 transition-all duration-150',
-                            tileGlow[tile.color]
+                    <>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        {tiles.map((tile) => (
+                          <button
+                            key={tile.label}
+                            onClick={() => {
+                              setSearch(tile.label === 'Fresher-friendly' ? 'fresher' : tile.label === 'AI / ML' ? 'AI' : tile.label);
+                              setViewMode('list');
+                            }}
+                            className={clsx(
+                              'text-left bg-bg-2 border border-border rounded-2xl p-5 hover:border-white/15 transition-all duration-150',
+                              tileGlow[tile.color]
+                            )}
+                          >
+                            <p className="text-sm font-semibold text-white/85 mb-3">{tile.label}</p>
+                            <p className={clsx('font-mono font-bold text-3xl', tileText[tile.color])}>{tile.count}</p>
+                            <p className="text-xs text-white/35 mt-1">jobs · avg match {tile.avgScore}</p>
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* AI Job Insights — trending companies / matched skills / highest paying */}
+                      <div className="grid md:grid-cols-3 gap-4 mt-4">
+                        <div className="bg-bg-2 border border-border rounded-2xl p-5">
+                          <p className="text-sm font-semibold text-white/85 mb-3">Trending companies</p>
+                          {trendingCompanies.length === 0 ? (
+                            <p className="text-xs text-white/25">Not enough data yet.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {trendingCompanies.map(([company, count]) => (
+                                <div key={company} className="flex items-center justify-between text-sm">
+                                  <span className="text-white/60 truncate">{company}</span>
+                                  <span className="text-accent-green font-mono text-xs flex-shrink-0 ml-2">{count} open</span>
+                                </div>
+                              ))}
+                            </div>
                           )}
-                        >
-                          <p className="text-sm font-semibold text-white/85 mb-3">{tile.label}</p>
-                          <p className={clsx('font-mono font-bold text-3xl', tileText[tile.color])}>{tile.count}</p>
-                          <p className="text-xs text-white/35 mt-1">jobs · avg match {tile.avgScore}</p>
-                        </button>
-                      ))}
-                    </div>
+                        </div>
+
+                        <div className="bg-bg-2 border border-border rounded-2xl p-5">
+                          <p className="text-sm font-semibold text-white/85 mb-3">Most matched skills</p>
+                          {skillCounts.length === 0 ? (
+                            <p className="text-xs text-white/25">Add skills to your resume to see this.</p>
+                          ) : (
+                            <div className="flex flex-wrap gap-1.5">
+                              {skillCounts.map((s) => (
+                                <span key={s.skill} className="text-[11px] px-2 py-1 rounded-md bg-tone-purple-90 text-tone-purple-30 dark:bg-tone-purple-30/20 dark:text-tone-purple-80">
+                                  {s.skill} · {s.count}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="bg-bg-2 border border-border rounded-2xl p-5">
+                          <p className="text-sm font-semibold text-white/85 mb-3">Highest paying today</p>
+                          {highestPaying.length === 0 ? (
+                            <p className="text-xs text-white/25">No salary data in current jobs.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {highestPaying.map(({ job }) => (
+                                <div key={job.id} className="text-sm">
+                                  <p className="text-white/60 truncate">{job.title}</p>
+                                  <p className="text-accent-yellow text-xs font-mono">{job.salary}</p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </>
                   );
                 })()
               )}
