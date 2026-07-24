@@ -295,6 +295,16 @@ export const api = {
     window.open(`/api/export`);
   },
 
+  exportAllData: (): void => {
+    window.open(`/api/user/data-export`);
+  },
+
+  deleteAccount: (): Promise<{ ok: boolean }> =>
+    apiFetch(`/api/user/account`, { method: 'DELETE' }).then((r) => {
+      if (!r.ok) throw new Error(`Delete account failed: ${r.status}`);
+      return r.json();
+    }),
+
   downloadCV: (jobId: string): void => {
     window.open(`/api/files/cv/${jobId}`);
   },

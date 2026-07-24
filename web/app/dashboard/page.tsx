@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import gsap from 'gsap';
 import Link from 'next/link';
-import { Briefcase, PaperPlaneTilt, ChatCircle, Trophy, DownloadSimple, LinkSimple, Brain, ArrowRight, ArrowClockwise, Warning, CaretRight, Fire, TrendUp, Bell, CheckCircle, MagnifyingGlass, ClipboardText, Compass } from '@phosphor-icons/react';
+import { Briefcase, PaperPlaneTilt, ChatCircle, Trophy, DownloadSimple, LinkSimple, Brain, ArrowRight, ArrowClockwise, Warning, CaretRight, Fire, TrendUp, Bell, CheckCircle, MagnifyingGlass, ClipboardText, Compass, SlidersHorizontal } from '@phosphor-icons/react';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
@@ -279,6 +279,15 @@ function OnboardingCard({ onComplete }: { onComplete: () => void }) {
       done: false,
       active: false,
     },
+    {
+      n: 4,
+      icon: SlidersHorizontal,
+      label: 'Optional: tune job sources, scoring, email & Telegram alerts',
+      sub: 'All in Profile — none of this is required to start',
+      done: false,
+      active: false,
+      href: '/profile',
+    },
   ];
 
   return (
@@ -345,7 +354,13 @@ function OnboardingCard({ onComplete }: { onComplete: () => void }) {
                         : 'text-white/40'
                     )}
                   >
-                    {step.label}
+                    {step.href ? (
+                      <Link href={step.href} className="hover:underline underline-offset-2">
+                        {step.label}
+                      </Link>
+                    ) : (
+                      step.label
+                    )}
                   </p>
                 </div>
                 <p className="text-xs text-white/35 mt-0.5 ml-7">{step.sub}</p>
@@ -367,7 +382,7 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [topJobs, setTopJobs] = useState<Job[]>([]);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
-  const [firstName, setFirstName] = useState<string>('Aman');
+  const [firstName, setFirstName] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const cardsRef = useRef<HTMLDivElement>(null);
@@ -402,7 +417,7 @@ export default function DashboardPage() {
         const first = ((profile.name as string) ?? '').split(' ')[0];
         if (first) setFirstName(first);
       })
-      .catch(() => {}); // fall back to "Aman"
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -460,7 +475,7 @@ export default function DashboardPage() {
             <div className="flex items-start justify-between">
               <div>
                 <h1 className="text-2xl md:text-3xl font-bold text-white/90 mb-1">
-                  {getGreeting()}, {firstName}
+                  {getGreeting()}{firstName ? `, ${firstName}` : ''}
                 </h1>
                 <p className="text-white/35 text-sm font-mono">{formatDate()}</p>
               </div>

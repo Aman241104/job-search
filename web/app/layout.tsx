@@ -21,7 +21,7 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: 'JobHunt — Aman\'s Job Search Dashboard',
+  title: 'JobHunt — Your AI Job Search Dashboard',
   description: 'Track, find, and ace your job search with AI-powered insights.',
   icons: {
     icon: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%23FBFAF7'/%3E%3Ccircle cx='50' cy='50' r='32' fill='none' stroke='%233F7355' stroke-width='9'/%3E%3Ccircle cx='50' cy='50' r='12' fill='%233F7355'/%3E%3C/svg%3E",

@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
-import { ArrowSquareOut, Check, CircleNotch, TelegramLogo } from '@phosphor-icons/react';
+import { ArrowSquareOut, Check, CircleNotch, TelegramLogo, DownloadSimple, Trash } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import { ChipEditor, Field, Section } from '@/components/ProfileFields';
+import { useAuth } from '@/components/AuthProvider';
 import clsx from 'clsx';
 
 /* ─────────────────────── types ──────────────────────── */
@@ -79,6 +80,10 @@ const DEFAULT_PROFILE: ProfileData = {
 
 export default function ProfilePage() {
   const pageRef = useRef<HTMLDivElement>(null);
+  const { logout } = useAuth();
+
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   const [profile, setProfile] = useState<ProfileData>(DEFAULT_PROFILE);
   const [original, setOriginal] = useState<ProfileData>(DEFAULT_PROFILE);
@@ -174,6 +179,17 @@ export default function ProfilePage() {
     }
   };
 
+  /* danger zone */
+  const handleDeleteAccount = async () => {
+    setDeleting(true);
+    try {
+      await api.deleteAccount();
+      await logout();
+    } catch {
+      setDeleting(false);
+    }
+  };
+
   /* save */
   const handleSave = async () => {
     setSaveState('saving');
@@ -266,7 +282,7 @@ export default function ProfilePage() {
               label="Name"
               value={profile.name}
               onChange={(v) => set('name', v)}
-              placeholder="Aman Patel"
+              placeholder="Jane Doe"
             />
             <Field
               label="Email"
@@ -290,7 +306,7 @@ export default function ProfilePage() {
             label="College"
             value={profile.college}
             onChange={(v) => set('college', v)}
-            placeholder="LDCE Ahmedabad, B.E. EC Engineering"
+            placeholder="Your College, B.Tech Computer Science"
           />
           <Field
             label="CGPA"
@@ -437,7 +453,7 @@ export default function ProfilePage() {
             label="Location Preference"
             chips={profile.location_preference}
             onChange={(v) => set('location_preference', v)}
-            placeholder="Remote, Ahmedabad, Gujarat…"
+            placeholder="Remote, Bangalore, Mumbai…"
           />
 
           {/* Target LPA */}
@@ -545,8 +561,59 @@ export default function ProfilePage() {
             label="Offer Details"
             value={profile.current_offer}
             onChange={(v) => set('current_offer', v)}
-            placeholder="TCS Digital 7 LPA"
+            placeholder="Acme Corp, 7 LPA"
           />
+        </Section>
+
+        {/* 11. Danger Zone */}
+        <Section title="Danger Zone">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <p className="text-sm text-white/70">Export all my data</p>
+              <p className="text-xs text-white/35">Every row this account owns, as one JSON file.</p>
+            </div>
+            <button
+              onClick={() => api.exportAllData()}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 text-white/60 border border-border hover:bg-white/10 transition-colors"
+            >
+              <DownloadSimple size={14} />
+              Export
+            </button>
+          </div>
+
+          <div className="h-px bg-border" />
+
+          <div className="flex flex-col gap-3">
+            <div>
+              <p className="text-sm text-accent-pink">Delete account</p>
+              <p className="text-xs text-white/35">
+                Permanently deletes every job, application, resume, and setting tied to this
+                account. This cannot be undone.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <input
+                type="text"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder='Type "DELETE" to confirm'
+                className="rounded-xl border border-border bg-bg px-3 py-2 text-sm text-white/85 placeholder-white/20 outline-none focus:border-accent-pink/40 transition-colors duration-150 font-mono"
+              />
+              <button
+                onClick={handleDeleteAccount}
+                disabled={deleteConfirmText !== 'DELETE' || deleting}
+                className={clsx(
+                  'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                  deleteConfirmText === 'DELETE' && !deleting
+                    ? 'bg-accent-pink/10 text-accent-pink border border-accent-pink/30 hover:bg-accent-pink/20'
+                    : 'bg-white/5 text-white/25 border border-border cursor-not-allowed'
+                )}
+              >
+                {deleting ? <CircleNotch size={14} className="animate-spin" /> : <Trash size={14} />}
+                {deleting ? 'Deleting…' : 'Delete my account'}
+              </button>
+            </div>
+          </div>
         </Section>
       </div>
     </div>

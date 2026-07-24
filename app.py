@@ -13,7 +13,7 @@ from typing import Optional
 
 from fastapi import FastAPI, Query, Request, UploadFile, File, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 import sys
@@ -1735,6 +1735,31 @@ async def update_user_profile(request: Request, user_id: str = Depends(get_curre
         existing['smtp_app_password'] = encrypt_secret(incoming_password)
     tracker.save_profile(user_id, existing)
     return {'ok': True}
+
+
+@app.get('/api/user/data-export')
+async def export_all_user_data(user_id: str = Depends(get_current_user)):
+    """Full 'download my data' export — every table this account has rows
+    in, as one JSON file. Distinct from /api/export, which only covers
+    jobs/applications as an Excel sheet for day-to-day tracking use."""
+    data = TrackerAgent().export_user_data(user_id)
+    body = json.dumps(data, indent=2, default=str)
+    return Response(
+        content=body,
+        media_type='application/json',
+        headers={'Content-Disposition': 'attachment; filename="my-data.json"'},
+    )
+
+
+@app.delete('/api/user/account')
+async def delete_account(user_id: str = Depends(get_current_user)):
+    """Permanently deletes every row this account owns across every table,
+    then clears the session cookie — irreversible, no confirmation step
+    beyond whatever the frontend adds before calling this."""
+    TrackerAgent().delete_account(user_id)
+    response = JSONResponse({'ok': True})
+    response.delete_cookie(SESSION_COOKIE, samesite='none', secure=True)
+    return response
 
 
 if __name__ == '__main__':

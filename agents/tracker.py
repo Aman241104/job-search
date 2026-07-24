@@ -487,6 +487,87 @@ class TrackerAgent:
             """, (user_id, json.dumps(data), now))
             conn.commit()
 
+    # ── Account deletion + full data export ─────────────────────────────────────
+
+    def delete_account(self, user_id: str) -> None:
+        """Cascades every user-scoped table in one transaction — none of
+        these FKs have ON DELETE CASCADE, so children must go before
+        parents. Cloudinary-hosted files (book/resume PDFs) are NOT purged
+        here, only DB rows — a real but accepted gap for this first pass."""
+        with self._get_conn() as conn:
+            conn.execute(
+                "DELETE FROM learning_video_chunks WHERE video_id IN "
+                "(SELECT id FROM learning_videos WHERE playlist_id IN "
+                "(SELECT id FROM learning_playlists WHERE user_id = ?))", (user_id,))
+            conn.execute(
+                "DELETE FROM learning_videos WHERE playlist_id IN "
+                "(SELECT id FROM learning_playlists WHERE user_id = ?)", (user_id,))
+            conn.execute("DELETE FROM learning_playlists WHERE user_id = ?", (user_id,))
+            conn.execute(
+                "DELETE FROM learning_book_pages WHERE book_id IN "
+                "(SELECT id FROM learning_books WHERE user_id = ?)", (user_id,))
+            conn.execute("DELETE FROM learning_books WHERE user_id = ?", (user_id,))
+            conn.execute(
+                "DELETE FROM learning_topics WHERE item_id IN "
+                "(SELECT id FROM learning_items WHERE user_id = ?)", (user_id,))
+            conn.execute("DELETE FROM learning_items WHERE user_id = ?", (user_id,))
+            conn.execute(
+                "DELETE FROM batch_items WHERE batch_id IN "
+                "(SELECT id FROM batches WHERE user_id = ?)", (user_id,))
+            conn.execute("DELETE FROM batches WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM telegram_alerts WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM interview_rounds WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM applications WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM jobs WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM training_sessions WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM blacklisted_companies WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM story_bank WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM settings WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM resumes WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM profiles WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM rate_limit_hits WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            conn.commit()
+
+    def export_user_data(self, user_id: str) -> dict:
+        """Full 'download my data' dump — every user-scoped table as JSON.
+        The stored smtp_app_password is encrypted ciphertext, not a value
+        meant to leave the server even in an export a user requested
+        themselves — replaced with the same boolean flag GET /api/user/profile
+        uses. Cloudinary-hosted files (resume/book PDFs) are referenced only
+        by their stored path/URL, not re-downloaded into this export."""
+        with self._get_conn() as conn:
+            conn.row_factory = ROW_DICT
+
+            def rows(sql):
+                return conn.execute(sql, (user_id,)).fetchall()
+
+            user = conn.execute(
+                "SELECT id, email, name, avatar_url, created_at FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
+            profile_row = conn.execute("SELECT data FROM profiles WHERE user_id = ?", (user_id,)).fetchone()
+            profile = dict(profile_row["data"]) if profile_row else {}
+            if profile.get("smtp_app_password"):
+                profile["smtp_app_password"] = None
+                profile["smtp_app_password_set"] = True
+            resume_row = conn.execute("SELECT data FROM resumes WHERE user_id = ?", (user_id,)).fetchone()
+
+            return {
+                "user": user,
+                "profile": profile,
+                "resume": resume_row["data"] if resume_row else None,
+                "jobs": rows("SELECT * FROM jobs WHERE user_id = ?"),
+                "applications": rows("SELECT * FROM applications WHERE user_id = ?"),
+                "training_sessions": rows("SELECT * FROM training_sessions WHERE user_id = ?"),
+                "interview_rounds": rows("SELECT * FROM interview_rounds WHERE user_id = ?"),
+                "story_bank": rows("SELECT * FROM story_bank WHERE user_id = ?"),
+                "blacklisted_companies": rows("SELECT * FROM blacklisted_companies WHERE user_id = ?"),
+                "batches": rows("SELECT * FROM batches WHERE user_id = ?"),
+                "learning_items": rows("SELECT * FROM learning_items WHERE user_id = ?"),
+                "learning_books": rows("SELECT * FROM learning_books WHERE user_id = ?"),
+                "learning_playlists": rows("SELECT * FROM learning_playlists WHERE user_id = ?"),
+            }
+
     # ── Rate limiting (per-user, per-action sliding window) ─────────────────────
 
     def check_rate_limit(self, user_id: str, action: str, max_calls: int, window_seconds: int) -> bool:

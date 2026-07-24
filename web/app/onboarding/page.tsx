@@ -97,7 +97,7 @@ export default function OnboardingPage() {
             label="Location Preference"
             chips={locationPreference}
             onChange={setLocationPreference}
-            placeholder="Remote, Ahmedabad, Gujarat…"
+            placeholder="Remote, Bangalore, Mumbai…"
           />
           <div>
             <label className="block text-xs font-mono text-white/40 mb-1.5 uppercase tracking-wider">
