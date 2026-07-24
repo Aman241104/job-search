@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
+    "@paper-design/shaders-react": "^0.0.77",
     "@phosphor-icons/react": "^2.1.10",
     "clsx": "^2.1.1",
     "culori": "^4.0.2",

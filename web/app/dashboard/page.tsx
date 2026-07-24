@@ -12,6 +12,7 @@ import StatCard from '@/components/StatCard';
 import EmptyState from '@/components/EmptyState';
 import FindButton from '@/components/FindButton';
 import ScoreRing from '@/components/ScoreRing';
+import HeroBackground from '@/components/HeroBackground';
 import { ToastProvider } from '@/components/Toast';
 import { api, Stats, Job } from '@/lib/api';
 import clsx from 'clsx';
@@ -291,10 +292,11 @@ function OnboardingCard({ onComplete }: { onComplete: () => void }) {
   ];
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[70vh] px-4">
+    <div className="relative flex flex-col items-center justify-center min-h-[70vh] px-4 overflow-hidden">
+      <HeroBackground />
       <div
         ref={cardRef}
-        className="w-full max-w-lg bg-bg-2 border border-border rounded-3xl p-8 md:p-10 shadow-2xl"
+        className="relative w-full max-w-lg bg-bg-2/90 backdrop-blur-sm border border-border rounded-3xl p-8 md:p-10 shadow-2xl"
         style={{ opacity: 0 }}
       >
         {/* Hero */}

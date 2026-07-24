@@ -157,6 +157,22 @@ body {
 .shadow-tint-yellow { box-shadow: 0 4px 20px rgb(var(--accent-yellow) / 0.14); }
 .shadow-tint-pink { box-shadow: 0 4px 20px rgb(var(--accent-pink) / 0.14); }
 
+/* Mouse-follow spotlight — a radial gradient positioned via --spot-x/--spot-y
+   custom properties (updated on mousemove in JS), not a WebGL/canvas effect.
+   Cheap: pure CSS, one pseudo-element, GPU-composited (opacity only). */
+.spotlight-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(220px circle at var(--spot-x, 50%) var(--spot-y, 50%), rgb(var(--accent-green) / 0.18), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+.spotlight-btn:hover::before {
+  opacity: 1;
+}
+
 /* Glass card base */
 .glass {
   background: rgb(var(--bg-1) / 0.75);

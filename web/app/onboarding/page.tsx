@@ -8,6 +8,7 @@ import { ArrowRight, CircleNotch } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
 import { ChipEditor, Field, Section } from '@/components/ProfileFields';
+import HeroBackground from '@/components/HeroBackground';
 
 export default function OnboardingPage() {
   const { user } = useAuth();
@@ -58,7 +59,10 @@ export default function OnboardingPage() {
   };
 
   return (
-    <div ref={pageRef} className="max-w-xl mx-auto px-4 py-12">
+    <div ref={pageRef} className="relative max-w-xl mx-auto px-4 py-12">
+      <div className="fixed inset-0 -z-10 overflow-hidden">
+        <HeroBackground />
+      </div>
       <div className="onboarding-section mb-8 text-center">
         <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-accent-green to-accent-cyan mx-auto mb-4 flex items-center justify-center">
           <span className="text-bg font-mono font-bold text-lg">J</span>
