@@ -10,6 +10,31 @@ import { useToast } from './Toast';
 interface JobMatchCardProps {
   job: Job;
   onStatusChange?: (id: string, status: Job['status']) => void;
+  // Full fetched job set (e.g. Discover mode's kanbanData) — when present,
+  // hovering the company name shows a real stats popover computed from it.
+  // Omitted on the Dashboard, which only has a top-5 slice, not enough to
+  // aggregate honestly.
+  allJobs?: Job[];
+}
+
+const STOPWORDS = new Set(['and', 'the', 'for', 'with', 'developer', 'engineer', 'remote']);
+
+function companyStats(company: string, allJobs: Job[]) {
+  const postings = allJobs.filter((j) => j.company === company);
+  const avgScore = Math.round(postings.reduce((s, j) => s + j.score, 0) / postings.length);
+  const wordCounts = new Map<string, number>();
+  postings.forEach((j) => {
+    j.title
+      .toLowerCase()
+      .split(/[^a-z0-9+.]+/)
+      .filter((w) => w.length > 2 && !STOPWORDS.has(w))
+      .forEach((w) => wordCounts.set(w, (wordCounts.get(w) ?? 0) + 1));
+  });
+  const topKeywords = Array.from(wordCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([w]) => w);
+  return { openings: postings.length, avgScore, topKeywords };
 }
 
 // job_finder.py's scoring step only ever emits these three tags, comma-joined
@@ -20,10 +45,13 @@ const REASON_LABELS: Record<string, string> = {
   remote: 'Fully remote',
 };
 
-export default function JobMatchCard({ job, onStatusChange }: JobMatchCardProps) {
+export default function JobMatchCard({ job, onStatusChange, allJobs }: JobMatchCardProps) {
   const [applying, setApplying] = useState(false);
   const [status, setStatus] = useState<Job['status']>(job.status);
+  const [showCompanyPreview, setShowCompanyPreview] = useState(false);
   const { toast } = useToast();
+
+  const stats = allJobs && job.company ? companyStats(job.company, allJobs) : null;
 
   const reasons = (job.score_reason || '')
     .split(',')
@@ -54,7 +82,33 @@ export default function JobMatchCard({ job, onStatusChange }: JobMatchCardProps)
         <ScoreRing score={job.score} size={52} />
         <div className="flex-1 min-w-0">
           <h3 className="font-sans font-semibold text-white/90 leading-tight truncate">{job.title}</h3>
-          <p className="text-white/40 text-sm mt-0.5 truncate">{job.company}</p>
+          <div className="relative inline-block max-w-full">
+            <p
+              className={clsx('text-white/40 text-sm mt-0.5 truncate', stats && stats.openings > 1 && 'cursor-help hover:text-white/60')}
+              onMouseEnter={() => stats && stats.openings > 1 && setShowCompanyPreview(true)}
+              onMouseLeave={() => setShowCompanyPreview(false)}
+            >
+              {job.company}
+            </p>
+            {showCompanyPreview && stats && (
+              <div className="absolute z-20 top-full left-0 mt-1 w-56 bg-bg-3 border border-border rounded-xl p-3 shadow-xl text-xs space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-white/40">Openings</span>
+                  <span className="text-white/80 font-mono">{stats.openings}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-white/40">Avg match</span>
+                  <span className="text-accent-green font-mono">{stats.avgScore}</span>
+                </div>
+                {stats.topKeywords.length > 0 && (
+                  <div>
+                    <span className="text-white/40">Common roles</span>
+                    <p className="text-white/70 mt-0.5 capitalize">{stats.topKeywords.join(', ')}</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           <div className="flex items-center gap-1.5 flex-wrap mt-2.5">
             {isRemote && (

@@ -1215,6 +1215,7 @@ function JobsPageInner() {
                     >
                       <JobMatchCard
                         job={job}
+                        allJobs={kanbanData}
                         onStatusChange={(id, newStatus) => {
                           setKanbanData((prev) => prev.map((j) => (j.id === id ? { ...j, status: newStatus } : j)));
                         }}
