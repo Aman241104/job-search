@@ -85,6 +85,7 @@ export interface TrainProgress {
   sessions_completed: number;
   avg_score: number;
   topics_covered: string[];
+  topic_scores: Record<string, number>;
   total_messages: number;
 }
 

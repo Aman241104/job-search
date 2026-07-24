@@ -895,6 +895,7 @@ class TrackerAgent:
                     'sessions_completed': 0,
                     'avg_score': 0,
                     'topics_covered': [],
+                    'topic_scores': {},
                     'total_messages': 0,
                 }
 
@@ -908,6 +909,14 @@ class TrackerAgent:
             ).fetchall()
             topics_covered = [r[0] for r in topic_rows]
 
+            # Real per-topic average — powers the "readiness by category" cards
+            # instead of a fabricated per-topic confidence score.
+            topic_score_rows = conn.execute(
+                "SELECT topic_key, AVG(avg_score) FROM training_sessions WHERE user_id = ? AND topic_key IS NOT NULL GROUP BY topic_key",
+                (user_id,),
+            ).fetchall()
+            topic_scores = {r[0]: round(r[1], 1) for r in topic_score_rows if r[1] is not None}
+
             msg_rows = conn.execute("SELECT messages FROM training_sessions WHERE user_id = ?", (user_id,)).fetchall()
             total_messages = 0
             for (msg_json,) in msg_rows:
@@ -920,6 +929,7 @@ class TrackerAgent:
             'sessions_completed': sessions_completed,
             'avg_score': avg_score,
             'topics_covered': topics_covered,
+            'topic_scores': topic_scores,
             'total_messages': total_messages,
         }
 
