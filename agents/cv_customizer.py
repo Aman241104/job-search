@@ -41,11 +41,50 @@ class CVCustomizerAgent:
         with open(path) as f:
             return json.load(f)
 
-    def _select_relevant_projects(self, job: dict, top_n: int = 5) -> list:
-        """Keyword-overlap scorer against each project's `keywords`, with a tier
-        bonus (S > A > C). Cheap and deterministic — no extra LLM call, same
-        style as claude_client.py's _keyword_fallback."""
+    def _resume_text(self, resume: dict = None) -> str:
+        """resume: the calling user's own saved resume (from the per-user
+        Postgres `resumes` table) — falls back to the static
+        master_resume.json for CLI/legacy callers that don't pass one.
+        Without this, every user's CV was silently built from the account
+        owner's real resume data (same bug class as the profile PII leak),
+        since this class previously only ever read the static file."""
+        return json.dumps(resume, indent=2) if resume else self.master_resume_text
+
+    def _resume_dict(self, resume: dict = None) -> dict:
+        return resume if resume else self.master_resume
+
+    def _select_relevant_projects(self, job: dict, resume: dict = None, top_n: int = 5) -> list:
+        """Keyword-overlap scorer, cheap and deterministic (no extra LLM call,
+        same style as claude_client.py's _keyword_fallback).
+
+        When `resume` is given (the real per-user web path), scores that
+        user's own `projects` array by overlap between the job's own
+        significant words and each project's name/description/tech_stack/
+        bullets — no manually-curated `keywords`/`tier` fields required,
+        since a random signed-up user's Resume Builder entries won't have
+        those. Without this, every user's CV showed the account owner's own
+        curated project list regardless of whose resume was passed in —
+        `resume`'s personal info/experience flowed through correctly but
+        projects silently didn't, defeating the whole per-user fix.
+
+        `resume=None` (CLI/legacy) keeps the original curated
+        projects_detailed.json tier/keywords system unchanged."""
         text = (job.get("title", "") + " " + job.get("description", "")).lower()
+
+        if resume and resume.get("projects"):
+            job_words = {w for w in text.split() if len(w) > 3}
+            scored = []
+            for p in resume["projects"]:
+                proj_text = " ".join([
+                    p.get("name", "") or "", p.get("description", "") or "",
+                    " ".join(p.get("tech_stack", []) or []),
+                    " ".join(p.get("bullets", []) or []),
+                ]).lower()
+                overlap = sum(1 for w in job_words if w in proj_text)
+                scored.append((overlap, p))
+            scored.sort(key=lambda x: x[0], reverse=True)
+            return [p for _, p in scored[:top_n]]
+
         scored = []
         for p in self.projects_detailed["flagship"]:
             overlap = sum(1 for kw in p.get("keywords", []) if kw.lower() in text)
@@ -84,17 +123,19 @@ Output ONLY the final {doc_type} text (improved or unchanged) — no explanation
         refined = ask_ai(prompt, max_tokens=max_tokens)
         return refined if refined else draft
 
-    def customize_for_job(self, job: dict) -> str:
+    def customize_for_job(self, job: dict, resume: dict = None) -> str:
         console.print(f"[cyan]Customizing CV for: {job['title']} at {job['company']}[/cyan]")
 
-        selected_projects = self._select_relevant_projects(job)
+        selected_projects = self._select_relevant_projects(job, resume=resume)
         projects_text = json.dumps(selected_projects, indent=2)
+        resume_text = self._resume_text(resume)
+        candidate_name = self._resume_dict(resume).get("personal_info", {}).get("name") or "Candidate"
 
         prompt = f"""You are an expert resume writer who creates ATS-optimized, tailored resumes.
 Tailor this candidate's resume for the specific job below.
 
-MASTER RESUME (JSON) — personal info, education, skills, achievements:
-{self.master_resume_text}
+MASTER RESUME (JSON) — personal info, education, skills, work experience, achievements:
+{resume_text}
 
 CANDIDATE'S PROJECTS, PRE-SELECTED FOR RELEVANCE TO THIS JOB (JSON):
 {projects_text}
@@ -108,21 +149,28 @@ Description: {job['description'][:3000]}
 INSTRUCTIONS:
 1. Reorder skills to put most relevant ones FIRST
 2. The projects above are already pre-selected for relevance — pick the best 3-4 of them (the gallery entry counts as one project if included), don't invent others
-3. Rewrite project bullets to use keywords from the job description, based on the real `bullets`/`highlights` given — do NOT invent functionality not listed
+3. Rewrite project AND work-experience bullets to use keywords from the job description, based on the real `bullets`/`highlights` given — do NOT invent functionality not listed
 4. Keep summary focused on what this company wants
 5. Do NOT add fake experience or skills the candidate doesn't have
 6. Output a clean, professional Markdown resume
 7. Avoid generic filler language ("eager to collaborate on cutting-edge projects", "fast-paced environment", "passionate about technology") — keep the summary specific and grounded in the candidate's real experience, not JD-mirroring boilerplate
 8. Keep each bullet a clean, standalone achievement statement. Do NOT bolt on generic justification clauses that just restate a JD phrase (e.g. don't end a bullet about a multi-tenant SaaS with "...demonstrating strong understanding of HTML and CSS") — reword for relevant keywords using only the real details given, without padding
+9. If the resume's `work_experience` array is non-empty, include an "## Experience" section listing each entry (job or internship) with its real title/company/dates/bullets — reworded for keyword alignment like projects, never invented. If `work_experience` is empty, omit the section entirely.
 
 Keep total output under ~700 words.
 
 Output ONLY the markdown resume, no explanations. Format:
-# Aman Patel
+# {candidate_name}
 contact info line
 
 ## Summary
 ...
+
+## Experience (omit this whole section if work_experience is empty)
+### Job Title | Company
+*Location · Start – End (or "Present")*
+- bullet
+- bullet
 
 ## Skills
 **Frontend:** ...
@@ -143,26 +191,29 @@ etc.
 """
         result = ask_ai(prompt, max_tokens=2000)
         if not result:
-            return "# Aman Patel\n\n*CV generation failed — please retry.*"
+            return f"# {candidate_name}\n\n*CV generation failed — please retry.*"
         return self._refine(
             result, job, "resume",
             extra_checks="ATS-friendliness (clean headers, no tables/columns, standard section names)",
             max_tokens=2000,
         )
 
-    def generate_cover_letter(self, job: dict) -> str:
+    def generate_cover_letter(self, job: dict, resume: dict = None) -> str:
         console.print(f"[cyan]Writing cover letter for: {job['title']} at {job['company']}[/cyan]")
 
-        selected_projects = self._select_relevant_projects(job, top_n=3)
+        selected_projects = self._select_relevant_projects(job, resume=resume, top_n=3)
         projects_text = json.dumps(selected_projects, indent=2)
+        r = self._resume_dict(resume)
+        info = r.get("personal_info", {})
 
         prompt = f"""Write a personalized, genuine cover letter for this job application. Avoid generic AI-sounding language.
 
-CANDIDATE: Aman Patel
-Email: patelaman0241@gmail.com | GitHub: github.com/Aman241104 | Portfolio: portfolio-1byaman.vercel.app
-Background: B.E. EC Engineering fresher, LDCE Ahmedabad, CGPA 8.0
-Key skills: React, Next.js, TypeScript, Node.js, GSAP animations, Tailwind CSS, Figma
-Personality: Enthusiastic builder who enjoys turning ideas into working products. Has an eye for design.
+CANDIDATE: {info.get('name', 'the candidate')}
+Email: {info.get('email', '')} | GitHub: {info.get('github', '')} | Portfolio: {info.get('portfolio', '')}
+Summary: {r.get('summary', '')}
+Education: {json.dumps(r.get('education', []))}
+Work experience: {json.dumps(r.get('work_experience', []))}
+Skills: {json.dumps(r.get('skills', {}))}
 
 CANDIDATE'S PROJECTS, PRE-SELECTED FOR RELEVANCE TO THIS JOB (JSON):
 {projects_text}
@@ -177,7 +228,7 @@ REQUIREMENTS:
 - Do NOT include a greeting/salutation line (no "Dear ..." of any kind) — a salutation is added separately afterward
 - Do NOT include placeholder brackets like "[Hiring Manager Name]" anywhere — if you don't know a name, just skip greetings entirely as instructed above
 - Opening: specific hook mentioning the company or role (not "I am writing to apply")
-- Middle: pick 2 of the pre-selected projects above that are most relevant, explain what they demonstrate — use only real details from the `description`/`highlights` given, don't invent functionality
+- Middle: pick the most relevant 1-2 items from either the work experience or the pre-selected projects above (whichever best fits this job), explain what they demonstrate — use only real details given, don't invent functionality or responsibilities
 - Closing: brief, confident, clear CTA
 - Tone: professional but human, not robotic
 - Keep under 300 words
@@ -209,30 +260,31 @@ Output ONLY the cover letter body paragraphs — no greeting, no sign-off, no su
         self._markdown_to_pdf(cv_markdown, path)
         return str(path)
 
-    def save_cover_letter(self, job_id: str, cover_letter: str) -> str:
+    def save_cover_letter(self, job_id: str, cover_letter: str, resume: dict = None) -> str:
         # job_applier.py wraps `cover_letter` with a greeting/sign-off for the
         # *emailed* body text, but that wrap never touched the PDF file itself
         # — anyone opening the attachment directly (not just reading the email)
         # saw a bare paragraph with no salutation or signature. Add the same
         # wrap here, PDF-only, so the standalone document reads as a complete
         # cover letter on its own.
+        info = self._resume_dict(resume).get("personal_info", USER_PROFILE)
         full_letter = f"""Dear Hiring Team,
 
 {cover_letter}
 
 Best regards,
-{USER_PROFILE['name']}
-{USER_PROFILE['phone']} | {USER_PROFILE['email']}
-Portfolio: {USER_PROFILE['portfolio']} | GitHub: {USER_PROFILE['github']}"""
+{info.get('name', USER_PROFILE['name'])}
+{info.get('phone', USER_PROFILE['phone'])} | {info.get('email', USER_PROFILE['email'])}
+Portfolio: {info.get('portfolio', USER_PROFILE['portfolio'])} | GitHub: {info.get('github', USER_PROFILE['github'])}"""
         path = Path(OUTPUT_DIR) / f"cover_{job_id}.pdf"
         self._markdown_to_pdf(full_letter, path)
         return str(path)
 
-    def prepare_full_package(self, job: dict) -> dict:
-        cv = self.customize_for_job(job)
-        cover = self.generate_cover_letter(job)
+    def prepare_full_package(self, job: dict, resume: dict = None) -> dict:
+        cv = self.customize_for_job(job, resume=resume)
+        cover = self.generate_cover_letter(job, resume=resume)
         cv_path = self.save_tailored_cv(job["id"], cv)
-        cover_path = self.save_cover_letter(job["id"], cover)
+        cover_path = self.save_cover_letter(job["id"], cover, resume=resume)
         return {
             "job_id": job["id"],
             "cv_markdown": cv,

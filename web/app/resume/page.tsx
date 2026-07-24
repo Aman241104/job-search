@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
-import { FloppyDisk, CircleNotch, Plus, X, ArrowSquareOut, GitBranch, User, Briefcase, Code, Trophy, Check, Trash, WarningCircle, ArrowClockwise } from '@phosphor-icons/react';
+import { FloppyDisk, CircleNotch, Plus, X, ArrowSquareOut, GitBranch, User, Briefcase, Buildings, Code, Trophy, Check, Trash, WarningCircle, ArrowClockwise } from '@phosphor-icons/react';
 import { ToastProvider, useToast } from '@/components/Toast';
 import { api } from '@/lib/api';
 import clsx from 'clsx';
@@ -69,7 +69,7 @@ function ResumePageInner() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
-  const [activeTab, setActiveTab] = useState<'profile' | 'skills' | 'projects' | 'achievements'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'skills' | 'experience' | 'projects' | 'achievements'>('profile');
   // New category UI state
   const [addingCategory, setAddingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -167,6 +167,27 @@ function ResumePageInner() {
     updateField(['projects'], next);
   };
 
+  // ── Add work experience (job or internship) ──────────────────────────────
+  const addExperience = (type: 'job' | 'internship') => {
+    updateField(['work_experience'], [...((data?.work_experience as Array<Record<string, unknown>>) || []), {
+      type,
+      title: '',
+      company: '',
+      location: '',
+      start_date: '',
+      end_date: '',
+      current: false,
+      bullets: [],
+    }]);
+  };
+
+  // ── Remove work experience ────────────────────────────────────────────────
+  const removeExperience = (idx: number) => {
+    const next = [...((data?.work_experience as Array<Record<string, unknown>>) || [])];
+    next.splice(idx, 1);
+    updateField(['work_experience'], next);
+  };
+
   // ── Add skill category ─────────────────────────────────────────────────────
   const confirmAddCategory = () => {
     const key = newCategoryName.trim().toLowerCase().replace(/\s+/g, '_');
@@ -219,6 +240,7 @@ function ResumePageInner() {
   const info = data.personal_info as Record<string, string>;
   const skills = data.skills as Record<string, string[]>;
   const projects = data.projects as Array<Record<string, unknown>>;
+  const workExperience = (data.work_experience as Array<Record<string, unknown>>) || [];
   const achievements = data.achievements as string[];
   const summaryText = (data.summary as string) || '';
   const summaryLen = summaryText.length;
@@ -228,6 +250,7 @@ function ResumePageInner() {
   const tabs = [
     { id: 'profile', label: 'Profile', icon: User },
     { id: 'skills', label: 'Skills', icon: Code },
+    { id: 'experience', label: 'Experience', icon: Buildings },
     { id: 'projects', label: 'Projects', icon: Briefcase },
     { id: 'achievements', label: 'Achievements', icon: Trophy },
   ] as const;
@@ -397,6 +420,153 @@ function ResumePageInner() {
                 Add Category
               </button>
             )}
+          </div>
+        )}
+
+        {/* Experience tab */}
+        {activeTab === 'experience' && (
+          <div className="space-y-5">
+            {workExperience.map((exp, i) => (
+              <div key={i} className="bg-bg-2 border border-border rounded-2xl p-5">
+                <div className="flex items-center justify-between mb-4 pb-3 border-b border-border">
+                  <div className="flex items-center gap-2 flex-1">
+                    <span
+                      className={clsx(
+                        'text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md flex-shrink-0',
+                        exp.type === 'internship'
+                          ? 'bg-accent-purple/10 text-accent-purple'
+                          : 'bg-accent-green/10 text-accent-green'
+                      )}
+                    >
+                      {exp.type === 'internship' ? 'Internship' : 'Job'}
+                    </span>
+                    <input
+                      type="text"
+                      value={(exp.title as string) || ''}
+                      onChange={(e) => {
+                        const next = [...workExperience];
+                        next[i] = { ...next[i], title: e.target.value };
+                        updateField(['work_experience'], next);
+                      }}
+                      placeholder="Job title"
+                      className="flex-1 bg-transparent text-sm font-semibold text-white/70 placeholder:text-white/20 focus:outline-none focus:text-white/90"
+                    />
+                  </div>
+                  <button
+                    onClick={() => removeExperience(i)}
+                    className="ml-3 p-1.5 rounded-lg text-white/20 hover:text-accent-pink hover:bg-accent-pink/10 transition-all flex-shrink-0"
+                    title="Remove"
+                  >
+                    <Trash size={13} />
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-white/30 uppercase tracking-wider mb-1 block">Company</label>
+                      <input
+                        type="text"
+                        value={(exp.company as string) || ''}
+                        onChange={(e) => {
+                          const next = [...workExperience];
+                          next[i] = { ...next[i], company: e.target.value };
+                          updateField(['work_experience'], next);
+                        }}
+                        className="w-full bg-bg-2 border border-border rounded-xl px-3 py-2 text-xs text-white/70 focus:outline-none focus:border-accent-green/30"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-white/30 uppercase tracking-wider mb-1 block">Location</label>
+                      <input
+                        type="text"
+                        value={(exp.location as string) || ''}
+                        onChange={(e) => {
+                          const next = [...workExperience];
+                          next[i] = { ...next[i], location: e.target.value };
+                          updateField(['work_experience'], next);
+                        }}
+                        placeholder="Virtual, City, ..."
+                        className="w-full bg-bg-2 border border-border rounded-xl px-3 py-2 text-xs text-white/70 focus:outline-none focus:border-accent-green/30"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 items-end">
+                    <div>
+                      <label className="text-xs text-white/30 uppercase tracking-wider mb-1 block">Start Date</label>
+                      <input
+                        type="month"
+                        value={(exp.start_date as string) || ''}
+                        onChange={(e) => {
+                          const next = [...workExperience];
+                          next[i] = { ...next[i], start_date: e.target.value };
+                          updateField(['work_experience'], next);
+                        }}
+                        className="w-full bg-bg-2 border border-border rounded-xl px-3 py-2 text-xs text-white/70 focus:outline-none focus:border-accent-green/30"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-white/30 uppercase tracking-wider mb-1 block">End Date</label>
+                      <input
+                        type="month"
+                        disabled={!!exp.current}
+                        value={(exp.end_date as string) || ''}
+                        onChange={(e) => {
+                          const next = [...workExperience];
+                          next[i] = { ...next[i], end_date: e.target.value };
+                          updateField(['work_experience'], next);
+                        }}
+                        className="w-full bg-bg-2 border border-border rounded-xl px-3 py-2 text-xs text-white/70 focus:outline-none focus:border-accent-green/30 disabled:opacity-40"
+                      />
+                    </div>
+                  </div>
+
+                  <label className="flex items-center gap-2 text-xs text-white/50 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!exp.current}
+                      onChange={(e) => {
+                        const next = [...workExperience];
+                        next[i] = { ...next[i], current: e.target.checked, end_date: e.target.checked ? '' : next[i].end_date };
+                        updateField(['work_experience'], next);
+                      }}
+                      className="rounded"
+                    />
+                    Currently working here
+                  </label>
+
+                  <div>
+                    <label className="text-xs text-white/30 uppercase tracking-wider mb-1.5 block">Bullet Points</label>
+                    <BulletEditor
+                      bullets={(exp.bullets as string[]) || []}
+                      onChange={(bullets) => {
+                        const next = [...workExperience];
+                        next[i] = { ...next[i], bullets };
+                        updateField(['work_experience'], next);
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => addExperience('job')}
+                className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-2xl border border-dashed border-accent-cyan/25 text-accent-cyan/60 text-sm font-medium hover:border-accent-cyan/50 hover:text-accent-cyan hover:bg-accent-cyan/5 transition-all"
+              >
+                <Plus size={14} />
+                Add Job
+              </button>
+              <button
+                onClick={() => addExperience('internship')}
+                className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-2xl border border-dashed border-accent-purple/25 text-accent-purple/60 text-sm font-medium hover:border-accent-purple/50 hover:text-accent-purple hover:bg-accent-purple/5 transition-all"
+              >
+                <Plus size={14} />
+                Add Internship
+              </button>
+            </div>
           </div>
         )}
 

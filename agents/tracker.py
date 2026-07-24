@@ -1027,6 +1027,24 @@ class TrackerAgent:
             """, (user_id, min_score, limit)).fetchall()
         return rows
 
+    def get_overdue_applications(self, user_id: str, days: int = 7) -> list:
+        """Applications sitting at 'applied' for `days`+ with no status
+        update — shared by GET /api/followups (manual) and the auto-find
+        cron's automatic per-user follow-up push, so both stay in sync."""
+        from datetime import timedelta
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        with self._get_conn() as conn:
+            conn.row_factory = ROW_DICT
+            return conn.execute("""
+                SELECT j.id, j.title, j.company, j.url, j.source, j.location, j.salary,
+                       j.date_found, j.score, j.score_reason, j.starred,
+                       a.status, a.date_applied, a.notes, a.last_updated, a.cv_path, a.cover_letter_path
+                FROM jobs j
+                JOIN applications a ON j.id = a.job_id
+                WHERE j.user_id = ? AND a.status = 'applied' AND a.date_applied <= ?
+                ORDER BY a.date_applied ASC
+            """, (user_id, cutoff)).fetchall()
+
     def get_stats(self, user_id: str) -> dict:
         with self._get_conn() as conn:
             rows = conn.execute(

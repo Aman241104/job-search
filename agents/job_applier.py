@@ -46,7 +46,8 @@ class JobApplierAgent:
 
     def prepare_application(self, user_id: str, job: dict) -> dict:
         console.print(f"[cyan]Preparing application package for: {job['title']} at {job['company']}[/cyan]")
-        package = self.cv_agent.prepare_full_package(job)
+        resume = self.tracker.get_resume(user_id)
+        package = self.cv_agent.prepare_full_package(job, resume=resume)
         self.tracker.update_status(
             user_id, job["id"], "found",
             cv_path=package["cv_path"],

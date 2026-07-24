@@ -48,6 +48,7 @@ def run_email_batch(user_id: str, job_ids: list, mode: str, force: bool = False)
     batch_id = tracker.create_batch(user_id, mode=mode, channel="email")
     min_score = _min_score(tracker, user_id)
     profile = tracker.get_profile(user_id) or {}
+    resume = tracker.get_resume(user_id)
 
     for job_id in job_ids:
         job = _get_job(tracker, user_id, job_id)
@@ -61,7 +62,7 @@ def run_email_batch(user_id: str, job_ids: list, mode: str, force: bool = False)
             tracker.add_batch_item(batch_id, job_id, status="no_email", error="No email found in description")
             continue
 
-        package = cv_agent.prepare_full_package(job)
+        package = cv_agent.prepare_full_package(job, resume=resume)
         if "generation failed" in package.get("cv_markdown", ""):
             tracker.add_batch_item(batch_id, job_id, email=email, status="generation_failed")
             continue
@@ -123,6 +124,7 @@ def run_telegram_batch(user_id: str, job_ids: list, force: bool = False) -> dict
     batch_id = tracker.create_batch(user_id, mode="automatic", channel="telegram")
     min_score = _min_score(tracker, user_id)
     chat_id = (tracker.get_profile(user_id) or {}).get("telegram_chat_id") or TELEGRAM_CHAT_ID
+    resume = tracker.get_resume(user_id)
 
     for job_id in job_ids:
         job = _get_job(tracker, user_id, job_id)
@@ -135,7 +137,7 @@ def run_telegram_batch(user_id: str, job_ids: list, force: bool = False) -> dict
             tracker.add_batch_item(batch_id, job_id, status="telegram_not_configured")
             continue
 
-        package = cv_agent.prepare_full_package(job)
+        package = cv_agent.prepare_full_package(job, resume=resume)
         if "generation failed" in package.get("cv_markdown", ""):
             tracker.add_batch_item(batch_id, job_id, status="generation_failed")
             continue
@@ -248,6 +250,7 @@ def run_browser_batch(user_id: str, job_ids: list, force: bool = False) -> dict:
     batch_id = tracker.create_batch(user_id, mode="review", channel="browser")
     min_score = _min_score(tracker, user_id)
     profile = tracker.get_profile(user_id) or {}
+    resume = tracker.get_resume(user_id)
 
     for job_id in job_ids:
         job = _get_job(tracker, user_id, job_id)
@@ -257,7 +260,7 @@ def run_browser_batch(user_id: str, job_ids: list, force: bool = False) -> dict:
             tracker.add_batch_item(batch_id, job_id, status="below_score_gate")
             continue
 
-        package = cv_agent.prepare_full_package(job)
+        package = cv_agent.prepare_full_package(job, resume=resume)
         prefill = prefill_browser_form(job, cv_path=package.get("cv_path", ""), profile=profile)
         tracker.add_batch_item(
             batch_id, job_id, cv_path=package.get("cv_path", ""), cover_path=package.get("cover_letter_path", ""),

@@ -556,14 +556,25 @@ async def cron_auto_find(request: Request):
     above) — never auto-triggers a real email application to a recruiter.
     That stays a manual, reviewed action; automating it would mean sending
     real applications on a user's behalf with no review, which is a much
-    bigger behavioral change than automating the scrape+notify step."""
+    bigger behavioral change than automating the scrape+notify step.
+
+    Also pushes each user's overdue follow-ups (applications 7+ days old,
+    no status update — same data /api/followups surfaces) via Telegram if
+    connected, reusing the exact query /api/followups uses. Previously this
+    only happened if the user remembered to click "Notify" by hand; now it
+    rides along on the same daily run.
+
+    On completion, if any user's run failed, pushes a short ops summary to
+    the global TELEGRAM_CHAT_ID (the same owner/ops fallback used elsewhere
+    in this codebase) — otherwise a failing cron was only visible by
+    manually reading Cloud Run logs."""
     if not CRON_SECRET or request.headers.get('X-Cron-Secret', '') != CRON_SECRET:
         return JSONResponse({'error': 'unauthorized'}, status_code=403)
 
     tracker = TrackerAgent()
     user_ids = tracker.get_auto_find_user_ids()
     loop = asyncio.get_event_loop()
-    summary = {'users_processed': 0, 'users_failed': 0, 'total_new_jobs': 0, 'total_notified': 0}
+    summary = {'users_processed': 0, 'users_failed': 0, 'total_new_jobs': 0, 'total_notified': 0, 'total_followups_sent': 0}
 
     for uid in user_ids:
         def run_one(user_id=uid):
@@ -596,16 +607,34 @@ async def cron_auto_find(request: Request):
                             notified += 1
                     except Exception:
                         continue
-            return len(added_jobs), notified
+
+            followups_sent = 0
+            if chat_id and notifier.enabled:
+                overdue = t.get_overdue_applications(user_id)
+                if overdue and notifier.send_followup_digest(overdue, chat_id=chat_id):
+                    followups_sent = len(overdue)
+
+            return len(added_jobs), notified, followups_sent
 
         try:
-            added_count, notified_count = await loop.run_in_executor(None, run_one)
+            added_count, notified_count, followups_count = await loop.run_in_executor(None, run_one)
             summary['users_processed'] += 1
             summary['total_new_jobs'] += added_count
             summary['total_notified'] += notified_count
+            summary['total_followups_sent'] += followups_count
         except Exception as e:
             summary['users_failed'] += 1
             print(f"auto-find failed for user {uid}: {e!r}", file=sys.stderr)
+
+    if summary['users_failed'] > 0:
+        ops_notifier = TelegramNotifierAgent()
+        if ops_notifier.enabled and TELEGRAM_CHAT_ID:
+            ops_notifier._send_message(
+                f"⚠️ <b>Auto-find cron: {summary['users_failed']} user(s) failed</b>\n"
+                f"Processed {summary['users_processed']}, {summary['total_new_jobs']} new jobs, "
+                f"{summary['total_notified']} alerts sent. Check Cloud Run logs for details.",
+                chat_id=TELEGRAM_CHAT_ID,
+            )
 
     return summary
 
@@ -630,7 +659,8 @@ async def generate_application(job_id: str, force: bool = Query(default=False), 
                      f"Pass ?force=true to generate anyway."
         }, status_code=400)
     loop = asyncio.get_event_loop()
-    package = await loop.run_in_executor(None, lambda: CVCustomizerAgent().prepare_full_package(row))
+    resume = tracker.get_resume(user_id)
+    package = await loop.run_in_executor(None, lambda: CVCustomizerAgent().prepare_full_package(row, resume=resume))
     tracker.update_status(
         user_id, job_id, 'applied',
         cv_path=package.get('cv_path', ''),
@@ -675,7 +705,8 @@ async def email_apply(job_id: str, to_email: str = Query(default=''), force: boo
         )
 
     loop = asyncio.get_event_loop()
-    package = await loop.run_in_executor(None, lambda: CVCustomizerAgent().prepare_full_package(row))
+    resume = tracker.get_resume(user_id)
+    package = await loop.run_in_executor(None, lambda: CVCustomizerAgent().prepare_full_package(row, resume=resume))
     if 'generation failed' in package.get('cv_markdown', ''):
         return JSONResponse({'error': 'CV generation failed, not sending email — try again.'}, status_code=502)
 
@@ -718,7 +749,8 @@ async def telegram_notify(job_id: str, force: bool = Query(default=False), user_
         }, status_code=400)
 
     loop = asyncio.get_event_loop()
-    package = await loop.run_in_executor(None, lambda: CVCustomizerAgent().prepare_full_package(row))
+    resume = tracker.get_resume(user_id)
+    package = await loop.run_in_executor(None, lambda: CVCustomizerAgent().prepare_full_package(row, resume=resume))
     if 'generation failed' in package.get('cv_markdown', ''):
         return JSONResponse({'error': 'CV generation failed, not notifying — try again.'}, status_code=502)
 
@@ -1558,15 +1590,31 @@ async def get_analytics(user_id: str = Depends(get_current_user)):
 # ── Resume (per-user, stored in Postgres — falls back to the repo's default
 # master_resume.json template for a brand-new user who hasn't saved yet) ────
 
+def _default_resume() -> dict:
+    """Blank shape for a brand-new user with no saved resume row yet — must
+    NOT serve master_resume.json raw, which is the account owner's real
+    name/email/phone/projects. Same bug class (and same fix pattern) as the
+    earlier _default_profile() PII leak: a stranger signing up must never
+    see the owner's real PII pre-filled as if it were their own default."""
+    return {
+        'personal_info': {
+            'name': '', 'email': '', 'phone': '', 'linkedin': '', 'github': '',
+            'portfolio': '', 'location': '',
+        },
+        'summary': '',
+        'education': [],
+        'skills': {},
+        'work_experience': [],
+        'projects': [],
+        'achievements': [],
+        'areas_of_interest': [],
+    }
+
+
 @app.get('/api/resume')
 async def get_resume(user_id: str = Depends(get_current_user)):
     data = TrackerAgent().get_resume(user_id)
-    if data is not None:
-        return data
-    default_path = Path(DATA_DIR) / 'master_resume.json'
-    if not default_path.exists():
-        return JSONResponse({'error': 'Resume not found'}, status_code=404)
-    return json.loads(default_path.read_text())
+    return data if data is not None else _default_resume()
 
 
 @app.post('/api/resume')
@@ -1618,21 +1666,7 @@ async def delete_interview_round(round_id: str, user_id: str = Depends(get_curre
 
 @app.get('/api/followups')
 async def get_followups(user_id: str = Depends(get_current_user)):
-    from datetime import timedelta
-    cutoff = (datetime.now() - timedelta(days=7)).isoformat()
-    tracker = TrackerAgent()
-    with tracker._get_conn() as conn:
-        conn.row_factory = True
-        rows = conn.execute("""
-            SELECT j.id, j.title, j.company, j.url, j.source, j.location, j.salary,
-                   j.date_found, j.score, j.score_reason, j.starred,
-                   a.status, a.date_applied, a.notes, a.last_updated, a.cv_path, a.cover_letter_path
-            FROM jobs j
-            JOIN applications a ON j.id = a.job_id
-            WHERE j.user_id = ? AND a.status = 'applied' AND a.date_applied <= ?
-            ORDER BY a.date_applied ASC
-        """, (user_id, cutoff)).fetchall()
-    return {'jobs': rows}
+    return {'jobs': TrackerAgent().get_overdue_applications(user_id)}
 
 
 @app.post('/api/followups/notify')

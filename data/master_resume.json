@@ -18,6 +18,23 @@
       "cgpa": "8.00"
     }
   ],
+  "work_experience": [
+    {
+      "type": "internship",
+      "title": "Full Stack Developer Intern",
+      "company": "Gravity Multi Media Marketing",
+      "location": "Virtual",
+      "start_date": "2026-01",
+      "end_date": null,
+      "current": true,
+      "bullets": [
+        "Developed and maintained 12+ client web applications across healthcare, legal, finance, travel, e-commerce, and inventory domains using Next.js, React, TypeScript, Tailwind CSS, Node.js, and MongoDB.",
+        "Built responsive, SEO-friendly web applications with dynamic routing, REST APIs, authentication, reusable components, and database integration.",
+        "Implemented advanced UI features using GSAP, Framer Motion, and Three.js, while improving application performance through image optimization, lazy loading, and code splitting.",
+        "Collaborated with the development team to debug production issues, optimize user experience, and deliver scalable, production-ready solutions within project deadlines."
+      ]
+    }
+  ],
   "skills": {
     "languages": ["JavaScript", "TypeScript", "Python", "C++", "Java", "SQL"],
     "frontend": ["React", "Next.js", "Tailwind CSS", "HTML5", "CSS3", "GSAP", "Lenis", "Framer Motion", "Vite", "React Query", "React Hook Form", "Recharts", "Radix UI"],
