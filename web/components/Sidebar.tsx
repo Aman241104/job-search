@@ -12,7 +12,7 @@ import { useGlobalSearch } from '@/components/GlobalSearch';
 import { useAuth } from '@/components/AuthProvider';
 import clsx from 'clsx';
 
-const navItems = [
+export const navItems = [
   { href: '/dashboard', icon: SquaresFour, label: 'Dashboard' },
   { href: '/jobs', icon: Briefcase, label: 'Jobs' },
   { href: '/batch', icon: PaperPlaneTilt, label: 'Batch Apply' },

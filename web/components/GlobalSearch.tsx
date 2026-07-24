@@ -10,11 +10,54 @@ import {
   KeyboardEvent,
 } from 'react';
 import { useRouter } from 'next/navigation';
-import { MagnifyingGlass, X } from '@phosphor-icons/react';
+import { MagnifyingGlass, X, SignOut, DownloadSimple, ArrowRight } from '@phosphor-icons/react';
 import gsap from 'gsap';
 import clsx from 'clsx';
 import ScoreRing from '@/components/ScoreRing';
 import { api, Job } from '@/lib/api';
+import { navItems } from '@/components/Sidebar';
+import { useAuth } from '@/components/AuthProvider';
+
+/* ─────────────────────────── command actions ─────────────────────
+   Every nav destination + a couple of one-shot actions (export,
+   sign out) — the "6+ distinct actions spread across pages" the
+   redesign plan called out. Kept as plain client-side data, filtered
+   by substring match against the same query the job search already
+   debounces — no new API endpoint needed. */
+interface CommandAction {
+  id: string;
+  label: string;
+  hint?: string;
+  icon: typeof ArrowRight;
+  run: (router: ReturnType<typeof useRouter>, logout: () => Promise<void>) => void;
+}
+
+function buildActions(): CommandAction[] {
+  const navActions: CommandAction[] = navItems.map((n) => ({
+    id: `nav-${n.href}`,
+    label: `Go to ${n.label}`,
+    hint: n.href,
+    icon: n.icon,
+    run: (router) => router.push(n.href),
+  }));
+  return [
+    ...navActions,
+    {
+      id: 'action-export',
+      label: 'Export to Excel',
+      hint: 'download',
+      icon: DownloadSimple,
+      run: () => api.export(),
+    },
+    {
+      id: 'action-signout',
+      label: 'Sign out',
+      hint: 'logout',
+      icon: SignOut,
+      run: (_router, logout) => logout(),
+    },
+  ];
+}
 
 /* ─────────────────────────── context ─────────────────────────── */
 
@@ -59,15 +102,22 @@ function SourceBadge({ source }: { source: string }) {
 
 function GlobalSearchModal({ onClose }: { onClose: () => void }) {
   const router = useRouter();
+  const { logout } = useAuth();
   const overlayRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const allActions = useRef(buildActions());
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Job[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
   const debounceRef = useRef<NodeJS.Timeout>();
+
+  const matchedActions = query.trim()
+    ? allActions.current.filter((a) => a.label.toLowerCase().includes(query.trim().toLowerCase()))
+    : allActions.current;
+  const totalCount = matchedActions.length + results.length;
 
   // Entrance animation
   useEffect(() => {
@@ -89,6 +139,12 @@ function GlobalSearchModal({ onClose }: { onClose: () => void }) {
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [onClose]);
+
+  // Reset selection immediately on every keystroke (not just once the
+  // debounced job search resolves) — matchedActions changes synchronously.
+  useEffect(() => {
+    setActiveIdx(0);
+  }, [query]);
 
   // Debounced search
   useEffect(() => {
@@ -121,19 +177,33 @@ function GlobalSearchModal({ onClose }: { onClose: () => void }) {
     [onClose, router]
   );
 
+  const selectAction = useCallback(
+    (action: CommandAction) => {
+      onClose();
+      action.run(router, logout);
+    },
+    [onClose, router, logout]
+  );
+
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setActiveIdx((i) => Math.min(i + 1, results.length - 1));
+      setActiveIdx((i) => Math.min(i + 1, totalCount - 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setActiveIdx((i) => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter' && results[activeIdx]) {
-      selectJob(results[activeIdx]);
+    } else if (e.key === 'Enter') {
+      if (activeIdx < matchedActions.length) {
+        const action = matchedActions[activeIdx];
+        if (action) selectAction(action);
+      } else {
+        const job = results[activeIdx - matchedActions.length];
+        if (job) selectJob(job);
+      }
     }
   };
 
-  const showEmpty = !loading && query.trim() && results.length === 0;
+  const showEmpty = !loading && query.trim() !== '' && totalCount === 0;
 
   return (
     <div
@@ -157,7 +227,7 @@ function GlobalSearchModal({ onClose }: { onClose: () => void }) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Search jobs and companies…"
+            placeholder="Search jobs, or jump to a page…"
             className="flex-1 bg-transparent text-white/90 placeholder-white/25 text-base outline-none font-sans"
           />
           {loading ? (
@@ -176,10 +246,38 @@ function GlobalSearchModal({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
+        {/* Actions (nav + one-shot commands) */}
+        {matchedActions.length > 0 && (
+          <ul className="max-h-[240px] overflow-y-auto py-2 border-b border-border/50">
+            {matchedActions.map((action, idx) => (
+              <li key={action.id}>
+                <button
+                  className={clsx(
+                    'w-full flex items-center gap-3 px-4 py-2 text-left transition-colors duration-100',
+                    idx === activeIdx
+                      ? 'bg-accent-green/8 text-white/90'
+                      : 'text-white/70 hover:bg-white/4 hover:text-white/90'
+                  )}
+                  onClick={() => selectAction(action)}
+                  onMouseEnter={() => setActiveIdx(idx)}
+                >
+                  <action.icon size={16} className="text-white/40 flex-shrink-0" />
+                  <span className="text-sm font-medium flex-1">{action.label}</span>
+                  {action.hint && (
+                    <span className="text-[10px] font-mono text-white/20">{action.hint}</span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
         {/* Results */}
         {results.length > 0 && (
           <ul className="max-h-[420px] overflow-y-auto py-2">
-            {results.map((job, idx) => (
+            {results.map((job, jobIdx) => {
+              const idx = matchedActions.length + jobIdx;
+              return (
               <li key={job.id}>
                 <button
                   className={clsx(
@@ -214,7 +312,8 @@ function GlobalSearchModal({ onClose }: { onClose: () => void }) {
                   </div>
                 </button>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
 
