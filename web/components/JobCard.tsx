@@ -53,14 +53,24 @@ export default function JobCard({ job, onStatusChange, onStarChange, onView }: J
   const [notesDirty, setNotesDirty] = useState(false);
   const { toast } = useToast();
 
+  // A fixed tilt angle (not continuous mouse-tracking) — GSAP's rotationX/Y
+  // give the CSS 3D transform "tilt" feel the redesign asked for, cheap
+  // enough to run across a whole page of cards since it's just one tween
+  // per hover, not a per-pixel mousemove listener on every card.
   const handleMouseEnter = () => {
     if (!cardRef.current) return;
-    gsap.to(cardRef.current, { scale: 1.01, y: -2, duration: 0.2, ease: 'power2.out' });
+    gsap.to(cardRef.current, {
+      scale: 1.01, y: -2, rotationX: -2, rotationY: 2, transformPerspective: 600,
+      duration: 0.25, ease: 'power2.out',
+    });
   };
 
   const handleMouseLeave = () => {
     if (!cardRef.current) return;
-    gsap.to(cardRef.current, { scale: 1, y: 0, duration: 0.2, ease: 'power2.out' });
+    gsap.to(cardRef.current, {
+      scale: 1, y: 0, rotationX: 0, rotationY: 0,
+      duration: 0.25, ease: 'power2.out',
+    });
   };
 
   const handleApply = async () => {
@@ -163,16 +173,16 @@ export default function JobCard({ job, onStatusChange, onStarChange, onView }: J
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap mt-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
             {job.location && (
-              <span className="flex items-center gap-1 text-[11px] text-white/35">
-                <MapPin size={10} />
+              <span className="flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-md bg-tone-blue-90 text-tone-blue-30 dark:bg-tone-blue-30/20 dark:text-tone-blue-80">
+                <MapPin size={9} />
                 {job.location}
               </span>
             )}
             {job.salary && (
-              <span className="flex items-center gap-1 text-[11px] text-white/35">
-                <CurrencyDollar size={10} />
+              <span className="flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-md bg-tone-green-90 text-tone-green-30 dark:bg-tone-green-30/20 dark:text-tone-green-80">
+                <CurrencyDollar size={9} />
                 {job.salary}
               </span>
             )}

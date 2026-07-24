@@ -14,7 +14,18 @@ interface StatCardProps {
   trend?: number;
   suffix?: string;
   loading?: boolean;
+  /** One card per row can be "featured" — bigger, tinted shadow, breaks the
+   * equal-tiles symmetry per the redesign plan (asymmetric hero card). */
+  featured?: boolean;
 }
+
+const featuredShadow: Record<StatCardProps['color'], string> = {
+  green: 'shadow-tint-green',
+  cyan: 'shadow-tint-cyan',
+  purple: 'shadow-tint-purple',
+  yellow: 'shadow-tint-yellow',
+  pink: 'shadow-tint-pink',
+};
 
 // Tailwind's JIT scanner only picks up complete, literal class strings —
 // `` `bg-${family}-70` `` would compile to nothing since the scanner can't
@@ -60,6 +71,7 @@ export default function StatCard({
   trend,
   suffix = '',
   loading = false,
+  featured = false,
 }: StatCardProps) {
   const [display, setDisplay] = useState(0);
   const objRef = useRef({ value: 0 });
@@ -98,7 +110,10 @@ export default function StatCard({
       whileHover={{ y: -3 }}
       whileTap={{ scale: 0.98 }}
       transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-      className="bg-bg-2 border border-border rounded-2xl p-6 relative overflow-hidden"
+      className={clsx(
+        'bg-bg-2 border border-border rounded-2xl p-6 relative overflow-hidden transition-shadow',
+        featured && `${featuredShadow[color]} md:p-8`
+      )}
     >
       {/* Overlapping gradient blobs — the Be.run-style signature visual.
           Two soft blurred circles from the same tonal family, offset and
@@ -121,15 +136,16 @@ export default function StatCard({
       {/* Icon */}
       <div
         className={clsx(
-          'relative w-10 h-10 rounded-xl border flex items-center justify-center mb-4',
+          'relative rounded-xl border flex items-center justify-center mb-4',
+          featured ? 'w-12 h-12' : 'w-10 h-10',
           iconChipBg[color]
         )}
       >
-        <IconComp size={18} weight="fill" className={iconColorClass[color]} />
+        <IconComp size={featured ? 22 : 18} weight="fill" className={iconColorClass[color]} />
       </div>
 
       {/* Value */}
-      <div className={clsx('relative font-mono text-3xl font-bold mb-1', iconColorClass[color])}>
+      <div className={clsx('relative font-mono font-bold mb-1', featured ? 'text-4xl' : 'text-3xl', iconColorClass[color])}>
         {display}
         {suffix}
       </div>

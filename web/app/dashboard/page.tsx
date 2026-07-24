@@ -526,14 +526,15 @@ export default function DashboardPage() {
 
         <div ref={cardsRef} className="space-y-8">
           {/* Stats row */}
-          <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-            <div className="anim-card">
+          <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
+            <div className="anim-card xl:col-span-2">
               <StatCard
                 label="Total Found"
                 value={stats?.total ?? 0}
                 icon={Briefcase}
                 color="green"
                 loading={loading}
+                featured
               />
             </div>
             <div className="anim-card">
