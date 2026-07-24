@@ -1,12 +1,18 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import gsap from 'gsap';
-import { TrendUp, Target, Lightning, Buildings, WarningCircle, CheckCircle, Info, Calendar, Medal, Star } from '@phosphor-icons/react';
+import { motion } from 'framer-motion';
+import {
+  TrendUp, TrendDown, Target, Lightning, Buildings, WarningCircle, CheckCircle, Info,
+  Brain, Sparkle, ArrowDown, CurrencyDollar, Fire,
+} from '@phosphor-icons/react';
 import clsx from 'clsx';
-import { api } from '@/lib/api';
+import { api, Job } from '@/lib/api';
+import PremiumSlider from '@/components/PremiumSlider';
+import AnimatedCounter from '@/components/AnimatedCounter';
 
-// ─── Interfaces ──────────────────────────────────────────────────────────────
+// ─── Interfaces (real backend shapes, unchanged) ────────────────────────────
 
 interface Funnel {
   found: number;
@@ -64,176 +70,70 @@ interface TimelineEntry {
   applied: number;
 }
 
-// ─── Color maps ──────────────────────────────────────────────────────────────
+// Same category regex technique as the Jobs page's Explore mode and Batch
+// Apply's AI Recommendations — reused here so "strengths/weaknesses" are a
+// real average of the user's own found jobs, never an invented per-category
+// score.
+const CATEGORIES: { label: string; match: (j: Job) => boolean }[] = [
+  { label: 'Frontend', match: (j) => /front[\s-]?end|react|next\.?js|vue|angular/i.test(j.title) },
+  { label: 'Full Stack', match: (j) => /full[\s-]?stack/i.test(j.title) },
+  { label: 'Backend', match: (j) => /back[\s-]?end|node|django|api engineer/i.test(j.title) },
+  { label: 'Remote', match: (j) => /remote|work from home|wfh/i.test(j.location || '') },
+  { label: 'Fresher-friendly', match: (j) => /fresher|entry.level|intern/i.test(j.title + ' ' + (j.score_reason || '')) },
+  { label: 'AI / ML', match: (j) => /\bai\b|machine learning|\bml\b|llm/i.test(j.title) },
+];
 
-const COLOR_MAP: Record<string, string> = {
-  green: 'bg-accent-green',
-  cyan: 'bg-accent-cyan',
-  yellow: 'bg-accent-yellow',
-  orange: 'bg-orange-700',
-  red: 'bg-accent-pink',
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+// Same LPA-extraction regex as lib/api.ts's salaryStats() — duplicated
+// (not exported there) so we can restrict it to the high-match subset.
+function parseLpa(salary: string | undefined): number | null {
+  const raw = (salary || '').toLowerCase().replace(/,/g, '');
+  const rangeMatch = raw.match(/(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*(?:lpa|l\s*p\s*a|lakh)/i);
+  const lpaMatch = raw.match(/(\d+(?:\.\d+)?)\s*(?:lpa|l\s*p\s*a|lakh)/i);
+  if (rangeMatch) return (parseFloat(rangeMatch[1]) + parseFloat(rangeMatch[2])) / 2;
+  if (lpaMatch) return parseFloat(lpaMatch[1]);
+  return null;
+}
+
+// ─── Sub-components ──────────────────────────────────────────────────────────
+
+const JOURNEY_TEXT: Record<string, string> = {
+  purple: 'text-accent-purple', cyan: 'text-accent-cyan', yellow: 'text-accent-yellow', green: 'text-accent-green',
 };
 
-const TEXT_COLOR_MAP: Record<string, string> = {
-  green: 'text-accent-green',
-  cyan: 'text-accent-cyan',
-  yellow: 'text-accent-yellow',
-  orange: 'text-orange-700',
-  red: 'text-accent-pink',
-};
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function FunnelBar({
-  label, value, max, color, rate,
-}: {
-  label: string; value: number; max: number; color: string; rate?: number;
-}) {
-  const barRef = useRef<HTMLDivElement>(null);
-  const pct = max > 0 ? (value / max) * 100 : 0;
-
-  useEffect(() => {
-    if (!barRef.current) return;
-    gsap.fromTo(barRef.current, { width: '0%' }, { width: `${pct}%`, duration: 1.2, ease: 'power3.out', delay: 0.2 });
-  }, [pct]);
-
+function JourneyNode({ label, value, color, delay }: { label: string; value: number; color: 'purple' | 'cyan' | 'yellow' | 'green'; delay: number }) {
   return (
-    <div className="flex items-center gap-4">
-      <span className="text-xs text-white/40 w-24 flex-shrink-0">{label}</span>
-      <div className="flex-1 h-7 bg-bg-3 rounded-lg overflow-hidden relative">
-        <div ref={barRef} className={clsx('h-full rounded-lg', color)} style={{ width: '0%' }} />
-        <span className="absolute inset-0 flex items-center px-3 text-xs font-mono font-bold text-white/80">
-          {value}
-        </span>
+    <div className="flex flex-col items-center w-full">
+      <div
+        className="anim-journey-node flex flex-col items-center justify-center w-28 h-28 rounded-full border-2 opacity-0"
+        style={{ borderColor: `rgb(var(--accent-${color}) / 0.4)`, backgroundColor: `rgb(var(--accent-${color}) / 0.06)`, animationDelay: `${delay}s` }}
+      >
+        <AnimatedCounter value={value} className={clsx('font-mono font-bold text-2xl', JOURNEY_TEXT[color])} />
+        <span className="text-[10px] text-white/35 uppercase tracking-wide mt-0.5 text-center px-2">{label}</span>
       </div>
-      {rate !== undefined && (
-        <span className="text-xs font-mono text-white/40 w-12 text-right">{rate}%</span>
-      )}
     </div>
   );
 }
 
-function ScoreBar({ bucket, maxCount }: { bucket: ScoreBucket; maxCount: number }) {
-  const barRef = useRef<HTMLDivElement>(null);
-  const pct = maxCount > 0 ? (bucket.count / maxCount) * 100 : 0;
-  const colorClass = COLOR_MAP[bucket.color] || 'bg-white/20';
-  const textClass = TEXT_COLOR_MAP[bucket.color] || 'text-white/40';
-
-  useEffect(() => {
-    if (!barRef.current) return;
-    gsap.fromTo(barRef.current, { height: '0%' }, { height: `${pct}%`, duration: 1, ease: 'power3.out', delay: 0.3 });
-  }, [pct]);
-
+function MatchQualityCard({ label, count, color }: { label: string; count: number; color: string }) {
+  const bg: Record<string, string> = {
+    green: 'bg-tint-mint-95 dark:bg-tint-mint-20/10 border-tint-mint-80/40 dark:border-tint-mint-30/20',
+    cyan: 'bg-tint-blue-95 dark:bg-tint-blue-20/10 border-tint-blue-80/40 dark:border-tint-blue-30/20',
+    yellow: 'bg-tint-cream-95 dark:bg-tint-cream-20/10 border-tint-cream-80/40 dark:border-tint-cream-30/20',
+    pink: 'bg-tint-lavender-95 dark:bg-tint-lavender-20/10 border-tint-lavender-80/40 dark:border-tint-lavender-30/20',
+  };
+  const text: Record<string, string> = {
+    green: 'text-accent-green', cyan: 'text-accent-cyan', yellow: 'text-accent-yellow', pink: 'text-accent-pink',
+  };
   return (
-    <div className="flex flex-col items-center gap-2 flex-1">
-      <span className={clsx('text-xs font-mono font-bold', textClass)}>{bucket.count}</span>
-      <div className="w-full flex-1 bg-bg-3 rounded-t-lg overflow-hidden flex items-end" style={{ height: '80px' }}>
-        <div ref={barRef} className={clsx('w-full rounded-t-lg', colorClass)} style={{ height: '0%' }} />
-      </div>
-      <span className="text-[10px] text-white/30 text-center leading-tight">{bucket.range}</span>
-    </div>
-  );
-}
-
-// Animated horizontal bar (width-based) used in multiple places
-function HBar({
-  pct, colorClass, delay = 0,
-}: {
-  pct: number; colorClass: string; delay?: number;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!ref.current) return;
-    gsap.fromTo(ref.current, { width: '0%' }, { width: `${pct}%`, duration: 1, ease: 'power3.out', delay });
-  }, [pct, delay]);
-  return <div ref={ref} className={clsx('h-full rounded-full', colorClass)} style={{ width: '0%' }} />;
-}
-
-// ─── Feature 3: Improved Funnel with conversion health ───────────────────────
-
-function ConversionHealth({ rate }: { rate: number }) {
-  const healthy = rate > 20;
-  const ok = rate >= 5;
-  const dotColor = healthy ? 'bg-accent-green' : ok ? 'bg-accent-yellow' : 'bg-accent-pink';
-  const label = healthy ? 'Healthy' : ok ? 'Needs work' : 'Critical';
-  const cls = healthy
-    ? 'bg-accent-green/10 border-accent-green/20 text-accent-green'
-    : ok
-    ? 'bg-accent-yellow/10 border-accent-yellow/20 text-accent-yellow'
-    : 'bg-accent-pink/10 border-accent-pink/20 text-accent-pink';
-
-  return (
-    <div className={clsx('inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium', cls)}>
-      <span className={clsx('w-2 h-2 rounded-full flex-shrink-0', dotColor)} />
-      <span>Conversion health: {label}</span>
-    </div>
-  );
-}
-
-// ─── Feature 1: Source ROI Table ──────────────────────────────────────────────
-
-function qualityColor(pct: number) {
-  if (pct >= 50) return 'text-accent-green bg-accent-green/10';
-  if (pct >= 30) return 'text-accent-yellow bg-accent-yellow/10';
-  return 'text-accent-pink bg-accent-pink/10';
-}
-
-function SourceROITable({ rows }: { rows: SourceRow[] }) {
-  const sorted = [...rows].sort((a, b) => {
-    const qa = a.count > 0 ? (a.high_match / a.count) * 100 : 0;
-    const qb = b.count > 0 ? (b.high_match / b.count) * 100 : 0;
-    return qb - qa;
-  });
-
-  if (sorted.length === 0) {
-    return <p className="text-sm text-white/30 text-center py-6">No source data yet</p>;
-  }
-
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-[10px] text-white/30 uppercase tracking-wider border-b border-border">
-            <th className="text-left pb-2 pr-4">Source</th>
-            <th className="text-right pb-2 px-3">Jobs</th>
-            <th className="text-right pb-2 px-3">Avg Score</th>
-            <th className="text-right pb-2 px-3">High Match</th>
-            <th className="text-right pb-2 pl-3">Quality Score</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((row, i) => {
-            const qPct = row.count > 0 ? Math.round((row.high_match / row.count) * 100) : 0;
-            const isEven = i % 2 === 0;
-            return (
-              <tr
-                key={row.source}
-                className={clsx('border-b border-border/40', isEven ? 'bg-bg-2' : 'bg-bg-3/50')}
-              >
-                <td className="py-2.5 pr-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-white/75 truncate max-w-[120px]">{row.source}</span>
-                    {i === 0 && (
-                      <span className="flex-shrink-0 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-accent-green/15 text-accent-green border border-accent-green/20">
-                        Best
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td className="py-2.5 px-3 text-right font-mono text-white/60">{row.count}</td>
-                <td className="py-2.5 px-3 text-right font-mono text-accent-cyan">{row.avg_score}</td>
-                <td className="py-2.5 px-3 text-right font-mono text-white/60">{row.high_match}</td>
-                <td className="py-2.5 pl-3 text-right">
-                  <span className={clsx('font-mono font-bold text-xs px-2 py-0.5 rounded-lg', qualityColor(qPct))}>
-                    {qPct}%
-                  </span>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+    <motion.div
+      whileHover={{ y: -3, scale: 1.02 }}
+      className={clsx('flex-1 text-center rounded-2xl border p-5 transition-shadow', bg[color])}
+    >
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-white/40 mb-3">{label}</p>
+      <p className={clsx('font-mono font-bold text-3xl', text[color])}>{count}</p>
+    </motion.div>
   );
 }
 
@@ -243,88 +143,110 @@ export default function AnalyticsPage() {
   const [data, setData] = useState<Analytics | null>(null);
   const [salaryData, setSalaryData] = useState<SalaryStats | null>(null);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
+  const [allFound, setAllFound] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [extraApplications, setExtraApplications] = useState(10);
   const pageRef = useRef<HTMLDivElement>(null);
-  const weekStripRef = useRef<HTMLDivElement>(null);
 
-  // Fetch all data in parallel
   useEffect(() => {
     Promise.all([
       api.analytics() as unknown as Promise<Analytics>,
       api.salaryStats().catch(() => null),
       api.statsTimeline().catch(() => ({ timeline: [] })),
+      api.jobs({ status: 'found', sort: 'score', per_page: 500 }).catch(() => ({ jobs: [] })),
     ])
-      .then(([analytics, salary, tl]) => {
+      .then(([analytics, salary, tl, found]) => {
         setData(analytics);
         setSalaryData(salary);
         setTimeline(tl.timeline || []);
+        setAllFound(found.jobs || []);
         setLoading(false);
       })
       .catch(() => {
-        setError('Could not load analytics. Is the backend running?');
+        setError('Could not load your career data. Is the backend running?');
         setLoading(false);
       });
   }, []);
 
-  // Page entrance animation
   useEffect(() => {
     if (!pageRef.current || loading) return;
     gsap.fromTo(
       pageRef.current.querySelectorAll('.anim-card'),
       { y: 24, opacity: 0 },
-      { y: 0, opacity: 1, stagger: 0.08, duration: 0.55, ease: 'power3.out' }
+      { y: 0, opacity: 1, stagger: 0.1, duration: 0.6, ease: 'power3.out' }
     );
-  }, [loading]);
-
-  // Week strip animation
-  useEffect(() => {
-    if (!weekStripRef.current || loading) return;
     gsap.fromTo(
-      weekStripRef.current,
-      { y: -16, opacity: 0 },
-      { y: 0, opacity: 1, duration: 0.5, ease: 'power3.out' }
+      pageRef.current.querySelectorAll('.anim-journey-node'),
+      { scale: 0.7, opacity: 0 },
+      { scale: 1, opacity: 1, stagger: 0.12, duration: 0.5, ease: 'back.out(1.6)', delay: 0.3 }
     );
   }, [loading]);
 
-  // ── Derived values ──────────────────────────────────────────────────────────
+  // ── Real week-over-week application trend (same technique as Dashboard) ──
+  const weekTrend = useMemo(() => {
+    if (timeline.length < 14) return null;
+    const last7 = timeline.slice(-7).reduce((s, e) => s + (e.applied || 0), 0);
+    const prev7 = timeline.slice(-14, -7).reduce((s, e) => s + (e.applied || 0), 0);
+    if (prev7 === 0) return null;
+    return Math.round(((last7 - prev7) / prev7) * 100);
+  }, [timeline]);
 
-  const maxSource = data ? Math.max(...data.source_breakdown.map((s) => s.count), 1) : 1;
-  const maxScore = data ? Math.max(...data.score_distribution.map((s) => s.count), 1) : 1;
+  // ── Career Health — transparent composite of 3 real inputs ──
+  const careerHealth = useMemo(() => {
+    if (!data || data.total_jobs === 0) return null;
+    const matchComponent = data.avg_score;
+    const applyComponent = Math.min((data.funnel.apply_rate / 30) * 100, 100);
+    const interviewComponent = Math.min((data.funnel.interview_rate / 50) * 100, 100);
+    const score = Math.round(0.4 * matchComponent + 0.3 * applyComponent + 0.3 * interviewComponent);
+    return { score, matchComponent: Math.round(matchComponent), applyComponent: Math.round(applyComponent), interviewComponent: Math.round(interviewComponent) };
+  }, [data]);
 
-  // Feature 4: This-week stats from timeline (last 7 entries)
-  const last7 = timeline.slice(-7);
-  const weekFound = last7.reduce((s, e) => s + (e.found || 0), 0);
-  const weekApplied = last7.reduce((s, e) => s + (e.applied || 0), 0);
+  // ── Real category strengths/weaknesses ──
+  const categoryStats = useMemo(() => {
+    if (allFound.length === 0) return [];
+    return CATEGORIES
+      .map((c) => {
+        const matches = allFound.filter(c.match);
+        const avg = matches.length > 0 ? Math.round(matches.reduce((s, j) => s + j.score, 0) / matches.length) : 0;
+        return { label: c.label, count: matches.length, avg };
+      })
+      .filter((c) => c.count >= 2)
+      .sort((a, b) => b.avg - a.avg);
+  }, [allFound]);
 
-  // Feature 5: Score trend insight
-  const scoreAbove60 = data
-    ? data.score_distribution
-        .filter((b) => {
-          const lo = parseInt(b.range.split('-')[0] || b.range, 10);
-          return lo >= 60;
-        })
-        .reduce((s, b) => s + b.count, 0)
-    : 0;
-  const totalScored = data ? data.score_distribution.reduce((s, b) => s + b.count, 0) : 0;
-  const pct60Plus = totalScored > 0 ? Math.round((scoreAbove60 / totalScored) * 100) : 0;
+  const strengths = categoryStats.slice(0, 3);
+  const weaknesses = [...categoryStats].reverse().slice(0, 2);
 
-  function scoreTrendMsg(pct: number) {
-    if (pct >= 40) return 'Excellent job quality! You\'re being selective.';
-    if (pct >= 20) return 'Good quality. Consider widening search slightly.';
-    return 'Many low-score results. Refine your search keywords.';
-  }
+  // ── Real high-match salary anchor (score >= 70, real parsed LPA) ──
+  const highMatchAvgSalary = useMemo(() => {
+    const lpas = allFound.filter((j) => j.score >= 70).map((j) => parseLpa(j.salary)).filter((n): n is number => n !== null && n > 0);
+    if (lpas.length === 0) return null;
+    return Math.round((lpas.reduce((s, n) => s + n, 0) / lpas.length) * 10) / 10;
+  }, [allFound]);
 
-  // Feature 2: Salary insights — top 3 sources by avg_score
-  const topByScore = data
-    ? [...data.source_breakdown].sort((a, b) => b.avg_score - a.avg_score).slice(0, 3)
-    : [];
-  const maxAvgScore = topByScore.length > 0 ? Math.max(...topByScore.map((s) => s.avg_score), 1) : 1;
+  // ── Real day-of-week activity from the 30-day timeline ──
+  const weekdayActivity = useMemo(() => {
+    const totals = WEEKDAYS.map((label, i) => ({ label, i, found: 0, applied: 0, days: 0 }));
+    timeline.forEach((e) => {
+      const d = new Date(e.date);
+      const idx = (d.getDay() + 6) % 7; // Mon=0..Sun=6
+      totals[idx].found += e.found;
+      totals[idx].applied += e.applied;
+      totals[idx].days += 1;
+    });
+    return totals;
+  }, [timeline]);
+  const maxWeekdayActivity = Math.max(...weekdayActivity.map((w) => w.found + w.applied), 1);
+  const bestWeekday = [...weekdayActivity].sort((a, b) => (b.found + b.applied) - (a.found + a.applied))[0];
 
-  // Salary buckets max for bar widths
-  const maxSalaryCount = salaryData
-    ? Math.max(...salaryData.ranges.map((r) => r.count), 1)
-    : 1;
+  // ── Real what-if projection at current conversion rate ──
+  const projection = useMemo(() => {
+    if (!data) return null;
+    const projectedApplied = data.funnel.applied + extraApplications;
+    const projectedInterviews = Math.round(projectedApplied * (data.funnel.interview_rate / 100));
+    return { projectedApplied, projectedInterviews };
+  }, [data, extraApplications]);
 
   const tipIcon = (type: Tip['type']) => {
     if (type === 'warning') return <WarningCircle size={14} className="text-accent-yellow flex-shrink-0" />;
@@ -332,14 +254,29 @@ export default function AnalyticsPage() {
     return <Info size={14} className="text-accent-cyan flex-shrink-0" />;
   };
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  const groupedMatchTiers = data
+    ? [
+        { label: 'Perfect', count: data.score_distribution.find((b) => b.range === '80–100')?.count ?? 0, color: 'green' },
+        { label: 'Great Match', count: data.score_distribution.find((b) => b.range === '60–79')?.count ?? 0, color: 'cyan' },
+        { label: 'Good Match', count: data.score_distribution.find((b) => b.range === '40–59')?.count ?? 0, color: 'yellow' },
+        {
+          label: 'Low Match',
+          count:
+            (data.score_distribution.find((b) => b.range === '20–39')?.count ?? 0) +
+            (data.score_distribution.find((b) => b.range === '0–19')?.count ?? 0),
+          color: 'pink',
+        },
+      ]
+    : [];
+
+  const maxSalaryCount = salaryData ? Math.max(...salaryData.ranges.map((r) => r.count), 1) : 1;
 
   return (
     <div className="min-h-screen p-6 md:p-8 pb-24 md:pb-8">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white/90 mb-1">Analytics</h1>
-        <p className="text-white/35 text-sm">Track your job search performance and spot what&apos;s working.</p>
+        <h1 className="font-display text-display-sm font-medium text-white/90 mb-1">Career Intelligence</h1>
+        <p className="text-white/35 text-sm">Why you&apos;re succeeding — and where the next win is hiding.</p>
       </div>
 
       {error && (
@@ -358,40 +295,83 @@ export default function AnalyticsPage() {
 
       {data && (
         <div ref={pageRef} className="space-y-6">
-
-          {/* ── Feature 4: Weekly Activity Strip ── */}
-          <div ref={weekStripRef} className="anim-card grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {[
-              {
-                label: 'Found this week',
-                value: timeline.length > 0 ? weekFound : '—',
-                icon: Calendar,
-                color: 'text-accent-purple',
-                bg: 'bg-accent-purple/10 border-accent-purple/20',
-              },
-              {
-                label: 'Applied this week',
-                value: timeline.length > 0 ? weekApplied : '—',
-                icon: Lightning,
-                color: 'text-accent-cyan',
-                bg: 'bg-accent-cyan/10 border-accent-cyan/20',
-              },
-              {
-                label: 'Best score',
-                value: data.avg_score > 0 ? `${data.avg_score}/100` : '—',
-                icon: Star,
-                color: 'text-accent-yellow',
-                bg: 'bg-accent-yellow/10 border-accent-yellow/20',
-              },
-            ].map(({ label, value, icon: Icon, color, bg }) => (
-              <div key={label} className={clsx('border rounded-2xl px-4 py-3 flex items-center gap-3', bg)}>
-                <Icon size={18} className={color} />
-                <div>
-                  <div className={clsx('text-lg font-mono font-bold leading-tight', color)}>{value}</div>
-                  <div className="text-[10px] text-white/35 leading-tight mt-0.5">{label}</div>
+          {/* ── Career Health hero ── */}
+          <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6 md:p-8 shadow-tint-green text-center">
+            <div className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1 rounded-full bg-white/5 border border-white/10 text-white/50 mb-4">
+              <Sparkle size={11} weight="fill" className="text-accent-green" />
+              Career Health
+            </div>
+            {careerHealth ? (
+              <>
+                <AnimatedCounter value={careerHealth.score} suffix="%" className="block font-mono font-bold text-5xl text-accent-green" />
+                <p className="text-sm text-white/40 mt-2">
+                  {careerHealth.score >= 70 ? 'Excellent progress' : careerHealth.score >= 45 ? 'Solid progress' : 'Early days — momentum is building'}
+                </p>
+                {weekTrend !== null && (
+                  <p className={clsx('text-xs font-medium mt-3 inline-flex items-center gap-1', weekTrend >= 0 ? 'text-accent-green' : 'text-accent-pink')}>
+                    {weekTrend >= 0 ? <TrendUp size={12} weight="fill" /> : <TrendDown size={12} weight="fill" />}
+                    Applications {weekTrend >= 0 ? 'up' : 'down'} {Math.abs(weekTrend)}% this week
+                  </p>
+                )}
+                <div className="flex items-center justify-center gap-6 mt-6 pt-5 border-t border-border max-w-md mx-auto text-xs text-white/35">
+                  <span>Match quality <span className="text-white/60 font-mono">{careerHealth.matchComponent}</span></span>
+                  <span>Apply rate <span className="text-white/60 font-mono">{careerHealth.applyComponent}</span></span>
+                  <span>Interview rate <span className="text-white/60 font-mono">{careerHealth.interviewComponent}</span></span>
                 </div>
+              </>
+            ) : (
+              <p className="text-white/30 text-sm">Not enough data yet — find and apply to a few jobs first.</p>
+            )}
+          </div>
+
+          {/* ── AI Career Coach ── */}
+          <div className="anim-card bg-tint-lavender-95 dark:bg-tint-lavender-20/10 border border-tint-lavender-80/40 dark:border-tint-lavender-30/20 rounded-2xl p-6">
+            <div className="flex items-center gap-2 mb-5">
+              <Brain size={16} className="text-accent-purple" />
+              <h2 className="font-semibold text-white/90">AI Career Coach</h2>
+            </div>
+            <div className="grid md:grid-cols-3 gap-6">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-accent-green mb-2">Strengths</p>
+                {strengths.length > 0 ? (
+                  <ul className="space-y-1.5">
+                    {strengths.map((s) => (
+                      <li key={s.label} className="text-sm text-white/70 flex items-center justify-between">
+                        {s.label} <span className="font-mono text-xs text-accent-green">{s.avg}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-white/30">Not enough data yet.</p>
+                )}
               </div>
-            ))}
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-accent-pink mb-2">Weaker Areas</p>
+                <ul className="space-y-1.5">
+                  {data.funnel.apply_rate < 10 && (
+                    <li className="text-sm text-white/70">Application Rate <span className="font-mono text-xs text-accent-pink ml-1">{data.funnel.apply_rate}%</span></li>
+                  )}
+                  {data.funnel.applied > 0 && data.funnel.interviewing === 0 && (
+                    <li className="text-sm text-white/70">Interview Rate <span className="font-mono text-xs text-accent-pink ml-1">0%</span></li>
+                  )}
+                  {weaknesses.map((s) => (
+                    <li key={s.label} className="text-sm text-white/70 flex items-center justify-between">
+                      {s.label} <span className="font-mono text-xs text-accent-pink">{s.avg}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-accent-cyan mb-2">Suggested Strategy</p>
+                {strengths.length > 0 ? (
+                  <p className="text-sm text-white/70 leading-relaxed">
+                    Prioritize <span className="text-accent-cyan font-medium">{strengths.map((s) => s.label).join(' + ')}</span> roles — your profile matches these exceptionally well.
+                  </p>
+                ) : (
+                  <p className="text-xs text-white/30">Not enough data yet.</p>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* ── Tips row ── */}
@@ -411,284 +391,210 @@ export default function AnalyticsPage() {
             </div>
           )}
 
-          {/* ── KPI row ── */}
-          <div className="anim-card grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[
-              { label: 'Total Jobs', value: data.total_jobs, icon: TrendUp, color: 'text-accent-green' },
-              { label: 'Avg Score', value: `${data.avg_score}/100`, icon: Target, color: 'text-accent-cyan' },
-              { label: 'Apply Rate', value: `${data.funnel.apply_rate}%`, icon: Lightning, color: 'text-accent-yellow' },
-              { label: 'Top Companies', value: data.top_companies.length, icon: Buildings, color: 'text-accent-purple' },
-            ].map(({ label, value, icon: Icon, color }) => (
-              <div key={label} className="bg-bg-2 border border-border rounded-2xl px-5 py-4 flex items-center gap-4">
-                <Icon size={20} className={color} />
-                <div>
-                  <div className={clsx('text-xl font-mono font-bold', color)}>{value}</div>
-                  <div className="text-xs text-white/35">{label}</div>
-                </div>
+          {/* ── Career Journey (real 5-stage funnel) ── */}
+          <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
+            <h2 className="font-semibold text-white/90 mb-1">Career Journey</h2>
+            <p className="text-xs text-white/30 mb-6">Your profile has discovered {data.total_jobs} opportunities so far — here&apos;s how far they&apos;ve traveled.</p>
+            <div className="flex flex-col items-center max-w-xs mx-auto">
+              <JourneyNode label="Opportunities" value={data.total_jobs} color="purple" delay={0} />
+              <ArrowDown size={16} className="text-white/15 my-1" />
+              <JourneyNode label="High Matches" value={allFound.filter((j) => j.score >= 60).length} color="cyan" delay={0.12} />
+              <ArrowDown size={16} className="text-white/15 my-1" />
+              <JourneyNode label="Applied" value={data.funnel.applied} color="yellow" delay={0.24} />
+              <ArrowDown size={16} className="text-white/15 my-1" />
+              <JourneyNode label="Interviews" value={data.funnel.interviewing} color="green" delay={0.36} />
+              <ArrowDown size={16} className="text-white/15 my-1" />
+              <JourneyNode label="Offers" value={data.funnel.offer} color="green" delay={0.48} />
+            </div>
+            <div className="mt-6 pt-4 border-t border-border grid grid-cols-3 gap-3 text-center">
+              <div>
+                <div className="text-lg font-mono font-bold text-accent-cyan">{data.funnel.apply_rate}%</div>
+                <div className="text-[10px] text-white/30">Application Momentum</div>
               </div>
-            ))}
+              <div>
+                <div className="text-lg font-mono font-bold text-accent-yellow">{data.funnel.interview_rate}%</div>
+                <div className="text-[10px] text-white/30">Interview rate</div>
+              </div>
+              <div>
+                <div className="text-lg font-mono font-bold text-accent-green">{data.funnel.offer_rate}%</div>
+                <div className="text-[10px] text-white/30">Offer rate</div>
+              </div>
+            </div>
           </div>
 
-          {/* ── Main grid ── */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-            {/* ── Feature 3: Improved Funnel ── */}
-            <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
-              <div className="flex items-start justify-between mb-1">
-                <h2 className="font-semibold text-white/90">Application Funnel</h2>
-                <ConversionHealth rate={data.funnel.apply_rate} />
-              </div>
-              <p className="text-xs text-white/30 mb-5">How jobs move through your pipeline</p>
-
-              <div className="space-y-3">
-                <FunnelBar label="Discovered" value={data.funnel.found} max={data.funnel.found} color="bg-white/15" />
-
-                {/* Arrow + conversion rate */}
-                <div className="flex items-center gap-4 pl-24">
-                  <div className="flex-1 flex items-center gap-2 text-[10px] text-white/30">
-                    <span className="text-white/20">↓</span>
-                    <span>
-                      {data.funnel.found > 0
-                        ? `${data.funnel.apply_rate}% Discovered → Applied`
-                        : 'No conversions yet'}
-                    </span>
-                  </div>
-                </div>
-
-                <FunnelBar label="Applied" value={data.funnel.applied} max={data.funnel.found} color="bg-accent-cyan/60" rate={data.funnel.apply_rate} />
-
-                <div className="flex items-center gap-4 pl-24">
-                  <div className="flex-1 flex items-center gap-2 text-[10px] text-white/30">
-                    <span className="text-white/20">↓</span>
-                    <span>
-                      {data.funnel.applied > 0
-                        ? `${data.funnel.interview_rate}% Applied → Interview`
-                        : 'No interviews yet'}
-                    </span>
-                  </div>
-                </div>
-
-                <FunnelBar label="Interviewing" value={data.funnel.interviewing} max={data.funnel.found} color="bg-accent-yellow/60" rate={data.funnel.interview_rate} />
-
-                <div className="flex items-center gap-4 pl-24">
-                  <div className="flex-1 flex items-center gap-2 text-[10px] text-white/30">
-                    <span className="text-white/20">↓</span>
-                    <span>
-                      {data.funnel.interviewing > 0
-                        ? `${data.funnel.offer_rate}% Interview → Offer`
-                        : 'No offers yet'}
-                    </span>
-                  </div>
-                </div>
-
-                <FunnelBar label="Offer" value={data.funnel.offer} max={data.funnel.found} color="bg-accent-green/70" rate={data.funnel.offer_rate} />
-              </div>
-
-              <div className="mt-5 pt-4 border-t border-border grid grid-cols-3 gap-3 text-center">
-                <div>
-                  <div className="text-lg font-mono font-bold text-accent-cyan">{data.funnel.apply_rate}%</div>
-                  <div className="text-[10px] text-white/30">Apply rate</div>
-                </div>
-                <div>
-                  <div className="text-lg font-mono font-bold text-accent-yellow">{data.funnel.interview_rate}%</div>
-                  <div className="text-[10px] text-white/30">Interview rate</div>
-                </div>
-                <div>
-                  <div className="text-lg font-mono font-bold text-accent-green">{data.funnel.offer_rate}%</div>
-                  <div className="text-[10px] text-white/30">Offer rate</div>
-                </div>
-              </div>
+          {/* ── Match Quality ── */}
+          <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
+            <h2 className="font-semibold text-white/90 mb-1">Match Quality</h2>
+            <p className="text-xs text-white/30 mb-5">
+              Your profile matches exceptionally well with {strengths[0]?.label || 'your top'} positions.
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {groupedMatchTiers.map((tier) => (
+                <MatchQualityCard key={tier.label} label={tier.label} count={tier.count} color={tier.color} />
+              ))}
             </div>
+          </div>
 
-            {/* ── Score Distribution + Feature 5 insight ── */}
-            <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
-              <h2 className="font-semibold text-white/90 mb-1">Score Distribution</h2>
-              <p className="text-xs text-white/30 mb-5">How well jobs match your profile</p>
-              {/* No items-end here: each ScoreBar column needs to stretch
-                  (the default) to actually receive this container's h-32,
-                  otherwise the inner flex-1 bar has no height to grow into
-                  and silently renders at 0px regardless of its computed
-                  percentage. */}
-              <div className="flex gap-2 h-32">
-                {data.score_distribution.map((bucket) => (
-                  <ScoreBar key={bucket.range} bucket={bucket} maxCount={maxScore} />
-                ))}
-              </div>
-              <div className="mt-4 pt-3 border-t border-border flex items-center justify-between text-xs text-white/30">
-                <span>Lower scores = poor match</span>
-                <span>Higher = strong match</span>
-              </div>
-
-              {/* Feature 5: Score trend insight */}
-              <div className={clsx(
-                'mt-4 px-3 py-2.5 rounded-xl border text-xs leading-snug',
-                pct60Plus >= 40
-                  ? 'bg-accent-green/5 border-accent-green/20 text-accent-green/80'
-                  : pct60Plus >= 20
-                  ? 'bg-accent-yellow/5 border-accent-yellow/20 text-accent-yellow/80'
-                  : 'bg-accent-pink/5 border-accent-pink/20 text-accent-pink/80'
-              )}>
-                <span className="font-semibold">{pct60Plus}% of your jobs score above 60</span>
-                {' — '}
-                {scoreTrendMsg(pct60Plus)}
-              </div>
+          {/* ── Interview Simulator (real what-if projection) ── */}
+          <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
+            <div className="flex items-center gap-2 mb-1">
+              <Lightning size={16} className="text-accent-yellow" />
+              <h2 className="font-semibold text-white/90">Interview Simulator</h2>
             </div>
+            <p className="text-xs text-white/30 mb-5">
+              A projection at your current {data.funnel.interview_rate}% interview rate — not a guarantee, just your own math.
+            </p>
+            <div className="grid md:grid-cols-2 gap-6 items-center">
+              <PremiumSlider
+                label="If you apply to N more jobs"
+                value={extraApplications}
+                min={0}
+                max={50}
+                color="yellow"
+                onChange={setExtraApplications}
+              />
+              {projection && (
+                <div className="flex items-center justify-center gap-6 text-center">
+                  <div>
+                    <p className="font-mono font-bold text-2xl text-white/70">{projection.projectedApplied}</p>
+                    <p className="text-[10px] text-white/30 mt-1">Total applied</p>
+                  </div>
+                  <ArrowDown size={16} className="text-white/15 -rotate-90" />
+                  <div>
+                    <p className="font-mono font-bold text-2xl text-accent-green">≈{projection.projectedInterviews}</p>
+                    <p className="text-[10px] text-white/30 mt-1">Projected interviews</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
 
-            {/* ── Source breakdown bars ── */}
-            <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
-              <h2 className="font-semibold text-white/90 mb-1">By Source</h2>
-              <p className="text-xs text-white/30 mb-5">Which platform is most productive for you</p>
-              <div className="space-y-3">
-                {data.source_breakdown.map((row) => (
-                  <div key={row.source} className="flex items-center gap-3">
-                    <span className="text-xs text-white/50 w-24 flex-shrink-0 truncate">{row.source}</span>
-                    <div className="flex-1 h-6 bg-bg-3 rounded-lg overflow-hidden relative">
-                      <div
-                        className="h-full bg-accent-purple/40 rounded-lg transition-all duration-700"
-                        style={{ width: `${(row.count / maxSource) * 100}%` }}
-                      />
-                      <span className="absolute inset-0 flex items-center px-2 text-[10px] text-white/60">
-                        {row.count} jobs
-                      </span>
+          {/* ── Success heatmap (real weekday activity) ── */}
+          <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
+            <div className="flex items-center gap-2 mb-1">
+              <Fire size={16} className="text-accent-pink" />
+              <h2 className="font-semibold text-white/90">Activity Heatmap</h2>
+            </div>
+            <p className="text-xs text-white/30 mb-5">
+              {bestWeekday && bestWeekday.found + bestWeekday.applied > 0
+                ? `You're most active on ${bestWeekday.label}s — worth batching your search and applications around that day.`
+                : 'Not enough history yet to spot a pattern.'}
+            </p>
+            <div className="grid grid-cols-7 gap-2">
+              {weekdayActivity.map((w) => {
+                const total = w.found + w.applied;
+                const intensity = total / maxWeekdayActivity;
+                return (
+                  <div key={w.label} className="flex flex-col items-center gap-2">
+                    <div
+                      className="w-full aspect-square rounded-xl border border-border flex items-center justify-center font-mono text-xs font-bold text-white/70"
+                      style={{ backgroundColor: `rgb(var(--accent-cyan) / ${0.06 + intensity * 0.28})` }}
+                    >
+                      {total}
                     </div>
-                    <div className="flex items-center gap-2 text-[10px] font-mono flex-shrink-0">
-                      <span className="text-accent-green">{row.avg_score}</span>
-                      <span className="text-white/20">avg</span>
-                      <span className="text-accent-cyan">{row.high_match}</span>
-                      <span className="text-white/20">60+</span>
-                    </div>
+                    <span className="text-[10px] text-white/30">{w.label}</span>
                   </div>
-                ))}
-              </div>
+                );
+              })}
             </div>
+          </div>
 
-            {/* ── Top companies ── */}
+          {/* ── Top companies + Source performance ── */}
+          <div className="grid md:grid-cols-2 gap-6">
             <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
-              <h2 className="font-semibold text-white/90 mb-1">Top Companies</h2>
+              <div className="flex items-center gap-2 mb-1">
+                <Buildings size={16} className="text-accent-purple" />
+                <h2 className="font-semibold text-white/90">Top Companies</h2>
+              </div>
               <p className="text-xs text-white/30 mb-5">Companies with the best matching jobs for you</p>
-              <div className="space-y-2">
-                {data.top_companies.slice(0, 8).map((co, i) => (
-                  <div key={co.company} className="flex items-center gap-3 py-1.5">
-                    <span className="text-xs font-mono text-white/20 w-5">{i + 1}</span>
-                    <span className="flex-1 text-sm text-white/75 truncate">{co.company}</span>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className="text-xs text-white/30">{co.count} jobs</span>
-                      <span className={clsx(
-                        'text-xs font-mono font-bold px-2 py-0.5 rounded-lg',
-                        co.avg_score >= 70 ? 'text-accent-green bg-accent-green/10' :
-                        co.avg_score >= 50 ? 'text-accent-yellow bg-accent-yellow/10' :
-                        'text-white/40 bg-white/5'
-                      )}>
-                        {co.avg_score}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-                {data.top_companies.length === 0 && (
-                  <p className="text-sm text-white/30 text-center py-8">No company data yet</p>
-                )}
-              </div>
+              {data.top_companies.length === 0 ? (
+                <p className="text-sm text-white/30 text-center py-8">No company data yet</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  {data.top_companies.slice(0, 6).map((co) => (
+                    <motion.div key={co.company} whileHover={{ y: -2 }} className="bg-bg-3 border border-border rounded-xl p-4 text-center">
+                      <p className="text-xs text-white/60 truncate mb-2">{co.company}</p>
+                      <AnimatedCounter value={co.avg_score} suffix="%" className="block font-mono font-bold text-xl text-accent-green" />
+                      <p className="text-[10px] text-white/30 mt-1">{co.count} opportunit{co.count === 1 ? 'y' : 'ies'}</p>
+                    </motion.div>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
 
-          {/* ── Feature 1: Source ROI Table ── */}
-          {data.source_breakdown.length > 0 && (
             <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
-              <div className="flex items-center gap-3 mb-1">
-                <Medal size={16} className="text-accent-yellow" />
+              <div className="flex items-center gap-2 mb-1">
+                <Target size={16} className="text-accent-cyan" />
                 <h2 className="font-semibold text-white/90">Source Performance</h2>
               </div>
-              <p className="text-xs text-white/30 mb-5">
-                Quality Score = % of jobs scoring 60+ from that source. Higher is better.
-              </p>
-              <SourceROITable rows={data.source_breakdown} />
-            </div>
-          )}
-
-          {/* ── Feature 2: Salary Insights Panel ── */}
-          <div className="anim-card grid md:grid-cols-2 gap-6">
-
-            {/* Avg score by source (salary alignment proxy) */}
-            <div className="bg-bg-2 border border-border rounded-2xl p-6">
-              <h2 className="font-semibold text-white/90 mb-1">Salary Alignment by Source</h2>
-              <p className="text-xs text-white/30 mb-2">
-                Avg match score as proxy for salary fit
-              </p>
-
-              {topByScore.length > 0 && (
-                <p className="text-xs text-accent-cyan mb-4">
-                  Your profile scores highest on{' '}
-                  <span className="font-semibold">{topByScore[0].source}</span>{' '}
-                  with avg score{' '}
-                  <span className="font-mono font-bold">{topByScore[0].avg_score}/100</span>
-                </p>
-              )}
-
-              <div className="space-y-3">
-                {topByScore.map((row, i) => {
-                  const pct = maxAvgScore > 0 ? (row.avg_score / maxAvgScore) * 100 : 0;
-                  const colors = ['bg-accent-green/60', 'bg-accent-cyan/50', 'bg-accent-yellow/50'];
-                  return (
-                    <div key={row.source} className="flex items-center gap-3">
-                      <span className="text-xs text-white/50 w-24 flex-shrink-0 truncate">{row.source}</span>
-                      <div className="flex-1 h-5 bg-bg-3 rounded-full overflow-hidden">
-                        <HBar pct={pct} colorClass={colors[i] || 'bg-white/20'} delay={0.2 + i * 0.1} />
-                      </div>
-                      <span className="text-xs font-mono text-white/60 w-8 text-right">{row.avg_score}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Salary bucket distribution */}
-            <div className="bg-bg-2 border border-border rounded-2xl p-6">
-              <h2 className="font-semibold text-white/90 mb-1">Salary Range Distribution</h2>
-              <p className="text-xs text-white/30 mb-4">
-                {salaryData && salaryData.jobs_with_salary > 0
-                  ? `${salaryData.jobs_with_salary} jobs mention salary · Avg ${salaryData.avg_mentioned} LPA`
-                  : 'Based on salary strings in job listings'}
-              </p>
-
-              {salaryData ? (
-                <div className="space-y-2.5">
-                  {salaryData.ranges.map((r, i) => {
-                    const pct = maxSalaryCount > 0 ? (r.count / maxSalaryCount) * 100 : 0;
-                    const isTarget = r.label === '8–12 LPA' || r.label === '12+ LPA';
-                    return (
-                      <div key={r.label} className="flex items-center gap-3">
-                        <span className={clsx(
-                          'text-xs w-28 flex-shrink-0',
-                          isTarget ? 'text-accent-green font-medium' : 'text-white/50'
-                        )}>
-                          {r.label}
-                        </span>
-                        <div className="flex-1 h-5 bg-bg-3 rounded-full overflow-hidden">
-                          <HBar
-                            pct={pct}
-                            colorClass={isTarget ? 'bg-accent-green/60' : 'bg-white/15'}
-                            delay={0.15 + i * 0.08}
-                          />
-                        </div>
-                        <span className="text-xs font-mono text-white/50 w-6 text-right">{r.count}</span>
-                      </div>
-                    );
-                  })}
-                </div>
+              <p className="text-xs text-white/30 mb-5">Which platform is finding your best matches</p>
+              {data.source_breakdown.length === 0 ? (
+                <p className="text-sm text-white/30 text-center py-8">No source data yet</p>
               ) : (
-                <div className="space-y-2.5">
-                  {['No salary listed', '< 5 LPA', '5–8 LPA', '8–12 LPA', '12+ LPA'].map((label) => (
-                    <div key={label} className="flex items-center gap-3">
-                      <span className="text-xs w-28 flex-shrink-0 text-white/30">{label}</span>
-                      <div className="flex-1 h-5 bg-bg-3 rounded-full skeleton" />
-                      <span className="text-xs font-mono text-white/20 w-6 text-right">—</span>
-                    </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {[...data.source_breakdown].sort((a, b) => b.avg_score - a.avg_score).slice(0, 6).map((row) => (
+                    <motion.div key={row.source} whileHover={{ y: -2 }} className="bg-bg-3 border border-border rounded-xl p-4 text-center">
+                      <p className="text-xs text-white/60 truncate mb-2">{row.source}</p>
+                      <AnimatedCounter value={row.avg_score} className="block font-mono font-bold text-xl text-accent-cyan" />
+                      <p className="text-[10px] text-white/30 mt-1">{row.count} jobs · {row.high_match} high match</p>
+                    </motion.div>
                   ))}
                 </div>
               )}
             </div>
           </div>
 
+          {/* ── Salary Potential ── */}
+          <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
+            <div className="flex items-center gap-2 mb-1">
+              <CurrencyDollar size={16} className="text-accent-green" />
+              <h2 className="font-semibold text-white/90">Salary Potential</h2>
+            </div>
+            <p className="text-xs text-white/30 mb-5">
+              {salaryData && salaryData.jobs_with_salary > 0
+                ? `Based on ${salaryData.jobs_with_salary} jobs that mention salary`
+                : 'Based on salary strings in job listings'}
+            </p>
+
+            {salaryData && salaryData.jobs_with_salary > 0 ? (
+              <div className="flex items-center justify-center gap-8 mb-6">
+                <div className="text-center">
+                  <p className="font-mono font-bold text-3xl text-white/60">{salaryData.avg_mentioned}</p>
+                  <p className="text-xs text-white/30 mt-1">LPA · all matches</p>
+                </div>
+                <ArrowDown size={20} className="text-white/15 -rotate-90" />
+                <div className="text-center">
+                  <p className="font-mono font-bold text-3xl text-accent-green">{highMatchAvgSalary ?? '—'}</p>
+                  <p className="text-xs text-white/30 mt-1">LPA · your high matches (70+)</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-white/30 text-center py-6">Not enough salary data yet</p>
+            )}
+
+            <div className="space-y-2.5">
+              {(salaryData?.ranges ?? ['No salary listed', '< 5 LPA', '5–8 LPA', '8–12 LPA', '12+ LPA'].map((label) => ({ label, count: 0 }))).map((r, i) => {
+                const pct = maxSalaryCount > 0 ? (r.count / maxSalaryCount) * 100 : 0;
+                const isTarget = r.label === '8–12 LPA' || r.label === '12+ LPA';
+                return (
+                  <div key={r.label} className="flex items-center gap-3">
+                    <span className={clsx('text-xs w-28 flex-shrink-0', isTarget ? 'text-accent-green font-medium' : 'text-white/50')}>
+                      {r.label}
+                    </span>
+                    <div className="flex-1 h-5 bg-bg-3 rounded-full overflow-hidden">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${pct}%` }}
+                        transition={{ duration: 0.8, delay: 0.1 + i * 0.06, ease: 'easeOut' }}
+                        className={clsx('h-full rounded-full', isTarget ? 'bg-accent-green/60' : 'bg-white/15')}
+                      />
+                    </div>
+                    <span className="text-xs font-mono text-white/50 w-6 text-right">{r.count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
     </div>
