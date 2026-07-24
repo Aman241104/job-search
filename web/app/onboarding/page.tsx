@@ -63,7 +63,7 @@ export default function OnboardingPage() {
         <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-accent-green to-accent-cyan mx-auto mb-4 flex items-center justify-center">
           <span className="text-bg font-mono font-bold text-lg">J</span>
         </div>
-        <h1 className="text-xl font-semibold text-white/90 mb-2">Welcome, {user?.name?.split(' ')[0] || 'there'}</h1>
+        <h1 className="font-display text-display-sm font-medium text-white/90 mb-2">Welcome, {user?.name?.split(' ')[0] || 'there'}</h1>
         <p className="text-sm text-white/40">
           Quick setup so job matching and scoring work for you specifically. You can change all of this later in Profile.
         </p>

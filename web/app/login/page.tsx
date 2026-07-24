@@ -10,7 +10,7 @@ export default function LoginPage() {
         <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-accent-green to-accent-cyan mx-auto mb-6 flex items-center justify-center">
           <span className="text-bg font-mono font-bold text-lg">J</span>
         </div>
-        <h1 className="text-xl font-semibold text-white/90 mb-2">JobOS</h1>
+        <h1 className="font-display text-display-sm font-medium text-white/90 mb-2">JobOS</h1>
         <p className="text-sm text-white/40 mb-8">
           Sign in to track your job search, prep interviews, and manage your learning.
         </p>

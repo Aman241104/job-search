@@ -474,7 +474,7 @@ export default function DashboardPage() {
           <div className="mb-6">
             <div className="flex items-start justify-between">
               <div>
-                <h1 className="text-2xl md:text-3xl font-bold text-white/90 mb-1">
+                <h1 className="font-display text-display-sm font-medium text-white/90 mb-1">
                   {getGreeting()}{firstName ? `, ${firstName}` : ''}
                 </h1>
                 <p className="text-white/35 text-sm font-mono">{formatDate()}</p>

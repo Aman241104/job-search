@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Fragment_Mono, Outfit } from 'next/font/google';
+import localFont from 'next/font/local';
 import { ThemeProvider } from 'next-themes';
 import './globals.css';
 import AuthProvider from '@/components/AuthProvider';
@@ -20,6 +21,22 @@ const outfit = Outfit({
   display: 'swap',
 });
 
+// Display face — used only for hero moments (dashboard greeting, login,
+// onboarding headers) via the `font-display` utility, not the app's body
+// text. Self-hosted (Fontshare, free for commercial use) rather than a
+// remote <link>, same zero-layout-shift next/font mechanism as the two
+// Google fonts above.
+const cabinetGrotesk = localFont({
+  src: [
+    { path: './fonts/CabinetGrotesk-Regular.woff2', weight: '400', style: 'normal' },
+    { path: './fonts/CabinetGrotesk-Medium.woff2', weight: '500', style: 'normal' },
+    { path: './fonts/CabinetGrotesk-Bold.woff2', weight: '700', style: 'normal' },
+    { path: './fonts/CabinetGrotesk-Black.woff2', weight: '900', style: 'normal' },
+  ],
+  variable: '--font-display',
+  display: 'swap',
+});
+
 export const metadata: Metadata = {
   title: 'JobHunt — Your AI Job Search Dashboard',
   description: 'Track, find, and ace your job search with AI-powered insights.',
@@ -34,7 +51,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${fragmentMono.variable} ${outfit.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${fragmentMono.variable} ${outfit.variable} ${cabinetGrotesk.variable}`} suppressHydrationWarning>
       <body className="bg-bg font-sans antialiased">
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
           {/* Google Material Symbols / Pixel-style icons read as filled, not

@@ -82,6 +82,17 @@ const config: Config = {
         // already appends its own optimized fallback stack to these vars.
         mono: ['var(--font-mono)', 'monospace'],
         sans: ['var(--font-sans)', 'sans-serif'],
+        // Hero-moment-only display face (dashboard greeting, login,
+        // onboarding headers) — never used for body/dashboard-density text.
+        display: ['var(--font-display)', 'sans-serif'],
+      },
+      fontSize: {
+        // Fluid, clamp()-based — for the new display face only. Dashboard
+        // body text stays on Tailwind's fixed scale (data density needs
+        // predictable line-wrapping; fluid type there would hurt scanning).
+        'display-sm': ['clamp(1.5rem, 1.25rem + 1.25vw, 2.25rem)', { lineHeight: '1.1', letterSpacing: '-0.01em' }],
+        'display-md': ['clamp(2rem, 1.5rem + 2.5vw, 3.25rem)', { lineHeight: '1.05', letterSpacing: '-0.02em' }],
+        'display-lg': ['clamp(2.5rem, 1.75rem + 3.75vw, 4.5rem)', { lineHeight: '1', letterSpacing: '-0.02em' }],
       },
       animation: {
         'pulse-slow': 'pulse 3s ease-in-out infinite',
