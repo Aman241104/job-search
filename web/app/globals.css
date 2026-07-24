@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Tabular figures for every mono-face number (stat counts, scores,
+   timestamps) — prevents digit width jitter during count-up animations
+   (StatCard) since proportional numerals differ in width per digit. */
+.font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
 /* Every variable below is a raw "R G B" triplet (no commas, no rgb() wrapper)
    so Tailwind's rgb(var(--x) / <alpha-value>) pattern in tailwind.config.ts
    can apply opacity modifiers (bg-white/20, text-accent-green/10, etc.) on
@@ -89,7 +96,7 @@ html,
 body {
   background-color: rgb(var(--bg));
   color: rgb(var(--ink));
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-sans), sans-serif;
   min-height: 100vh;
   overflow-x: hidden;
 }
@@ -139,8 +146,16 @@ body {
 
 .card-hover:hover {
   border-color: rgb(var(--accent-green) / 0.25);
-  box-shadow: 0 4px 16px rgb(var(--ink) / 0.05);
+  box-shadow: 0 4px 16px rgb(var(--accent-green) / 0.12);
 }
+
+/* Tinted shadows — carry each accent's own hue instead of generic black/ink,
+   for components that want a colored lift (featured cards, hero buttons). */
+.shadow-tint-green { box-shadow: 0 4px 20px rgb(var(--accent-green) / 0.14); }
+.shadow-tint-cyan { box-shadow: 0 4px 20px rgb(var(--accent-cyan) / 0.14); }
+.shadow-tint-purple { box-shadow: 0 4px 20px rgb(var(--accent-purple) / 0.14); }
+.shadow-tint-yellow { box-shadow: 0 4px 20px rgb(var(--accent-yellow) / 0.14); }
+.shadow-tint-pink { box-shadow: 0 4px 20px rgb(var(--accent-pink) / 0.14); }
 
 /* Glass card base */
 .glass {
@@ -205,7 +220,7 @@ body {
   border: 1px solid rgb(var(--accent-green) / 0.18);
   border-radius: 4px;
   padding: 1px 6px;
-  font-family: 'Fragment Mono', monospace;
+  font-family: var(--font-mono), monospace;
   font-size: 0.85em;
   color: rgb(var(--accent-green));
 }
@@ -354,7 +369,7 @@ select:focus {
 }
 
 .markdown-body code {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.82em;
   background: rgb(var(--bg-2));
   border: 1px solid rgb(var(--border));

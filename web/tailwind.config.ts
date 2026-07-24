@@ -12,6 +12,12 @@ function tonalScale(family: string): Record<number, string> {
 }
 
 const config: Config = {
+  // next-themes toggles a literal `.dark` class on <html> (app/layout.tsx) —
+  // without this, Tailwind defaults to 'media' and every `dark:` utility
+  // variant responds to OS-level prefers-color-scheme instead of the app's
+  // actual theme toggle, while the CSS-var-based colors above (which read
+  // .dark via plain CSS selector matching in globals.css) correctly do.
+  darkMode: 'class',
   content: [
     './pages/**/*.{js,ts,jsx,tsx,mdx}',
     './components/**/*.{js,ts,jsx,tsx,mdx}',
@@ -71,8 +77,11 @@ const config: Config = {
         },
       },
       fontFamily: {
-        mono: ['"Fragment Mono"', 'monospace'],
-        sans: ['Outfit', 'sans-serif'],
+        // Reference next/font's own CSS vars (set on <html> in layout.tsx)
+        // instead of hardcoding the family name a second time — next/font
+        // already appends its own optimized fallback stack to these vars.
+        mono: ['var(--font-mono)', 'monospace'],
+        sans: ['var(--font-sans)', 'sans-serif'],
       },
       animation: {
         'pulse-slow': 'pulse 3s ease-in-out infinite',
