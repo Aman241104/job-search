@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
-import { MagnifyingGlass, Sliders, CaretLeft, CaretRight, X, ListBullets, Columns, CheckSquare, Star, Trash, CaretDown, ArrowUp, Keyboard } from '@phosphor-icons/react';
+import { MagnifyingGlass, Sliders, CaretLeft, CaretRight, X, ListBullets, Columns, CheckSquare, Star, Trash, CaretDown, ArrowUp, Keyboard, Sparkle, Compass } from '@phosphor-icons/react';
+import JobMatchCard from '@/components/JobMatchCard';
 import JobCard from '@/components/JobCard';
 import JobDrawer from '@/components/JobDrawer';
 import EmptyState from '@/components/EmptyState';
@@ -381,7 +382,7 @@ function JobsPageInner() {
   const [drawerJobId, setDrawerJobId] = useState<string | null>(null);
 
   // ── View mode ──
-  const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'kanban' | 'discover' | 'explore'>('list');
 
   // ── Bulk selection ──
   const [selectMode, setSelectMode] = useState(false);
@@ -442,7 +443,7 @@ function JobsPageInner() {
     searchTimeout.current = setTimeout(() => {
       setPage(1);
       setFocusedIndex(-1);
-      if (viewMode === 'kanban') {
+      if (viewMode !== 'list') {
         fetchJobs(1, true);
       } else {
         fetchJobs(1, false);
@@ -515,7 +516,7 @@ function JobsPageInner() {
 
   // ─── Keyboard shortcuts ──────────────────────────────────────────────────
 
-  const currentJobs = viewMode === 'kanban' ? kanbanData : (data?.jobs ?? []);
+  const currentJobs = viewMode !== 'list' ? kanbanData : (data?.jobs ?? []);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -645,7 +646,7 @@ function JobsPageInner() {
       );
       setSelectedIds(new Set());
       // Refresh
-      if (viewMode === 'kanban') {
+      if (viewMode !== 'list') {
         fetchJobs(1, true);
       } else {
         fetchJobs(page, false);
@@ -666,7 +667,7 @@ function JobsPageInner() {
     starredOnly ? 1 : 0,
   ].filter(Boolean).length;
 
-  const highMatchCount = (viewMode === 'kanban' ? kanbanData : (data?.jobs ?? [])).filter((j) => j.score >= 70).length;
+  const highMatchCount = (viewMode !== 'list' ? kanbanData : (data?.jobs ?? [])).filter((j) => j.score >= 70).length;
 
   // ─── Render ──────────────────────────────────────────────────────────────
 
@@ -692,7 +693,7 @@ function JobsPageInner() {
               'Loading your opportunities…'
             ) : (
               <>
-                <span className="text-white/60 font-medium">{viewMode === 'kanban' ? kanbanData.length : (data?.total ?? 0)}</span> opportunities tracked
+                <span className="text-white/60 font-medium">{viewMode !== 'list' ? kanbanData.length : (data?.total ?? 0)}</span> opportunities tracked
                 {highMatchCount > 0 && (
                   <>
                     {' '}· <span className="text-accent-green font-medium">{highMatchCount}</span> matched to your profile
@@ -745,6 +746,32 @@ function JobsPageInner() {
               >
                 <Columns size={14} />
                 <span className="hidden sm:inline text-xs">Kanban</span>
+              </button>
+              <button
+                onClick={() => setViewMode('discover')}
+                title="Discover view"
+                className={clsx(
+                  'flex items-center gap-1.5 px-3 py-2.5 text-sm transition-all duration-150',
+                  viewMode === 'discover'
+                    ? 'bg-accent-green/10 text-accent-green'
+                    : 'text-white/35 hover:text-white/60'
+                )}
+              >
+                <Sparkle size={14} />
+                <span className="hidden sm:inline text-xs">Discover</span>
+              </button>
+              <button
+                onClick={() => setViewMode('explore')}
+                title="Explore view"
+                className={clsx(
+                  'flex items-center gap-1.5 px-3 py-2.5 text-sm transition-all duration-150',
+                  viewMode === 'explore'
+                    ? 'bg-accent-green/10 text-accent-green'
+                    : 'text-white/35 hover:text-white/60'
+                )}
+              >
+                <Compass size={14} />
+                <span className="hidden sm:inline text-xs">Explore</span>
               </button>
             </div>
 
@@ -900,7 +927,7 @@ function JobsPageInner() {
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="text-sm text-white/40">
                   <span className="text-white/70 font-medium">
-                    {viewMode === 'kanban' ? kanbanData.length : (data?.total ?? 0)}
+                    {viewMode !== 'list' ? kanbanData.length : (data?.total ?? 0)}
                   </span>{' '}
                   jobs
                 </p>
@@ -1148,6 +1175,110 @@ function JobsPageInner() {
                     );
                   })}
                 </div>
+              )}
+            </>
+          )}
+
+          {/* ── DISCOVER VIEW ── */}
+          {viewMode === 'discover' && (
+            <>
+              {loading ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {[...Array(9)].map((_, i) => (
+                    <div key={i} className="skeleton h-48 rounded-2xl" />
+                  ))}
+                </div>
+              ) : kanbanData.length === 0 ? (
+                <div className="text-center py-16 text-white/25 text-sm">No jobs match these filters.</div>
+              ) : (
+                <div ref={gridRef} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {kanbanData.map((job, i) => (
+                    <div
+                      key={job.id}
+                      className={clsx(
+                        'job-card-item',
+                        // Every 5th card (starting with the very best match) spans
+                        // 2 columns — an asymmetric rhythm driven by real rank in
+                        // the already-sorted-by-score list, not a fixed template.
+                        i % 5 === 0 && 'md:col-span-2'
+                      )}
+                    >
+                      <JobMatchCard
+                        job={job}
+                        onStatusChange={(id, newStatus) => {
+                          setKanbanData((prev) => prev.map((j) => (j.id === id ? { ...j, status: newStatus } : j)));
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── EXPLORE VIEW ── */}
+          {viewMode === 'explore' && (
+            <>
+              {loading ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {[...Array(8)].map((_, i) => (
+                    <div key={i} className="skeleton h-28 rounded-2xl" />
+                  ))}
+                </div>
+              ) : (
+                (() => {
+                  // Real category browse — each tile's count and avg score are
+                  // computed from the user's own already-fetched jobs by matching
+                  // real title/location keywords, not a per-category ML score.
+                  const categories: { label: string; match: (j: Job) => boolean; color: 'green' | 'cyan' | 'purple' | 'yellow' }[] = [
+                    { label: 'Frontend', match: (j) => /front[\s-]?end|react|next\.?js|vue|angular/i.test(j.title), color: 'cyan' },
+                    { label: 'Full Stack', match: (j) => /full[\s-]?stack/i.test(j.title), color: 'green' },
+                    { label: 'Backend', match: (j) => /back[\s-]?end|node|django|api engineer/i.test(j.title), color: 'purple' },
+                    { label: 'Remote', match: (j) => /remote|work from home|wfh/i.test(j.location || ''), color: 'yellow' },
+                    { label: 'Fresher-friendly', match: (j) => /fresher|entry.level|intern/i.test(j.title + ' ' + (j.score_reason || '')), color: 'green' },
+                    { label: 'AI / ML', match: (j) => /\bai\b|machine learning|\bml\b|llm/i.test(j.title), color: 'purple' },
+                  ];
+                  const tiles = categories
+                    .map((cat) => {
+                      const matches = kanbanData.filter(cat.match);
+                      const avgScore = matches.length > 0 ? Math.round(matches.reduce((s, j) => s + j.score, 0) / matches.length) : 0;
+                      return { ...cat, count: matches.length, avgScore };
+                    })
+                    .filter((t) => t.count > 0);
+
+                  if (tiles.length === 0) {
+                    return <div className="text-center py-16 text-white/25 text-sm">No categories to explore yet.</div>;
+                  }
+
+                  const tileGlow: Record<string, string> = {
+                    green: 'shadow-tint-green', cyan: 'shadow-tint-cyan', purple: 'shadow-tint-purple', yellow: 'shadow-tint-yellow',
+                  };
+                  const tileText: Record<string, string> = {
+                    green: 'text-accent-green', cyan: 'text-accent-cyan', purple: 'text-accent-purple', yellow: 'text-accent-yellow',
+                  };
+
+                  return (
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      {tiles.map((tile) => (
+                        <button
+                          key={tile.label}
+                          onClick={() => {
+                            setSearch(tile.label === 'Fresher-friendly' ? 'fresher' : tile.label === 'AI / ML' ? 'AI' : tile.label);
+                            setViewMode('list');
+                          }}
+                          className={clsx(
+                            'text-left bg-bg-2 border border-border rounded-2xl p-5 hover:border-white/15 transition-all duration-150',
+                            tileGlow[tile.color]
+                          )}
+                        >
+                          <p className="text-sm font-semibold text-white/85 mb-3">{tile.label}</p>
+                          <p className={clsx('font-mono font-bold text-3xl', tileText[tile.color])}>{tile.count}</p>
+                          <p className="text-xs text-white/35 mt-1">jobs · avg match {tile.avgScore}</p>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()
               )}
             </>
           )}
