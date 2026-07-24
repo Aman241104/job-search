@@ -1732,6 +1732,30 @@ async def run_batch(channel: str, job_ids: str = Query(...), mode: str = Query(d
     return result
 
 
+@app.get('/api/batch/insights')
+async def batch_insights(user_id: str = Depends(get_current_user)):
+    """Real numbers for the Batch Apply page's hero/channel cards — per-
+    channel historical response rate (jobs that reached interviewing/offer
+    out of everything ever sent/prefilled via that channel) and the user's
+    overall real apply-to-response conversion. No fabricated confidence
+    scores or ATS predictions.
+
+    Registered BEFORE /api/batch/{batch_id} — FastAPI matches routes in
+    declaration order, so a literal path segment ("insights") must come
+    before a same-depth path-param route or it gets swallowed as a
+    batch_id value instead."""
+    tracker = TrackerAgent()
+    channel_stats = tracker.get_channel_stats(user_id)
+    stats = tracker.get_stats(user_id)
+    applied_total = (stats.get('applied') or 0) + (stats.get('interviewing') or 0) + (stats.get('offers') or 0) + (stats.get('rejected') or 0) + (stats.get('ghosted') or 0)
+    responded = (stats.get('interviewing') or 0) + (stats.get('offers') or 0)
+    overall_response_rate = round((responded / applied_total) * 100) if applied_total > 0 else None
+    return {
+        'channels': channel_stats,
+        'overall_response_rate': overall_response_rate,
+    }
+
+
 @app.get('/api/batch/{batch_id}')
 async def get_batch(batch_id: str, user_id: str = Depends(get_current_user)):
     batch = TrackerAgent().get_batch(user_id, batch_id)

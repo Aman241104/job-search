@@ -82,7 +82,7 @@ def run_email_batch(user_id: str, job_ids: list, mode: str, force: bool = False)
             )
 
     tracker.update_batch_status(batch_id, "sent" if mode == "automatic" else "staged")
-    return tracker.get_batch(batch_id)
+    return tracker.get_batch(user_id, batch_id)
 
 
 def send_staged_batch(user_id: str, batch_id: str) -> dict:

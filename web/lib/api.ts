@@ -196,6 +196,7 @@ export interface BatchItem {
   approved: number;
   status: string;
   error?: string;
+  job_status?: string;
 }
 
 export interface Batch {
@@ -205,6 +206,16 @@ export interface Batch {
   status: string;
   created_at: string;
   items: BatchItem[];
+}
+
+export interface ChannelStat {
+  sent_count: number;
+  responded: number;
+}
+
+export interface BatchInsights {
+  channels: Record<string, ChannelStat>;
+  overall_response_rate: number | null;
 }
 
 export interface AuthUser {
@@ -618,6 +629,12 @@ export const api = {
   sendBatch: (batchId: string): Promise<Batch> =>
     apiFetch(`/api/batch/${batchId}/send`, { method: 'POST' }).then((r) => {
       if (!r.ok) throw new Error(`Send batch failed: ${r.status}`);
+      return r.json();
+    }),
+
+  batchInsights: (): Promise<BatchInsights> =>
+    apiFetch(`/api/batch/insights`).then((r) => {
+      if (!r.ok) throw new Error(`Batch insights failed: ${r.status}`);
       return r.json();
     }),
 

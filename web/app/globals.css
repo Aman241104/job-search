@@ -191,6 +191,51 @@ body {
 .shadow-tint-yellow { box-shadow: 0 4px 20px rgb(var(--accent-yellow) / 0.14); }
 .shadow-tint-pink { box-shadow: 0 4px 20px rgb(var(--accent-pink) / 0.14); }
 
+/* Premium slider — Apple-style track fill + colored thumb, driven by
+   --slider-pct/--slider-color custom properties set inline per instance
+   (see components/PremiumSlider.tsx). Replaces bare number inputs. */
+.slider-premium {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    var(--slider-color) 0%,
+    var(--slider-color) var(--slider-pct, 50%),
+    rgb(var(--bg-3)) var(--slider-pct, 50%),
+    rgb(var(--bg-3)) 100%
+  );
+  outline: none;
+  cursor: pointer;
+}
+.slider-premium::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--slider-color);
+  border: 3px solid rgb(var(--bg-1));
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.35);
+  cursor: pointer;
+}
+.slider-premium::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--slider-color);
+  border: 3px solid rgb(var(--bg-1));
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.35);
+  cursor: pointer;
+  border: none;
+}
+.slider-premium::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: transparent;
+}
+
 /* Mouse-follow spotlight — a radial gradient positioned via --spot-x/--spot-y
    custom properties (updated on mousemove in JS), not a WebGL/canvas effect.
    Cheap: pure CSS, one pseudo-element, GPU-composited (opacity only). */

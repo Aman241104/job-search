@@ -800,8 +800,10 @@ class TrackerAgent:
             if not batch_row:
                 return None
             item_rows = conn.execute("""
-                SELECT bi.*, j.title, j.company, j.score
-                FROM batch_items bi JOIN jobs j ON bi.job_id = j.id
+                SELECT bi.*, j.title, j.company, j.score, a.status AS job_status
+                FROM batch_items bi
+                JOIN jobs j ON bi.job_id = j.id
+                LEFT JOIN applications a ON j.id = a.job_id
                 WHERE bi.batch_id = ?
             """, (batch_id,)).fetchall()
         batch = batch_row
@@ -822,6 +824,26 @@ class TrackerAgent:
         with self._get_conn() as conn:
             conn.execute("UPDATE batches SET status = ? WHERE id = ?", (status, batch_id))
             conn.commit()
+
+    def get_channel_stats(self, user_id: str) -> dict:
+        """Real historical per-channel performance — how many items were ever
+        actually sent/prefilled via each channel, and how many of those jobs
+        are now interviewing or have an offer. A real response signal, never
+        a fabricated confidence score."""
+        with self._get_conn() as conn:
+            conn.row_factory = ROW_DICT
+            rows = conn.execute("""
+                SELECT b.channel AS channel,
+                       COUNT(*) AS sent_count,
+                       SUM(CASE WHEN a.status IN ('interviewing', 'offer') THEN 1 ELSE 0 END) AS responded
+                FROM batch_items bi
+                JOIN batches b ON bi.batch_id = b.id
+                JOIN jobs j ON bi.job_id = j.id
+                LEFT JOIN applications a ON j.id = a.job_id
+                WHERE b.user_id = ? AND bi.status IN ('sent', 'prefilled')
+                GROUP BY b.channel
+            """, (user_id,)).fetchall()
+        return {r['channel']: {'sent_count': r['sent_count'], 'responded': r['responded'] or 0} for r in rows}
 
     # ── Training Sessions ──────────────────────────────────────────────────────
 
