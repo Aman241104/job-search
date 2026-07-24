@@ -682,6 +682,27 @@ function JobsPageInner() {
       />
 
       <div className={clsx('min-h-screen', selectedIds.size > 0 ? 'pb-24' : 'pb-8')}>
+        {/* Search hero */}
+        <div className="px-6 md:px-8 pt-8 pb-2">
+          <h1 className="font-display text-display-sm font-medium text-white/90 mb-1">
+            What are you hunting today?
+          </h1>
+          <p className="text-white/35 text-sm">
+            {loading ? (
+              'Loading your opportunities…'
+            ) : (
+              <>
+                <span className="text-white/60 font-medium">{viewMode === 'kanban' ? kanbanData.length : (data?.total ?? 0)}</span> opportunities tracked
+                {highMatchCount > 0 && (
+                  <>
+                    {' '}· <span className="text-accent-green font-medium">{highMatchCount}</span> matched to your profile
+                  </>
+                )}
+              </>
+            )}
+          </p>
+        </div>
+
         {/* Filter bar */}
         <div className="sticky top-0 z-30 bg-bg/90 backdrop-blur-lg border-b border-border px-6 md:px-8 py-4">
           <div className="flex items-center gap-3 mb-3">
