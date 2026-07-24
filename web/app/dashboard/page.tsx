@@ -42,15 +42,6 @@ function daysSince(dateStr?: string): number {
   return Math.floor(diff / (1000 * 60 * 60 * 24));
 }
 
-const statusColorMap: Record<string, string> = {
-  found: 'bg-white/10',
-  applied: 'bg-accent-cyan/60',
-  interviewing: 'bg-accent-yellow/60',
-  offer: 'bg-accent-green/60',
-  rejected: 'bg-accent-pink/60',
-  ghosted: 'bg-white/20',
-};
-
 /* ─────────── Activity Chart ─────────── */
 
 interface TimelineEntry {
@@ -436,10 +427,6 @@ export default function DashboardPage() {
     );
   }, [loading]);
 
-  const totalJobs = stats
-    ? stats.found + stats.applied + stats.interviewing + stats.offers + stats.rejected + stats.ghosted
-    : 0;
-
   // This-week applied count from timeline
   const thisWeekApplied = (() => {
     if (timeline.length === 0) return 0;
@@ -753,37 +740,52 @@ export default function DashboardPage() {
                 <h2 className="font-semibold text-white/90 mb-4">Pipeline</h2>
                 {loading ? (
                   <div className="space-y-3">
-                    {[...Array(5)].map((_, i) => (
-                      <div key={i} className="skeleton h-8 rounded-lg" />
+                    {[...Array(4)].map((_, i) => (
+                      <div key={i} className="skeleton h-9 rounded-lg" />
                     ))}
                   </div>
                 ) : stats ? (
-                  <div className="space-y-3">
-                    {[
-                      { label: 'Found', value: stats.found, key: 'found' },
-                      { label: 'Applied', value: stats.applied, key: 'applied' },
-                      { label: 'Interviewing', value: stats.interviewing, key: 'interviewing' },
-                      { label: 'Offers', value: stats.offers, key: 'offer' },
-                      { label: 'Rejected', value: stats.rejected, key: 'rejected' },
-                    ].map(({ label, value, key }) => (
-                      <div key={key} className="flex items-center gap-3">
-                        <span className="text-xs text-white/40 w-20 flex-shrink-0">{label}</span>
-                        <div className="flex-1 h-2 bg-bg-3 rounded-full overflow-hidden">
-                          <div
-                            className={clsx(
-                              'h-full rounded-full transition-all duration-1000',
-                              statusColorMap[key]
-                            )}
-                            style={{
-                              width: totalJobs > 0 ? `${(value / totalJobs) * 100}%` : '0%',
-                            }}
-                          />
-                        </div>
-                        <span className="text-xs font-mono text-white/60 w-6 text-right">
-                          {value}
-                        </span>
-                      </div>
-                    ))}
+                  <div className="space-y-2.5">
+                    {(() => {
+                      // Real progression funnel — Found/Applied/Interviewing/Offer
+                      // only (rejected/ghosted are terminal drop-offs, not a
+                      // forward stage, so they don't belong in this shape).
+                      // Each bar's width and % are relative to the PREVIOUS
+                      // stage's count, the actual definition of a conversion
+                      // funnel — not relative to the grand total.
+                      const stages = [
+                        { label: 'Found', value: stats.found, glow: '', bar: 'bg-white/15' },
+                        { label: 'Applied', value: stats.applied, glow: 'shadow-tint-cyan', bar: 'bg-accent-cyan/70' },
+                        { label: 'Interviewing', value: stats.interviewing, glow: 'shadow-tint-yellow', bar: 'bg-accent-yellow/70' },
+                        { label: 'Offer', value: stats.offers, glow: 'shadow-tint-green', bar: 'bg-accent-green/70' },
+                      ];
+                      return stages.map((stage, i) => {
+                        const prev = i > 0 ? stages[i - 1].value : stage.value;
+                        const widthPct = stage.value > 0 && stages[0].value > 0
+                          ? Math.max((stage.value / stages[0].value) * 100, 6)
+                          : 4;
+                        const conversion = i > 0 && prev > 0 ? Math.round((stage.value / prev) * 100) : null;
+                        return (
+                          <div key={stage.label} className="flex items-center gap-3">
+                            <span className="text-xs text-white/40 w-24 flex-shrink-0">{stage.label}</span>
+                            <div className="flex-1 h-6 flex items-center">
+                              <div
+                                className={clsx(
+                                  'h-full rounded-lg transition-all duration-1000 flex items-center justify-end pr-2',
+                                  stage.bar, stage.glow
+                                )}
+                                style={{ width: `${widthPct}%`, minWidth: '2.5rem' }}
+                              >
+                                <span className="text-[10px] font-mono font-bold text-bg">{stage.value}</span>
+                              </div>
+                            </div>
+                            <span className="text-[10px] font-mono text-white/25 w-8 text-right">
+                              {conversion !== null ? `${conversion}%` : ''}
+                            </span>
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
                 ) : null}
 
