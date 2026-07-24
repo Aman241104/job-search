@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import gsap from 'gsap';
 import Link from 'next/link';
-import { Briefcase, PaperPlaneTilt, ChatCircle, Trophy, DownloadSimple, LinkSimple, Brain, ArrowRight, ArrowClockwise, Warning, CaretRight, Fire, TrendUp, Bell, CheckCircle, MagnifyingGlass, ClipboardText, Compass, SlidersHorizontal } from '@phosphor-icons/react';
+import { Briefcase, PaperPlaneTilt, ChatCircle, DownloadSimple, LinkSimple, Brain, ArrowRight, ArrowClockwise, Warning, CaretRight, Fire, TrendUp, TrendDown, Bell, CheckCircle, MagnifyingGlass, ClipboardText, Compass, SlidersHorizontal } from '@phosphor-icons/react';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
@@ -13,6 +13,7 @@ import EmptyState from '@/components/EmptyState';
 import FindButton from '@/components/FindButton';
 import ScoreRing from '@/components/ScoreRing';
 import HeroBackground from '@/components/HeroBackground';
+import Sparkline from '@/components/Sparkline';
 import { ToastProvider } from '@/components/Toast';
 import { api, Stats, Job } from '@/lib/api';
 import clsx from 'clsx';
@@ -449,6 +450,28 @@ export default function DashboardPage() {
       .reduce((sum, d) => sum + d.applied, 0);
   })();
 
+  // Real week-over-week deltas — sums of the same real timeline field over
+  // two consecutive 7-day windows. Guards against div-by-zero by treating
+  // "0 last week" as "can't compute a %, just show the raw count" upstream.
+  const weekSum = (field: 'found' | 'applied', weeksAgo: number) => {
+    const end = new Date();
+    end.setDate(end.getDate() - weeksAgo * 7);
+    const start = new Date(end);
+    start.setDate(start.getDate() - 7);
+    return timeline
+      .filter((d) => {
+        const dt = new Date(d.date);
+        return dt > start && dt <= end;
+      })
+      .reduce((sum, d) => sum + d[field], 0);
+  };
+  const foundTrend = weekSum('found', 1) > 0 ? Math.round(((weekSum('found', 0) - weekSum('found', 1)) / weekSum('found', 1)) * 100) : undefined;
+  const appliedTrend = weekSum('applied', 1) > 0 ? Math.round(((weekSum('applied', 0) - weekSum('applied', 1)) / weekSum('applied', 1)) * 100) : undefined;
+
+  // Real 14-day "found" series for the hero sparkline — same data the
+  // Activity graph below already fetches, just a shorter recent window.
+  const foundSparkline = timeline.slice(-14).map((d) => d.found);
+
   const actions = stats
     ? [
         ...(stats.found > 0 && stats.applied === 0
@@ -500,42 +523,63 @@ export default function DashboardPage() {
     <ToastProvider>
       <div className="min-h-screen p-6 md:p-8 pb-24 md:pb-8">
         {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-white/90 mb-1">
-                {getGreeting()}, {firstName}
-              </h1>
-              <p className="text-white/35 text-sm font-mono">{formatDate()}</p>
-            </div>
-            <button
-              onClick={fetchData}
-              disabled={loading}
-              className="flex items-center gap-2 text-xs text-white/40 hover:text-white/60 transition-colors p-2"
-            >
-              <ArrowClockwise size={14} className={loading ? 'animate-spin' : ''} />
-            </button>
+        <div className="mb-8 flex items-start justify-between">
+          <div>
+            <h1 className="font-display text-display-sm font-medium text-white/90 mb-1">
+              {getGreeting()}{firstName ? `, ${firstName}` : ''}
+            </h1>
+            <p className="text-white/35 text-sm font-mono">{formatDate()}</p>
           </div>
-
-          {error && (
-            <div className="mt-4 bg-accent-pink/10 border border-accent-pink/20 rounded-xl px-4 py-3 text-sm text-accent-pink">
-              {error}
-            </div>
-          )}
+          <button
+            onClick={fetchData}
+            disabled={loading}
+            className="flex items-center gap-2 text-xs text-white/40 hover:text-white/60 transition-colors p-2"
+          >
+            <ArrowClockwise size={14} className={loading ? 'animate-spin' : ''} />
+          </button>
         </div>
 
+        {error && (
+          <div className="mb-8 -mt-4 bg-accent-pink/10 border border-accent-pink/20 rounded-xl px-4 py-3 text-sm text-accent-pink">
+            {error}
+          </div>
+        )}
+
         <div ref={cardsRef} className="space-y-8">
-          {/* Stats row */}
+          {/* Hero + stats row */}
           <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
-            <div className="anim-card xl:col-span-2">
-              <StatCard
-                label="Total Found"
-                value={stats?.total ?? 0}
-                icon={Briefcase}
-                color="green"
-                loading={loading}
-                featured
-              />
+            {/* Hero card — total jobs found, real 14-day sparkline */}
+            <div className="anim-card xl:col-span-2 bg-bg-2 border border-border rounded-2xl p-6 md:p-8 shadow-tint-green relative overflow-hidden">
+              <div className="flex items-start justify-between">
+                <div
+                  className={clsx(
+                    'w-12 h-12 rounded-xl border flex items-center justify-center mb-4',
+                    'bg-tone-green-90 dark:bg-tone-green-30 border-tone-green-80/40'
+                  )}
+                >
+                  <Briefcase size={22} weight="fill" className="text-accent-green" />
+                </div>
+                {foundSparkline.length >= 2 && (
+                  <Sparkline values={foundSparkline} width={110} height={36} className="text-accent-green opacity-80 mt-1" />
+                )}
+              </div>
+              <div className="font-mono font-bold text-4xl text-accent-green mb-1">
+                {loading ? <span className="skeleton inline-block h-9 w-16 rounded-lg align-middle" /> : stats?.total ?? 0}
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-white/40 font-sans">Total Found</span>
+                {foundTrend !== undefined && (
+                  <span className={clsx('flex items-center gap-1 text-xs font-medium', foundTrend >= 0 ? 'text-accent-green' : 'text-accent-pink')}>
+                    {foundTrend >= 0 ? <TrendUp size={12} weight="fill" /> : <TrendDown size={12} weight="fill" />}
+                    {Math.abs(foundTrend)}% vs last week
+                  </span>
+                )}
+              </div>
+              {!loading && stats && (
+                <p className="mt-4 text-xs text-white/35 font-sans">
+                  {stats.high_match} scored 80+ — your best match so far.
+                </p>
+              )}
             </div>
             <div className="anim-card">
               <StatCard
@@ -543,6 +587,7 @@ export default function DashboardPage() {
                 value={stats?.applied ?? 0}
                 icon={PaperPlaneTilt}
                 color="cyan"
+                trend={appliedTrend}
                 loading={loading}
               />
             </div>
@@ -555,25 +600,14 @@ export default function DashboardPage() {
                 loading={loading}
               />
             </div>
-            {/* 4th card: Offers if any, else "This Week" */}
             <div className="anim-card">
-              {stats && stats.offers > 0 ? (
-                <StatCard
-                  label="Offers"
-                  value={stats.offers}
-                  icon={Trophy}
-                  color="yellow"
-                  loading={loading}
-                />
-              ) : (
-                <StatCard
-                  label="This Week"
-                  value={thisWeekApplied}
-                  icon={TrendUp}
-                  color="purple"
-                  loading={loading}
-                />
-              )}
+              <StatCard
+                label="This Week"
+                value={thisWeekApplied}
+                icon={TrendUp}
+                color="yellow"
+                loading={loading}
+              />
             </div>
           </div>
 

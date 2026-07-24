@@ -61,6 +61,40 @@
   --pink-90: 255 209 210; --pink-95: 255 232 233; --pink-99: 255 250 251;
   --pink-100: 255 255 255;
 
+  /* Pastel "tint" families — same generator, seeded from near-white pastel
+     hexes instead of vivid accent seeds. Meant for soft section/card
+     background washes (Discover mode, hero blocks), not text/icon color —
+     use the 90-99 stops for light-mode surfaces, 20-30 for dark-mode ones. */
+  --mint-0: 0 0 0;       --mint-10: 0 5 2;       --mint-20: 13 25 18;
+  --mint-30: 36 49 41;   --mint-40: 62 76 67;    --mint-50: 89 103 94;
+  --mint-60: 117 133 123; --mint-70: 147 163 153; --mint-80: 178 194 184;
+  --mint-90: 210 227 216; --mint-95: 227 243 233; --mint-99: 244 255 248;
+  --mint-100: 255 255 255;
+
+  --lavender-0: 0 0 0;      --lavender-10: 4 2 8;      --lavender-20: 24 20 30;
+  --lavender-30: 47 44 55;  --lavender-40: 73 69 81;   --lavender-50: 101 97 109;
+  --lavender-60: 130 126 139; --lavender-70: 160 156 170; --lavender-80: 192 187 201;
+  --lavender-90: 224 219 234; --lavender-95: 241 236 251; --lavender-99: 252 251 255;
+  --lavender-100: 255 255 255;
+
+  --cream-0: 0 0 0;      --cream-10: 5 3 0;      --cream-20: 26 22 12;
+  --cream-30: 50 45 35;  --cream-40: 76 71 61;   --cream-50: 104 99 88;
+  --cream-60: 133 128 116; --cream-70: 163 158 146; --cream-80: 195 189 177;
+  --cream-90: 227 221 209; --cream-95: 244 238 225; --cream-99: 255 251 244;
+  --cream-100: 255 255 255;
+
+  --pblue-0: 0 0 0;      --pblue-10: 2 3 7;      --pblue-20: 18 22 29;
+  --pblue-30: 41 46 54;  --pblue-40: 67 72 80;   --pblue-50: 94 100 108;
+  --pblue-60: 123 129 138; --pblue-70: 152 159 168; --pblue-80: 184 190 200;
+  --pblue-90: 216 223 232; --pblue-95: 232 239 249; --pblue-99: 250 252 255;
+  --pblue-100: 255 255 255;
+
+  --beige-0: 0 0 0;      --beige-10: 6 3 0;      --beige-20: 28 21 6;
+  --beige-30: 53 45 29;  --beige-40: 79 71 54;   --beige-50: 107 98 81;
+  --beige-60: 136 127 109; --beige-70: 167 157 139; --beige-80: 198 189 169;
+  --beige-90: 231 221 201; --beige-95: 247 237 217; --beige-99: 255 251 244;
+  --beige-100: 255 255 255;
+
   /* Flat aliases — light mode uses the "primary" role's tone (40): vivid
      enough to read as a real color, dark enough for text/icon contrast on
      a light card. */

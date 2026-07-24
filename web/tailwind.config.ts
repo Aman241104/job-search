@@ -72,6 +72,14 @@ const config: Config = {
         'tone-purple': tonalScale('purple'),
         'tone-yellow': tonalScale('yellow'),
         'tone-pink': tonalScale('pink'),
+        // Pastel "tint" families — soft section/card background washes
+        // (Discover mode, hero blocks), not text/icon color. Same generator,
+        // seeded from near-white pastel hexes instead of vivid accent seeds.
+        'tint-mint': tonalScale('mint'),
+        'tint-lavender': tonalScale('lavender'),
+        'tint-cream': tonalScale('cream'),
+        'tint-blue': tonalScale('pblue'),
+        'tint-beige': tonalScale('beige'),
         border: {
           DEFAULT: 'rgb(var(--border) / <alpha-value>)',
         },
