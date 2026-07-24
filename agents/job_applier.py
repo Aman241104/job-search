@@ -12,7 +12,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import SMTP_EMAIL, SMTP_PASSWORD, SMTP_HOST, SMTP_PORT, USER_PROFILE, OUTPUT_DIR
 from agents.cv_customizer import CVCustomizerAgent
-from agents.tracker import TrackerAgent
+from agents.tracker import TrackerAgent, decrypt_secret
 from rich.console import Console
 from rich.panel import Panel
 
@@ -96,7 +96,7 @@ class JobApplierAgent:
         had it configured before per-user email existed."""
         profile = profile or {}
         smtp_email = profile.get("smtp_email") or SMTP_EMAIL
-        smtp_password = profile.get("smtp_app_password") or SMTP_PASSWORD
+        smtp_password = decrypt_secret(profile.get("smtp_app_password") or "") or SMTP_PASSWORD
         if not smtp_password:
             console.print("[red]No email sending configured — set it up in Profile, or SMTP_PASSWORD in .env[/red]")
             return False

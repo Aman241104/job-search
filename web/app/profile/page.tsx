@@ -29,6 +29,7 @@ interface ProfileData {
   location_weight: number;
   smtp_email: string;
   smtp_app_password: string;
+  smtp_app_password_set: boolean;
   telegram_chat_id: string;
 }
 
@@ -70,6 +71,7 @@ const DEFAULT_PROFILE: ProfileData = {
   location_weight: 50,
   smtp_email: '',
   smtp_app_password: '',
+  smtp_app_password_set: false,
   telegram_chat_id: '',
 };
 
@@ -491,7 +493,7 @@ export default function ProfilePage() {
             value={profile.smtp_app_password}
             onChange={(v) => set('smtp_app_password', v)}
             type="password"
-            placeholder="xxxx xxxx xxxx xxxx"
+            placeholder={profile.smtp_app_password_set ? '•••••••• (set — enter a new one to change)' : 'xxxx xxxx xxxx xxxx'}
           />
         </Section>
 

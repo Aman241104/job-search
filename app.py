@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from agents.tracker import TrackerAgent
+from agents.tracker import TrackerAgent, encrypt_secret
 from agents.job_finder import JobFinderAgent
 from agents.cv_customizer import CVCustomizerAgent
 from agents.job_applier import JobApplierAgent, extract_email_from_description
@@ -49,6 +49,31 @@ app.add_middleware(
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("JWT_SECRET", ""))
 
 app.mount('/static', StaticFiles(directory='frontend'), name='static')
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catches anything an endpoint didn't handle itself (LLM API down, SMTP
+    auth failure, DB timeout, etc.) — without this, FastAPI's default
+    behavior is a bare, uninformative 500 instead of the app's usual
+    {'error': ...} JSON shape. Same bug class as the Telegram webhook 500
+    already found and fixed this session, closed here at the root instead of
+    per call site."""
+    print(f"Unhandled exception on {request.method} {request.url.path}: {exc!r}", file=sys.stderr)
+    return JSONResponse({'error': 'Internal server error. Please try again.'}, status_code=500)
+
+
+def rate_limit_error(user_id: str, action: str, max_calls: int, window_seconds: int) -> Optional[JSONResponse]:
+    """Call at the top of any endpoint that triggers an LLM call and/or a
+    real outbound send (SMTP/Telegram) — the OAuth signup is public now, so
+    these are real per-account cost/abuse surfaces, not just internal calls.
+    Returns a 429 JSONResponse if the caller is over the limit, else None."""
+    if not TrackerAgent().check_rate_limit(user_id, action, max_calls, window_seconds):
+        return JSONResponse(
+            {'error': f'Rate limit reached for this action ({max_calls} per {window_seconds // 60} min) — try again shortly.'},
+            status_code=429,
+        )
+    return None
 
 TOPIC_ICONS = {
     "1": "⚛️", "2": "⚙️", "3": "🧩", "4": "🌳",
@@ -297,6 +322,10 @@ async def get_job_legitimacy(job_id: str, user_id: str = Depends(get_current_use
     if cached:
         return cached
 
+    limited = rate_limit_error(user_id, 'legitimacy_check', max_calls=60, window_seconds=3600)
+    if limited:
+        return limited
+
     with tracker._get_conn() as conn:
         conn.row_factory = True
         row = conn.execute("SELECT * FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id)).fetchone()
@@ -427,6 +456,11 @@ async def find_jobs_stream(user_id: str = Depends(get_current_user)):
             yield 'data: ' + json.dumps({'type': 'error', 'message': 'Job finder already running'}) + '\n\n'
         return StreamingResponse(already(), media_type='text/event-stream')
 
+    if not TrackerAgent().check_rate_limit(user_id, 'find_jobs', max_calls=10, window_seconds=3600):
+        async def limited():
+            yield 'data: ' + json.dumps({'type': 'error', 'message': 'Rate limit reached (10 finds/hour) — try again shortly.'}) + '\n\n'
+        return StreamingResponse(limited(), media_type='text/event-stream')
+
     async def generate():
         _find_running.add(user_id)
         try:
@@ -514,6 +548,9 @@ async def find_jobs_stream(user_id: str = Depends(get_current_user)):
 
 @app.post('/api/apply/{job_id}')
 async def generate_application(job_id: str, force: bool = Query(default=False), user_id: str = Depends(get_current_user)):
+    limited = rate_limit_error(user_id, 'apply', max_calls=30, window_seconds=3600)
+    if limited:
+        return limited
     tracker = TrackerAgent()
     with tracker._get_conn() as conn:
         conn.row_factory = True
@@ -547,6 +584,9 @@ async def email_apply(job_id: str, to_email: str = Query(default=''), force: boo
     """Send the tailored CV+cover letter (as PDF attachments) directly to a
     recruiter's email via the SMTP sender in job_applier.py. If to_email isn't
     supplied, tries to auto-detect one from the job's own description text."""
+    limited = rate_limit_error(user_id, 'email_apply', max_calls=30, window_seconds=3600)
+    if limited:
+        return limited
     tracker = TrackerAgent()
     with tracker._get_conn() as conn:
         conn.row_factory = True
@@ -586,6 +626,9 @@ async def telegram_notify(job_id: str, force: bool = Query(default=False), user_
     the tailored CV/cover-letter and pushes job link + details + both PDFs to
     Telegram, so applying by hand can happen from a phone whenever there's a
     free moment, instead of needing this dashboard open."""
+    limited = rate_limit_error(user_id, 'telegram_notify', max_calls=30, window_seconds=3600)
+    if limited:
+        return limited
     tracker = TrackerAgent()
     notifier = TelegramNotifierAgent()
     profile = tracker.get_profile(user_id) or {}
@@ -1667,8 +1710,13 @@ def _default_profile() -> dict:
 
 @app.get('/api/user/profile')
 async def get_user_profile(user_id: str = Depends(get_current_user)):
-    data = TrackerAgent().get_profile(user_id)
-    return data if data is not None else _default_profile()
+    data = dict(TrackerAgent().get_profile(user_id) or _default_profile())
+    # The stored value is an encrypted Gmail App Password — it must never
+    # round-trip to the client. Only a boolean "is one set" flag goes out;
+    # the frontend shows an already-set indicator instead of the real value.
+    data['smtp_app_password_set'] = bool(data.get('smtp_app_password'))
+    data['smtp_app_password'] = ''
+    return data
 
 
 @app.patch('/api/user/profile')
@@ -1676,7 +1724,15 @@ async def update_user_profile(request: Request, user_id: str = Depends(get_curre
     data = await request.json()
     tracker = TrackerAgent()
     existing = tracker.get_profile(user_id) or _default_profile()
+    # An empty smtp_app_password in the payload means "unchanged" (the
+    # frontend never has the real value to send back) — only overwrite it
+    # when the user actually typed a new one. `smtp_app_password_set` is a
+    # read-only, GET-only field, never persisted.
+    incoming_password = data.pop('smtp_app_password', None)
+    data.pop('smtp_app_password_set', None)
     existing.update(data)
+    if incoming_password:
+        existing['smtp_app_password'] = encrypt_secret(incoming_password)
     tracker.save_profile(user_id, existing)
     return {'ok': True}
 

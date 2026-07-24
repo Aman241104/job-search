@@ -91,6 +91,9 @@ GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/au
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 # Signs session JWTs. Generate with: python -c "import secrets; print(secrets.token_hex(32))"
 JWT_SECRET = os.getenv("JWT_SECRET", "")
+# Encrypts per-user secrets (smtp_app_password) at rest in the profiles JSONB
+# column. Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+PROFILE_ENCRYPTION_KEY = os.getenv("PROFILE_ENCRYPTION_KEY", "")
 
 # Quality gate (ROADMAP.md Phase 1 item, previously never built): don't
 # tailor a CV/cover letter for a job scoring below this without an explicit

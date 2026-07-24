@@ -1,6 +1,6 @@
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import openpyxl
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
@@ -8,11 +8,38 @@ from openpyxl.utils import get_column_letter
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import DATA_DIR, OUTPUT_DIR
+from config import DATA_DIR, OUTPUT_DIR, PROFILE_ENCRYPTION_KEY
 from rich.console import Console
 from rich.table import Table
+from cryptography.fernet import Fernet, InvalidToken
 
 console = Console()
+
+_fernet = Fernet(PROFILE_ENCRYPTION_KEY.encode()) if PROFILE_ENCRYPTION_KEY else None
+
+
+def encrypt_secret(plaintext: str) -> str:
+    """Used for per-user secrets stored in the `profiles` JSONB blob (e.g.
+    smtp_app_password) — these are real third-party credentials and must not
+    sit in Postgres as plaintext. No-ops (stores as-is) if
+    PROFILE_ENCRYPTION_KEY isn't set, so local dev without the key doesn't
+    hard-fail — only degrades to the pre-encryption behavior."""
+    if not plaintext or not _fernet:
+        return plaintext
+    return _fernet.encrypt(plaintext.encode()).decode()
+
+
+def decrypt_secret(ciphertext: str) -> str:
+    """Returns '' on any decrypt failure (wrong/rotated key, or a legacy
+    plaintext value from before encryption existed) rather than raising —
+    a broken decrypt must degrade to "not configured", not crash the caller
+    (e.g. an email-send attempt)."""
+    if not ciphertext or not _fernet:
+        return ciphertext
+    try:
+        return _fernet.decrypt(ciphertext.encode()).decode()
+    except (InvalidToken, ValueError):
+        return ""
 
 # ── Postgres-only (multi-tenant migration, 2026-07-23) ──────────────────────
 # SQLite dropped entirely — every table is now scoped by user_id, and local
@@ -344,6 +371,14 @@ class TrackerAgent:
                     updated_at TEXT
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS rate_limit_hits (
+                    user_id TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    ts TEXT NOT NULL
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_rate_limit_lookup ON rate_limit_hits(user_id, action, ts)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_learning_topics_item ON learning_topics(item_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_book_pages_book ON learning_book_pages(book_id)")
             # Indexes for performance + per-user scoping
@@ -451,6 +486,36 @@ class TrackerAgent:
                 ON CONFLICT (user_id) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at
             """, (user_id, json.dumps(data), now))
             conn.commit()
+
+    # ── Rate limiting (per-user, per-action sliding window) ─────────────────────
+
+    def check_rate_limit(self, user_id: str, action: str, max_calls: int, window_seconds: int) -> bool:
+        """Returns True and records the hit if the caller is still under
+        `max_calls` within the trailing `window_seconds`; returns False
+        (does not record) if they're over. Postgres-backed rather than an
+        in-memory counter so the limit holds even if Cloud Run scales to
+        multiple instances."""
+        cutoff = (datetime.now() - timedelta(seconds=window_seconds)).isoformat()
+        with self._get_conn() as conn:
+            conn.row_factory = ROW_DICT
+            # opportunistic cleanup — keeps this table from growing unbounded
+            # without needing a separate cron job
+            conn.execute(
+                "DELETE FROM rate_limit_hits WHERE user_id = ? AND action = ? AND ts <= ?",
+                (user_id, action, cutoff),
+            )
+            row = conn.execute(
+                "SELECT COUNT(*) as c FROM rate_limit_hits WHERE user_id = ? AND action = ? AND ts > ?",
+                (user_id, action, cutoff),
+            ).fetchone()
+            if row["c"] >= max_calls:
+                return False
+            conn.execute(
+                "INSERT INTO rate_limit_hits (user_id, action, ts) VALUES (?, ?, ?)",
+                (user_id, action, datetime.now().isoformat()),
+            )
+            conn.commit()
+        return True
 
     # ── Jobs + applications ─────────────────────────────────────────────────────
 
