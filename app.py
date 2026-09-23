@@ -31,6 +31,7 @@ from agents.trainer import TRAINING_TOPICS, SYSTEM_PROMPTS
 from config import FRONTEND_URL
 from auth import oauth, issue_session_jwt, get_current_user, SESSION_COOKIE, SESSION_TTL_SECONDS
 from starlette.middleware.sessions import SessionMiddleware
+from authlib.integrations.base_client.errors import OAuthError, MismatchingStateError
 
 app = FastAPI(title='Job Search AI', version='1.0.0')
 # Cookie-based auth across origins requires allow_credentials=True, which in
@@ -110,20 +111,45 @@ async def google_login(request: Request):
     return await oauth.google.authorize_redirect(request, f"{FRONTEND_URL}/auth/google/callback")
 
 
+def _login_error_redirect(code: str) -> RedirectResponse:
+    """Every callback failure lands back on /login with a readable reason
+    instead of the global handler's bare JSON 500 — a cancelled Google
+    prompt or a stale tab used to strand the user on a raw error page."""
+    return RedirectResponse(url=f"{FRONTEND_URL}/login?error={code}", status_code=302)
+
+
 @app.get('/auth/google/callback')
 async def google_callback(request: Request):
-    token = await oauth.google.authorize_access_token(request)
+    if request.query_params.get('error'):
+        # User hit "Cancel" on Google's consent screen, or Google refused
+        # the account (e.g. not a listed test user while the app is in
+        # Testing mode).
+        return _login_error_redirect('cancelled')
+    try:
+        token = await oauth.google.authorize_access_token(request)
+    except MismatchingStateError:
+        # State cookie missing/expired — back button, a second tab, or a
+        # login page left open too long. Retrying fixes it.
+        return _login_error_redirect('expired')
+    except OAuthError as exc:
+        print(f"Google OAuth error in callback: {exc!r}", file=sys.stderr)
+        return _login_error_redirect('google')
+
     userinfo = token.get('userinfo') or {}
     google_sub = userinfo.get('sub')
     if not google_sub:
-        return JSONResponse({'error': 'Google did not return a user id'}, status_code=400)
+        return _login_error_redirect('google')
 
-    user_id = TrackerAgent().get_or_create_user(
-        google_sub=google_sub,
-        email=userinfo.get('email', ''),
-        name=userinfo.get('name', ''),
-        avatar_url=userinfo.get('picture', ''),
-    )
+    try:
+        user_id = TrackerAgent().get_or_create_user(
+            google_sub=google_sub,
+            email=userinfo.get('email', ''),
+            name=userinfo.get('name', ''),
+            avatar_url=userinfo.get('picture', ''),
+        )
+    except Exception as exc:
+        print(f"DB error creating user in callback: {exc!r}", file=sys.stderr)
+        return _login_error_redirect('server')
     session_jwt = issue_session_jwt(user_id)
 
     response = RedirectResponse(url=FRONTEND_URL)

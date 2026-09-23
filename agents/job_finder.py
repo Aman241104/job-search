@@ -26,7 +26,63 @@ INTERNSHALA_SEARCHES = [
     ("work-from-home-react-js-jobs","Remote"),
     ("full-stack-development-jobs", "India"),
     ("next-js-jobs",                "India"),
+    ("web-development-jobs",        "India"),
+    ("web-development-jobs-in-ahmedabad", "Ahmedabad"),
+    ("web-development-jobs-in-vadodara", "Vadodara"),
+    ("node-js-jobs",                "India"),
+    ("python-django-jobs",          "India"),
+    ("backend-development-jobs",    "India"),
+    ("artificial-intelligence-ai-jobs", "India"),
+    ("data-analytics-jobs",         "India"),
+    ("data-analytics-jobs-in-ahmedabad", "Ahmedabad"),
 ]
+
+CUTSHORT_SEARCHES = [
+    # Cutshort answers 200 for any slug but only real category pages carry
+    # job data — these were verified to return listings (Sep 2026).
+    "frontend-developer-jobs-in-ahmedabad",
+    "fullstack-developer-jobs-in-ahmedabad",
+    "frontend-developer-jobs",
+]
+
+# Ahmedabad first (most searches), then the nearby cities within commuting
+# or easy-relocation range: Gandhinagar, Vadodara (Baroda), Anand, Nadiad.
+TALENT_SEARCHES = [
+    ("frontend developer",   "Ahmedabad"),
+    ("react developer",      "Ahmedabad"),
+    ("full stack developer", "Ahmedabad"),
+    ("next.js developer",    "Ahmedabad"),
+    ("mern developer",       "Ahmedabad"),
+    ("web developer",        "Ahmedabad"),
+    ("react developer",      "Gandhinagar"),
+    ("react developer",      "Vadodara"),
+    ("frontend developer",   "Vadodara"),
+    ("react developer",      "Anand"),
+    ("web developer",        "Anand"),
+    ("web developer",        "Nadiad"),
+    ("backend developer",    "Ahmedabad"),
+    ("python developer",     "Ahmedabad"),
+    ("node.js developer",    "Ahmedabad"),
+    ("ai engineer",          "Ahmedabad"),
+    ("data analyst",         "Ahmedabad"),
+    ("python developer",     "Vadodara"),
+    ("data analyst",         "Vadodara"),
+    ("software engineer",    "Gandhinagar"),
+]
+
+# Shine + Freshersworld share one "<role>-jobs-in-<city>" slug scheme.
+# Every role in Ahmedabad; the core dev roles in nearby cities.
+GUJARAT_ROLE_SLUGS = ["react-developer", "frontend-developer", "web-developer",
+                      "full-stack-developer", "node-js-developer", "python-developer",
+                      "software-developer", "data-analyst"]
+GUJARAT_CITY_SLUGS = ["vadodara", "gandhinagar", "anand", "nadiad"]
+GUJARAT_SEARCHES = ([(r, "ahmedabad") for r in GUJARAT_ROLE_SLUGS] +
+                    [(r, c) for c in GUJARAT_CITY_SLUGS
+                     for r in ("web-developer", "software-developer", "react-developer")])
+
+# Remote first, then Ahmedabad and nearby cities (commutable or easy move).
+DEFAULT_LOCATIONS = ['remote', 'ahmedabad', 'gandhinagar', 'vadodara', 'baroda',
+                     'anand', 'nadiad', 'kheda', 'gujarat']
 
 SENIOR_WORDS = {"staff", "principal", "lead", "senior", "sr.", "head of",
                 "director", "manager", "architect", "vp", "vice president", "cto"}
@@ -162,6 +218,188 @@ class JobFinderAgent:
                 continue
         return jobs
 
+    # ── Cutshort (Indian startups — search pages embed full job JSON) ──────────
+
+    def _fetch_cutshort(self, slug: str) -> list:
+        """Reads the job list from the page's __NEXT_DATA__ blob rather than
+        the rendered cards — it carries expRange, which matters here: most
+        Cutshort Ahmedabad listings want 3+ years, so anything whose minimum
+        experience is above 1 year is dropped before it ever gets scored."""
+        url = f"https://cutshort.io/jobs/{slug}"
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=20)
+            r.raise_for_status()
+            m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', r.text, re.S)
+            data = json.loads(m.group(1)) if m else {}
+            raw = data["props"]["pageProps"]["dehydratedState"]["queries"][0]["state"]["data"]["data"]["pageData"]["jobs"]
+        except Exception as e:
+            console.print(f"[yellow]Cutshort [{slug}] failed: {e}[/yellow]")
+            return []
+
+        jobs = []
+        for j in raw:
+            title = (j.get("headline") or "").strip()
+            link = j.get("publicUrl") or ""
+            exp_min = (j.get("expRange") or {}).get("min")
+            if not title or not link or self._is_senior(title):
+                continue
+            if exp_min is not None and exp_min > 1:
+                continue
+            desc = BeautifulSoup(j.get("sanitizedComment") or "", "lxml").get_text(" ", strip=True)
+            remote = j.get("remoteType") not in (None, "remote_not_okay")
+            location = j.get("locationsText") or ""
+            jobs.append({
+                "id":           str(uuid.uuid4()),
+                "title":        title,
+                "company":      (j.get("companyDetails") or {}).get("name", ""),
+                "description":  desc[:2000],
+                "url":          link,
+                "source":       "Cutshort",
+                "location":     f"{location} (Remote OK)" if remote and location else (location or "Remote"),
+                "salary":       j.get("salaryRangeText") or "Not specified",
+                "date_posted":  "",
+                "tags":         (j.get("allSkills") or [])[:10],
+                "score":        0,
+                "score_reason": "",
+                "date_found":   datetime.now().isoformat(),
+            })
+        return jobs
+
+    # ── Talent.com (aggregator — strong Gujarat coverage) ──────────────────────
+
+    def _fetch_talent(self, keyword: str, location: str) -> list:
+        """Parses the server-rendered search cards. Class names carry a build
+        hash suffix (JobCard_title__X32Qk), so match on the stable prefix."""
+        try:
+            r = requests.get("https://in.talent.com/jobs",
+                             params={"k": keyword, "l": location},
+                             headers=HEADERS, timeout=20)
+            r.raise_for_status()
+        except Exception as e:
+            console.print(f"[yellow]Talent.com [{keyword} / {location}] failed: {e}[/yellow]")
+            return []
+
+        soup = BeautifulSoup(r.text, "lxml")
+        pick = lambda card, name: card.select_one(f'[class*="JobCard_{name}__"]')
+        jobs = []
+        for card in soup.select('[class*="JobCard_card__"]'):
+            link = card.find("a", href=re.compile(r"/view\?id="))
+            title_el, company_el = pick(card, "title"), pick(card, "company")
+            if not link or not title_el:
+                continue
+            title = title_el.get_text(strip=True)
+            if self._is_senior(title):
+                continue
+            # "Last updated: 30+ days ago" listings are usually already filled
+            age = (pick(card, "timeText").get_text(strip=True) if pick(card, "timeText") else "")
+            if "30+" in age:
+                continue
+            loc_el, snippet_el = pick(card, "location"), pick(card, "snippet")
+            href = link["href"]
+            jobs.append({
+                "id":           str(uuid.uuid4()),
+                "title":        title,
+                "company":      company_el.get_text(strip=True) if company_el else "",
+                "description":  snippet_el.get_text(" ", strip=True)[:2000] if snippet_el else "",
+                # strip tracking params — the id alone is the canonical listing
+                "url":          "https://in.talent.com" + href.split("&")[0] if href.startswith("/") else href.split("&")[0],
+                "source":       "Talent.com",
+                "location":     loc_el.get_text(strip=True) if loc_el else location,
+                "salary":       "Not specified",
+                "date_posted":  "",
+                "tags":         [],
+                "score":        0,
+                "score_reason": "",
+                "date_found":   datetime.now().isoformat(),
+            })
+        return jobs
+
+    @staticmethod
+    def _min_years(text: str):
+        """'0 to 4 Yrs' / '1-3 years' / '0 Years' -> lower bound, or None."""
+        m = re.search(r"(\d+)\s*(?:to|-|–)?\s*\d*\s*(?:yrs?|years?)", text or "", re.I)
+        return int(m.group(1)) if m else None
+
+    # ── Shine.com (HT Media board — large Gujarat inventory) ───────────────────
+
+    def _fetch_shine(self, role: str, city: str) -> list:
+        url = f"https://www.shine.com/job-search/{role}-jobs-in-{city}"
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=20)
+            r.raise_for_status()
+        except Exception as e:
+            console.print(f"[yellow]Shine [{role} / {city}] failed: {e}[/yellow]")
+            return []
+        soup = BeautifulSoup(r.text, "lxml")
+        pick = lambda card, name: card.select(f'[class*="result-card_{name}__"]')
+        jobs = []
+        for card in soup.select('[class*="result-card_card__"]'):
+            role_el, link = pick(card, "role"), card.find("a", href=re.compile(r"^/jobs/"))
+            if not role_el or not link:
+                continue
+            title = role_el[0].get_text(" ", strip=True)
+            meta = [m.get_text(" ", strip=True) for m in pick(card, "meta-text")]  # [exp, salary, location]
+            exp_min = self._min_years(meta[0] if meta else "")
+            if self._is_senior(title) or (exp_min is not None and exp_min > 1):
+                continue
+            company = pick(card, "company")
+            jobs.append({
+                "id":           str(uuid.uuid4()),
+                "title":        title,
+                "company":      company[0].get_text(strip=True) if company else "",
+                "description":  f"Experience: {meta[0] if meta else 'n/a'}",
+                "url":          "https://www.shine.com" + link["href"].split("?")[0],
+                "source":       "Shine",
+                "location":     meta[2] if len(meta) > 2 else city.title(),
+                "salary":       meta[1] if len(meta) > 1 and "disclosed" not in meta[1].lower() else "Not specified",
+                "date_posted":  "",
+                "tags":         [],
+                "score":        0,
+                "score_reason": "",
+                "date_found":   datetime.now().isoformat(),
+            })
+        return jobs
+
+    # ── Freshersworld (fresher-only board, lots of Gujarat service companies) ──
+
+    def _fetch_freshersworld(self, role: str, city: str) -> list:
+        url = f"https://www.freshersworld.com/jobs/jobsearch/{role}-jobs-in-{city}"
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=20)
+            r.raise_for_status()
+        except Exception as e:
+            console.print(f"[yellow]Freshersworld [{role} / {city}] failed: {e}[/yellow]")
+            return []
+        soup = BeautifulSoup(r.text, "lxml")
+        text = lambda card, sel: (card.select_one(sel).get_text(" ", strip=True) if card.select_one(sel) else "")
+        jobs = []
+        for card in soup.select(".job-container[job_display_url]"):
+            # ".job-new-title" reads "<Role> Jobs Opening in <Company> at <City> Less More"
+            raw_title = text(card, ".job-new-title")
+            title = re.split(r"\s+Jobs? Opening in\s+", raw_title)[0].strip()
+            if not title or self._is_senior(title):
+                continue
+            exp_min = self._min_years(text(card, ".experience"))
+            if exp_min is not None and exp_min > 1:
+                continue
+            salary = text(card, ".qualifications")  # the site's own class name for the salary line
+            jobs.append({
+                "id":           str(uuid.uuid4()),
+                "title":        title,
+                "company":      text(card, ".company-name"),
+                "description":  f"Experience: {text(card, '.experience') or 'n/a'}. Fresher-focused listing (Freshersworld).",
+                "url":          card["job_display_url"],
+                "source":       "Freshersworld",
+                "location":     text(card, ".job-location") or city.title(),
+                "salary":       salary if salary and "not disclosed" not in salary.lower() else "Not specified",
+                "date_posted":  "",
+                "tags":         [],
+                "score":        0,
+                "score_reason": "",
+                "date_found":   datetime.now().isoformat(),
+            })
+        return jobs
+
     # ── Source 2: Jobicy (free remote job API) ─────────────────────────────────
 
     SENIOR_LEVELS = {"senior", "lead", "staff", "principal", "director", "head", "vp", "manager"}
@@ -289,6 +527,13 @@ class JobFinderAgent:
         {"keywords": "Next.js Developer",    "location": "India",      "f_E": "2"},
         {"keywords": "React Developer",      "location": "Ahmedabad"},
         {"keywords": "Frontend Developer",   "location": "Ahmedabad"},
+        {"keywords": "Web Developer",        "location": "Ahmedabad"},
+        {"keywords": "Backend Developer",    "location": "India",      "f_E": "2"},
+        {"keywords": "Python Developer",     "location": "Ahmedabad"},
+        {"keywords": "AI Engineer",          "location": "India",      "f_E": "2"},
+        {"keywords": "Data Analyst",         "location": "Ahmedabad"},
+        {"keywords": "Software Engineer",    "location": "Vadodara"},
+        {"keywords": "Software Engineer",    "location": "Gandhinagar"},
     ]
 
     def _fetch_linkedin(self) -> list:
@@ -867,14 +1112,25 @@ class JobFinderAgent:
         'ui developer': 12, 'ui/ux': 6, 'mern': 10,
         'react native': 8, 'redux': 5, 'graphql': 5,
         'html': 3, 'css': 3, 'sass': 3, 'webpack': 3,
+        # Backend / AI / data — roles Aman can do or grow into (Python/FastAPI,
+        # LLM + RAG projects, SQL). Lower than the core React weights so a
+        # frontend job with the same match still ranks first.
+        'python': 8, 'fastapi': 8, 'rest api': 5, 'backend': 6, 'supabase': 5,
+        'llm': 8, 'generative ai': 8, 'genai': 8, 'rag': 6, 'openai': 5, 'langchain': 5,
+        'prompt engineering': 5, 'ai engineer': 6,
+        'sql': 5, 'data analyst': 6, 'power bi': 4, 'excel': 3, 'pandas': 4, 'tableau': 3,
+        'wordpress': 3, 'web developer': 8,
     }
 
     PENALTY_SKILLS = {
         'ruby': -15, 'rails': -15, 'php': -15, 'laravel': -15,
         'kotlin': -15, 'android': -15, 'ios': -15, 'swift': -15,
-        'data science': -20, 'machine learning': -15, 'ai engineer': -10,
+        # 'machine learning' / 'ai engineer' / 'data science' used to be
+        # penalised here — removed Sep 2026 once AI-engineer and data-analyst
+        # roles became targets. Research-heavy ML is still filtered by the
+        # experience patterns (most want 3+ years).
         'devops': -15, 'embedded': -20, 'firmware': -20, 'c#': -10,
-        '.net': -10, 'java ': -8, 'spring': -10, 'django': -5, 'flask': -5,
+        '.net': -10, 'java ': -8, 'spring': -10,
     }
 
     EXPERIENCE_PATTERNS = [
@@ -909,7 +1165,7 @@ class JobFinderAgent:
         return custom if custom else self.DEFAULT_SKILL_WEIGHTS
 
     def _location_preference(self) -> list:
-        return [l.lower() for l in (self.profile.get('location_preference') or [])] or ['remote', 'ahmedabad', 'gujarat']
+        return [l.lower() for l in (self.profile.get('location_preference') or [])] or DEFAULT_LOCATIONS
 
     def _location_weight(self) -> float:
         """0-100 slider -> multiplier, 50 = baseline (matches the original
@@ -992,8 +1248,13 @@ class JobFinderAgent:
 
         # Title relevance bonus
         title_good = ['react', 'frontend', 'front end', 'full stack', 'javascript', 'ui developer', 'next.js', 'nextjs']
+        title_ok = ['web developer', 'software engineer', 'software developer', 'backend', 'back end',
+                    'node', 'python', 'mern', 'ai engineer', 'ai developer', 'genai', 'llm',
+                    'data analyst', 'business analyst', 'sql', 'wordpress', 'shopify']
         if any(t in title for t in title_good):
             score += 10
+        elif any(t in title for t in title_ok):
+            score += 6
 
         reason_parts = []
         if skill_score > 20: reason_parts.append('strong skill match')
@@ -1066,7 +1327,7 @@ class JobFinderAgent:
     ALL_SOURCE_KEYS = [
         'internshala', 'jobicy', 'adzuna', 'jooble', 'careerjet',
         'weworkremotely', 'arbeitnow', 'linkedin', 'remotive', 'remoteok',
-        'remoteco', 'themuse', 'himalayas', 'hn_hiring',
+        'remoteco', 'themuse', 'himalayas', 'hn_hiring', 'cutshort', 'talent', 'shine', 'freshersworld',
     ]
 
     def _source_enabled(self, key: str) -> bool:
@@ -1155,6 +1416,28 @@ class JobFinderAgent:
         if self._source_enabled('hn_hiring'):
             console.print("  [dim]HN Who's Hiring: this month's thread[/dim]")
             all_jobs.extend(self._fetch_hn_hiring())
+
+        # ── Cutshort (startups; only ≤1-year-experience listings kept) ──
+        if self._source_enabled('cutshort'):
+            for slug in CUTSHORT_SEARCHES:
+                console.print(f"  [dim]Cutshort: {slug}[/dim]")
+                all_jobs.extend(self._fetch_cutshort(slug))
+
+        # ── Talent.com (aggregator with good Ahmedabad/Gujarat coverage) ──
+        if self._source_enabled('talent'):
+            for kw, loc in TALENT_SEARCHES:
+                console.print(f"  [dim]Talent.com: {kw} / {loc}[/dim]")
+                all_jobs.extend(self._fetch_talent(kw, loc))
+
+        # ── Shine + Freshersworld (Ahmedabad + nearby Gujarat cities) ──
+        if self._source_enabled('shine'):
+            for role, city in GUJARAT_SEARCHES:
+                console.print(f"  [dim]Shine: {role} / {city}[/dim]")
+                all_jobs.extend(self._fetch_shine(role, city))
+        if self._source_enabled('freshersworld'):
+            for role, city in GUJARAT_SEARCHES:
+                console.print(f"  [dim]Freshersworld: {role} / {city}[/dim]")
+                all_jobs.extend(self._fetch_freshersworld(role, city))
 
         # ── Deduplicate + filter ──
         # Two dedup checks: exact URL (handles the same source returning a

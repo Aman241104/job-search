@@ -234,7 +234,14 @@ export const AUTH_LOGIN_URL = `/auth/google/login`;
 
 export const api = {
   me: (): Promise<AuthUser | null> =>
-    apiFetch(`/auth/me`).then((r) => (r.ok ? r.json() : null)),
+    apiFetch(`/auth/me`).then((r) => {
+      // 401/403 = genuinely logged out. Anything else non-ok (502/503 from
+      // a cold or crashed backend) throws so AuthProvider can retry instead
+      // of bouncing a logged-in user to /login.
+      if (r.status === 401 || r.status === 403) return null;
+      if (!r.ok) throw new Error(`auth/me failed: ${r.status}`);
+      return r.json();
+    }),
 
   logout: (): Promise<{ ok: boolean }> =>
     apiFetch(`/auth/logout`, { method: 'POST' }).then((r) => r.json()),

@@ -36,11 +36,31 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
   const router = useRouter();
 
   useEffect(() => {
-    api.me().then((u) => {
+    // api.me() rejects (instead of resolving null) on a network error or a
+    // backend 5xx — e.g. a Cloud Run cold start. Previously that rejection
+    // was unhandled, leaving loading=true and the "Loading..." screen up
+    // forever. Retry a couple of times, then treat it as logged out.
+    const fetchMe = async (): Promise<AuthUser | null> => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          return await api.me();
+        } catch {
+          await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+        }
+      }
+      return null;
+    };
+
+    fetchMe().then((u) => {
       setUser(u);
       setLoading(false);
       if (!u) {
         if (!PUBLIC_PATHS.includes(pathname)) router.replace('/login');
+        return;
+      }
+      // Already signed in — don't leave the user sitting on the login page.
+      if (PUBLIC_PATHS.includes(pathname)) {
+        router.replace('/dashboard');
         return;
       }
       // First login (no saved profile yet) sends a new user through the
@@ -49,7 +69,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         if (!p.onboarding_completed && !ONBOARDING_EXEMPT_PATHS.includes(pathname)) {
           router.replace('/onboarding');
         }
-      });
+      }).catch(() => {});
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -51,6 +51,10 @@ const ALL_SOURCES = [
   { key: 'themuse', label: 'The Muse' },
   { key: 'himalayas', label: 'Himalayas' },
   { key: 'hn_hiring', label: "HN Who's Hiring" },
+  { key: 'cutshort', label: 'Cutshort' },
+  { key: 'talent', label: 'Talent.com (Gujarat)' },
+  { key: 'shine', label: 'Shine (Gujarat)' },
+  { key: 'freshersworld', label: 'Freshersworld (Gujarat)' },
 ];
 
 const DEFAULT_PROFILE: ProfileData = {
