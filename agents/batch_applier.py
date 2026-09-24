@@ -20,7 +20,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import USER_PROFILE, OUTPUT_DIR, MIN_APPLY_SCORE, TELEGRAM_CHAT_ID
 from agents.tracker import TrackerAgent
-from agents.cv_customizer import CVCustomizerAgent
+from agents.cv_customizer import CVCustomizerAgent, GenerationFailed
 from agents.job_applier import JobApplierAgent, extract_email_from_description
 from agents.telegram_notifier import TelegramNotifierAgent
 
@@ -62,9 +62,10 @@ def run_email_batch(user_id: str, job_ids: list, mode: str, force: bool = False)
             tracker.add_batch_item(batch_id, job_id, status="no_email", error="No email found in description")
             continue
 
-        package = cv_agent.prepare_full_package(job, resume=resume)
-        if "generation failed" in package.get("cv_markdown", ""):
-            tracker.add_batch_item(batch_id, job_id, email=email, status="generation_failed")
+        try:
+            package = cv_agent.prepare_full_package(job, resume=resume)
+        except GenerationFailed as e:
+            tracker.add_batch_item(batch_id, job_id, email=email, status="generation_failed", error=str(e))
             continue
 
         if mode == "automatic":
@@ -137,9 +138,10 @@ def run_telegram_batch(user_id: str, job_ids: list, force: bool = False) -> dict
             tracker.add_batch_item(batch_id, job_id, status="telegram_not_configured")
             continue
 
-        package = cv_agent.prepare_full_package(job, resume=resume)
-        if "generation failed" in package.get("cv_markdown", ""):
-            tracker.add_batch_item(batch_id, job_id, status="generation_failed")
+        try:
+            package = cv_agent.prepare_full_package(job, resume=resume)
+        except GenerationFailed as e:
+            tracker.add_batch_item(batch_id, job_id, status="generation_failed", error=str(e))
             continue
 
         sent = notifier.send_job_alert(user_id, job, package["cv_path"], package["cover_letter_path"], package["cv_markdown"], chat_id=chat_id)
@@ -260,7 +262,11 @@ def run_browser_batch(user_id: str, job_ids: list, force: bool = False) -> dict:
             tracker.add_batch_item(batch_id, job_id, status="below_score_gate")
             continue
 
-        package = cv_agent.prepare_full_package(job, resume=resume)
+        try:
+            package = cv_agent.prepare_full_package(job, resume=resume)
+        except GenerationFailed as e:
+            tracker.add_batch_item(batch_id, job_id, status="generation_failed", error=str(e))
+            continue
         prefill = prefill_browser_form(job, cv_path=package.get("cv_path", ""), profile=profile)
         tracker.add_batch_item(
             batch_id, job_id, cv_path=package.get("cv_path", ""), cover_path=package.get("cover_letter_path", ""),

@@ -5,11 +5,19 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import DATA_DIR, OUTPUT_DIR, USER_PROFILE
 from claude_client import ask_ai
+from agents.cv_validator import resume_corpus, sanitize_cv, sanitize_cover_letter, is_failed
 from rich.console import Console
 import markdown as md_lib
 from weasyprint import HTML
 
 console = Console()
+
+class GenerationFailed(RuntimeError):
+    """The AI returned nothing usable after retries — callers should report
+    it instead of saving a PDF that just says "generation failed"."""
+
+
+GENERATION_ATTEMPTS = 3
 
 RESUME_CSS = """<style>
   @page { size: A4; margin: 14mm 15mm; }
@@ -123,7 +131,7 @@ Output ONLY the final {doc_type} text (improved or unchanged) — no explanation
         refined = ask_ai(prompt, max_tokens=max_tokens)
         return refined if refined else draft
 
-    def customize_for_job(self, job: dict, resume: dict = None) -> str:
+    def _draft_cv(self, job: dict, resume: dict = None) -> str:
         console.print(f"[cyan]Customizing CV for: {job['title']} at {job['company']}[/cyan]")
 
         selected_projects = self._select_relevant_projects(job, resume=resume)
@@ -198,7 +206,7 @@ etc.
             max_tokens=2000,
         )
 
-    def generate_cover_letter(self, job: dict, resume: dict = None) -> str:
+    def _draft_cover_letter(self, job: dict, resume: dict = None) -> str:
         console.print(f"[cyan]Writing cover letter for: {job['title']} at {job['company']}[/cyan]")
 
         selected_projects = self._select_relevant_projects(job, resume=resume, top_n=3)
@@ -255,9 +263,57 @@ Output ONLY the cover letter body paragraphs — no greeting, no sign-off, no su
         full_html = f"<html><head><meta charset='utf-8'>{RESUME_CSS}</head><body>{html_body}</body></html>"
         HTML(string=full_html).write_pdf(str(output_path))
 
+    # ── Validated public API ─────────────────────────────────────────────────
+
+    def customize_for_job(self, job: dict, resume: dict = None) -> str:
+        """Tailored CV markdown, checked against the resume: retried if the AI
+        fails, and any technology the resume never mentions is removed."""
+        corpus = resume_corpus(self._resume_dict(resume), self.projects_detailed)
+        for _ in range(GENERATION_ATTEMPTS):
+            draft = self._draft_cv(job, resume=resume)
+            if not is_failed(draft):
+                clean, removed = sanitize_cv(draft, self._resume_dict(resume), corpus)
+                if removed:
+                    console.print(f"[yellow]  Removed unsupported claims from CV: {', '.join(removed)}[/yellow]")
+                return clean
+        raise GenerationFailed(f"CV generation failed for {job.get('title')} at {job.get('company')}")
+
+    def generate_cover_letter(self, job: dict, resume: dict = None) -> str:
+        corpus = resume_corpus(self._resume_dict(resume), self.projects_detailed)
+        for _ in range(GENERATION_ATTEMPTS):
+            draft = self._draft_cover_letter(job, resume=resume)
+            if not is_failed(draft):
+                clean, removed = sanitize_cover_letter(draft, corpus)
+                if removed:
+                    console.print(f"[yellow]  Removed unsupported claims from cover letter: {', '.join(removed)}[/yellow]")
+                return clean
+        raise GenerationFailed(f"Cover letter generation failed for {job.get('title')} at {job.get('company')}")
+
     def save_tailored_cv(self, job_id: str, cv_markdown: str) -> str:
+        """Renders the CV, trimming it to one page: recruiters skim page one,
+        and a lone Achievements line spilling onto page two looks careless.
+        Trims lowest-value content first — Achievements, then the last
+        project, then the last project again."""
+        from pypdf import PdfReader
         path = Path(OUTPUT_DIR) / f"cv_{job_id}.pdf"
-        self._markdown_to_pdf(cv_markdown, path)
+        md = cv_markdown
+        for _ in range(4):
+            self._markdown_to_pdf(md, path)
+            if len(PdfReader(str(path)).pages) <= 1:
+                break
+            if "\n## Achievements" in md:
+                head, _, rest = md.partition("\n## Achievements")
+                tail = rest.split("\n## ", 1)
+                md = head + ("\n## " + tail[1] if len(tail) > 1 else "\n")
+                continue
+            projects = md.split("\n### ")
+            proj_start = md.find("## Projects")
+            if len(projects) > 2 and proj_start != -1 and md.rfind("\n### ") > proj_start:
+                cut = md.rfind("\n### ")
+                nxt = md.find("\n## ", cut)
+                md = md[:cut] + (md[nxt:] if nxt != -1 else "\n")
+                continue
+            break
         return str(path)
 
     def save_cover_letter(self, job_id: str, cover_letter: str, resume: dict = None) -> str:

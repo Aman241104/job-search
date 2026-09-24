@@ -337,6 +337,10 @@ Chegg SWE II Frontend, plus a verified batch of 15 (7 remote 7+ LPA Internshala 
   now returns the saved conversation. Chats (Learning/Book/Train) no longer scroll the whole page on load.
 - Sidebar avatar broken (Google blocks hotlinks with a Referer) → `referrerPolicy="no-referrer"` + initials fallback.
 
+**Quality pass (same day):** experience-aware + salary-ceiling scoring; listing checker (first run: archived 650 jobs
+untouched >30 days + 4 closed, re-scored 4 needing 5+/7+ yrs); CV validator (fake-skill removal, retries, 1 page);
+Apply kit (form answers, follow-up drafts) and Prep tabs in the job drawer. Removed 4 dead project links from resumes.
+
 **New:** Obsidian Vault tab + `main.py vault-sync`; live Find Jobs progress (per-source counts, AI evaluation i/N with
 ETA, scored-job feed); liquid-glass UI (`.glass-panel`, ambient color field) + Light/Dark/Dim theme switcher
 (`components/ui/apple-liquid-glass-switcher.tsx`). Tests 9 → 16.

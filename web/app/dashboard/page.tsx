@@ -11,6 +11,7 @@ import type { TooltipContentProps } from 'recharts/types/component/Tooltip';
 import StatCard from '@/components/StatCard';
 import EmptyState from '@/components/EmptyState';
 import FindButton from '@/components/FindButton';
+import ListingCheckButton from '@/components/ListingCheckButton';
 import JobMatchCard from '@/components/JobMatchCard';
 import HeroBackground from '@/components/HeroBackground';
 import Sparkline from '@/components/Sparkline';
@@ -741,6 +742,9 @@ export default function DashboardPage() {
                   )}
                 </div>
                 <FindButton onComplete={fetchData} />
+                <div className="mt-3">
+                  <ListingCheckButton onComplete={fetchData} />
+                </div>
               </div>
 
               {/* Top Opportunities */}

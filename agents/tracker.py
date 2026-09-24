@@ -172,6 +172,8 @@ class TrackerAgent:
                 )
             """)
             conn.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS date_posted TEXT")
+            # Last time agents/listing_checker.py re-opened the live listing
+            conn.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS checked_at TEXT")
             # url uniqueness is per-user (two users can independently find the
             # same posting) — a bare UNIQUE(url) from the single-tenant schema
             # would let user B's scrape silently no-op against user A's row.
@@ -192,6 +194,10 @@ class TrackerAgent:
                     FOREIGN KEY (job_id) REFERENCES jobs(id)
                 )
             """)
+            # Per-application AI extras, cached as JSON so regenerating is opt-in:
+            # ready-to-paste form answers, and an interview prep pack.
+            conn.execute("ALTER TABLE applications ADD COLUMN IF NOT EXISTS form_answers TEXT")
+            conn.execute("ALTER TABLE applications ADD COLUMN IF NOT EXISTS prep_pack TEXT")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS training_sessions (
                     id TEXT PRIMARY KEY,
@@ -702,6 +708,72 @@ class TrackerAgent:
             """, (status, notes, now, cv_path, cover_path, date_applied or '', job_id, user_id))
             conn.commit()
         console.print(f"[green]Status updated to '{status}'[/green]")
+
+    # ── Listing freshness (agents/listing_checker.py) ───────────────────────
+
+    def archive_stale_jobs(self, user_id: str, max_age_days: int = 30) -> int:
+        """Move never-touched 'found' jobs older than max_age_days to
+        'skipped', so the top-matches lists stop surfacing month-old
+        postings. Starred jobs are left alone. Reversible via the status menu."""
+        cutoff = (datetime.now() - timedelta(days=max_age_days)).isoformat()
+        now = datetime.now().isoformat()
+        with self._get_conn() as conn:
+            cur = conn.execute("""
+                UPDATE applications a SET status = 'skipped', last_updated = ?,
+                    notes = TRIM(COALESCE(a.notes, '') || ' [auto-archived: found over ' || ? || ' days ago]')
+                FROM jobs j
+                WHERE a.job_id = j.id AND a.user_id = ? AND j.user_id = ?
+                  AND a.status = 'found' AND COALESCE(j.starred, 0) = 0
+                  AND COALESCE(NULLIF(j.date_posted, ''), j.date_found) < ?
+            """, (now, str(max_age_days), user_id, user_id, cutoff))
+            return cur.rowcount
+
+    def get_jobs_to_check(self, user_id: str, limit: int = 30, recheck_days: int = 3) -> list:
+        """Highest-scored 'found' jobs whose live listing hasn't been
+        re-opened in the last recheck_days."""
+        cutoff = (datetime.now() - timedelta(days=recheck_days)).isoformat()
+        with self._get_conn() as conn:
+            conn.row_factory = ROW_DICT
+            return conn.execute("""
+                SELECT j.id, j.title, j.company, j.url, j.source, j.score, j.score_reason
+                FROM jobs j JOIN applications a ON a.job_id = j.id
+                WHERE j.user_id = ? AND a.status = 'found'
+                  AND (j.checked_at IS NULL OR j.checked_at < ?)
+                ORDER BY j.score DESC LIMIT ?
+            """, (user_id, cutoff, limit)).fetchall()
+
+    def record_listing_check(self, user_id: str, job_id: str, closed: bool,
+                             new_score: int | None = None, reason_note: str = "") -> None:
+        now = datetime.now().isoformat()
+        with self._get_conn() as conn:
+            conn.execute("UPDATE jobs SET checked_at = ? WHERE id = ? AND user_id = ?", (now, job_id, user_id))
+            if new_score is not None:
+                conn.execute(
+                    "UPDATE jobs SET score = ?, score_reason = TRIM(COALESCE(score_reason, '') || ' — ' || ?) "
+                    "WHERE id = ? AND user_id = ?",
+                    (new_score, reason_note, job_id, user_id),
+                )
+            if closed:
+                conn.execute("""
+                    UPDATE applications SET status = 'skipped', last_updated = ?,
+                        notes = TRIM(COALESCE(notes, '') || ' [auto-archived: listing closed]')
+                    WHERE job_id = ? AND user_id = ? AND status = 'found'
+                """, (now, job_id, user_id))
+
+    # ── Per-application AI extras (form answers, interview prep) ────────────
+
+    def get_application_extra(self, user_id: str, job_id: str, field: str) -> dict | None:
+        assert field in ("form_answers", "prep_pack")
+        with self._get_conn() as conn:
+            row = conn.execute(f"SELECT {field} FROM applications WHERE job_id = ? AND user_id = ?",
+                               (job_id, user_id)).fetchone()
+        return json.loads(row[0]) if row and row[0] else None
+
+    def save_application_extra(self, user_id: str, job_id: str, field: str, data: dict) -> None:
+        assert field in ("form_answers", "prep_pack")
+        with self._get_conn() as conn:
+            conn.execute(f"UPDATE applications SET {field} = ? WHERE job_id = ? AND user_id = ?",
+                         (json.dumps(data), job_id, user_id))
 
     def toggle_star(self, user_id: str, job_id: str) -> bool:
         with self._get_conn() as conn:

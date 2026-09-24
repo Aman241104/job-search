@@ -61,6 +61,11 @@ Commands:
     # links — show Gujarat/Ahmedabad job board links to open manually
     subparsers.add_parser("links", help="Show Ahmedabad/Gujarat job board links to open in browser")
 
+    # check — re-open top listings: archive closed/old ones, re-score 2+ yrs ones
+    check_p = subparsers.add_parser("check", help="Re-check top listings: archive closed/stale jobs, re-score ones needing 2+ yrs")
+    check_p.add_argument("--limit", type=int, default=30, help="How many top listings to re-open (default 30)")
+    check_p.add_argument("--max-age", type=int, default=30, help="Archive untouched jobs found more than N days ago (default 30)")
+
     # vault-sync — push Obsidian notes into the dashboard's Learning > Vault tab
     vault_p = subparsers.add_parser("vault-sync", help="Sync your Obsidian vault's notes to the Learning > Vault tab")
     vault_p.add_argument("--path", default=os.getenv("OBSIDIAN_VAULT_PATH", "~/Obsidian Vault"),
@@ -137,6 +142,15 @@ Commands:
             webbrowser.open(l["url"])
         console.print("\n[green]All links opened! Apply and then run:[/green]")
         console.print("  python main.py update <job_id> applied --notes 'Applied via Naukri'")
+
+    elif args.command == "check":
+        from agents.listing_checker import check_listings
+        res = check_listings(orch.user_id, limit=args.limit, max_age_days=args.max_age,
+                             progress=lambda e: console.print(
+                                 f"  [{'red' if e['closed'] else 'yellow'}]{'closed' if e['closed'] else 're-scored'}[/] "
+                                 f"{e['title']} — {e['company']}" + ("" if e['closed'] else f" ({e['old_score']} → {e['new_score']}, {e['note']})")))
+        console.print(f"[green]Archived {res['archived_old']} old + {res['closed']} closed listings; "
+                      f"re-scored {res['downgraded']}; checked {res['checked']} ({res['errors']} unreachable).[/green]")
 
     elif args.command == "vault-sync":
         from agents.vault import read_vault_dir

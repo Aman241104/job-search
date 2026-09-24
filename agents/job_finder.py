@@ -10,6 +10,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import DATA_DIR, ADZUNA_APP_ID, ADZUNA_APP_KEY, JOOBLE_API_KEY, CAREERJET_API_KEY
 from claude_client import ask_claude_json, score_job_single
+from agents.job_quality import EXPERIENCE_POINTS, required_years, annual_rupee_range
 from bs4 import BeautifulSoup
 from rich.console import Console
 from rich.progress import track
@@ -1201,11 +1202,17 @@ class JobFinderAgent:
             if kw in text:
                 score += w
 
-        # Experience
-        for pattern, pts in self.EXPERIENCE_PATTERNS:
-            if re.search(pattern, text):
-                score += pts
-                break
+        # Experience — the stated minimum years decides it. The old first-
+        # pattern-wins loop let a stray "fresher" (site nav, "freshers can't
+        # apply") outrank a real "3+ years required" in the same text.
+        min_years = required_years(text)
+        if min_years is not None:
+            score += EXPERIENCE_POINTS.get(min(min_years, 5), -35)
+        else:
+            for pattern, pts in self.EXPERIENCE_PATTERNS:
+                if re.search(pattern, text):
+                    score += pts
+                    break
 
         # Location — weighted by location_weight (50 = baseline, matches the
         # original point values). far_cities is still an India-specific
@@ -1236,15 +1243,15 @@ class JobFinderAgent:
                 elif lpa < lo * 0.5: score -= round(10 * salary_weight)
             except Exception:
                 pass
-        rupee_match = re.search(r'[₹\$]?\s*(\d+)[,\s]*(\d{3})?\s*[-–]\s*[₹\$]?\s*(\d+)[,\s]*(\d{3})?', salary_str)
-        if rupee_match and not salary_match:
-            try:
-                low = int(rupee_match.group(1).replace(',', '') + (rupee_match.group(2) or ''))
-                lo_rupees = lo * 100000
-                if low >= lo_rupees * 0.75: score += round(15 * salary_weight)
-                elif low >= lo_rupees * 0.5: score += round(8 * salary_weight)
-            except Exception:
-                pass
+        annual = annual_rupee_range(salary_str) if not salary_match else None
+        if annual:
+            low, high = annual
+            lo_rupees = lo * 100000
+            if low >= lo_rupees * 0.75: score += round(15 * salary_weight)
+            elif low >= lo_rupees * 0.5: score += round(8 * salary_weight)
+            # A ceiling far under target (e.g. 2-3.5 LPA vs an 8 LPA goal) used
+            # to cost nothing — which is how low-paid listings reached 98.
+            elif high < lo_rupees * 0.6: score -= round(15 * salary_weight)
 
         # Title relevance bonus
         title_good = ['react', 'frontend', 'front end', 'full stack', 'javascript', 'ui developer', 'next.js', 'nextjs']

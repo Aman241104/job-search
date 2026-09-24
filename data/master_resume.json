@@ -54,7 +54,7 @@
       "description": "Multi-tenant WhatsApp Business AI SaaS: an admin dashboard lets each business workspace configure an LLM-powered agent that handles customer conversations over the real WhatsApp Business Cloud API, with automated drip-sequence follow-ups and an appointment/reservation booking state machine.",
       "tech_stack": ["Next.js 16", "React 19", "Supabase", "Groq LLM", "Meta Cloud API", "Tailwind 4", "Vitest"],
       "live_url": "https://whatsapp-ai-agent-inky.vercel.app",
-      "github_url": "https://github.com/Aman241104/whatsapp-ai-agent",
+      "github_url": null,
       "bullets": [
         "Built a multi-tenant WhatsApp Business AI SaaS (Next.js 16, Supabase, Groq) letting businesses deploy an LLM agent over their real WhatsApp number, with per-tenant RLS-enforced data isolation",
         "Designed a booking state machine and drip-sequence engine for automated appointment scheduling and follow-up messaging",

@@ -141,6 +141,43 @@ export interface VaultSearchHit {
   snippet: string;
 }
 
+export interface FormAnswers {
+  why_hire: string;
+  work_samples: string;
+  links: string;
+  experience: string;
+  availability: string;
+  education: string;
+  location: string;
+  expected_ctc: string;
+  contact: string;
+  removed_claims: string[];
+  generated_at: string;
+}
+
+export interface FollowupDraft {
+  linkedin_note: string;
+  email: string;
+}
+
+export interface PrepPack {
+  likely_questions: { question: string; why_they_ask: string; answer_outline: string }[];
+  topics_to_revise: string[];
+  stories_to_use: { story_id: string | null; use_for: string }[];
+  questions_to_ask_them: string[];
+  company_research: string[];
+  generated_at: string;
+}
+
+export interface ListingCheckResult {
+  archived_old: number;
+  checked: number;
+  closed: number;
+  downgraded: number;
+  errors: number;
+  changes: { id: string; title: string; company: string; closed: boolean; old_score: number; new_score: number | null; note: string }[];
+}
+
 export interface BookPage {
   id: string;
   book_id: string;
@@ -429,6 +466,30 @@ export const api = {
       return r.json();
     });
   },
+
+  formAnswers: (jobId: string, refresh = false): Promise<FormAnswers> =>
+    apiFetch(`/api/jobs/${jobId}/answers${refresh ? '?refresh=true' : ''}`).then((r) => {
+      if (!r.ok) throw new Error(`Form answers failed: ${r.status}`);
+      return r.json();
+    }),
+
+  prepPack: (jobId: string, refresh = false): Promise<PrepPack> =>
+    apiFetch(`/api/jobs/${jobId}/prep${refresh ? '?refresh=true' : ''}`).then(async (r) => {
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `Prep pack failed: ${r.status}`);
+      return r.json();
+    }),
+
+  followupDraft: (jobId: string): Promise<FollowupDraft> =>
+    apiFetch(`/api/jobs/${jobId}/followup-draft`).then((r) => {
+      if (!r.ok) throw new Error(`Follow-up draft failed: ${r.status}`);
+      return r.json();
+    }),
+
+  checkListings: (limit = 15): Promise<ListingCheckResult> =>
+    apiFetch(`/api/jobs/check-listings?limit=${limit}`, { method: 'POST' }).then((r) => {
+      if (!r.ok) throw new Error(`Listing check failed: ${r.status}`);
+      return r.json();
+    }),
 
   listVault: (): Promise<{ notes: VaultNoteMeta[]; synced_at: string | null }> =>
     apiFetch(`/api/learning/vault`).then((r) => {

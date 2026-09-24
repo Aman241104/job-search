@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from agents.tracker import TrackerAgent, encrypt_secret
 from agents.job_finder import JobFinderAgent
-from agents.cv_customizer import CVCustomizerAgent
+from agents.cv_customizer import CVCustomizerAgent, GenerationFailed
 from agents.job_applier import JobApplierAgent, extract_email_from_description
 from agents.telegram_notifier import TelegramNotifierAgent
 from config import OUTPUT_DIR, DATA_DIR, MIN_APPLY_SCORE, LEARNING_TRACK, TELEGRAM_WEBHOOK_SECRET, TELEGRAM_CHAT_ID, CRON_SECRET
@@ -381,6 +381,76 @@ async def find_job_contact(job_id: str, user_id: str = Depends(get_current_user)
     return result
 
 
+# ── Application kit: form answers, follow-up drafts, interview prep ────────────
+# Plain `def` endpoints (FastAPI runs them in a worker thread), so the slow
+# AI calls don't block other requests. Form answers and prep packs are cached
+# per application; ?refresh=1 regenerates.
+
+def _job_and_resume(user_id: str, job_id: str):
+    tracker = TrackerAgent()
+    with tracker._get_conn() as conn:
+        conn.row_factory = True
+        row = conn.execute("SELECT * FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id)).fetchone()
+    resume = tracker.get_resume(user_id) if row else None
+    if isinstance(resume, str):
+        resume = json.loads(resume)
+    return tracker, row, resume or CVCustomizerAgent().master_resume
+
+
+@app.get('/api/jobs/{job_id}/answers')
+def get_form_answers(job_id: str, refresh: bool = False, user_id: str = Depends(get_current_user)):
+    from agents.application_kit import form_answers
+    tracker, job, resume = _job_and_resume(user_id, job_id)
+    if not job:
+        return JSONResponse({'error': 'Job not found'}, status_code=404)
+    cached = None if refresh else tracker.get_application_extra(user_id, job_id, 'form_answers')
+    if cached:
+        return cached
+    projects = CVCustomizerAgent()._select_relevant_projects(job, resume=resume, top_n=3)
+    answers = form_answers(job, resume, projects, tracker.get_profile(user_id))
+    tracker.save_application_extra(user_id, job_id, 'form_answers', answers)
+    return answers
+
+
+@app.get('/api/jobs/{job_id}/prep')
+def get_prep_pack(job_id: str, refresh: bool = False, user_id: str = Depends(get_current_user)):
+    from agents.application_kit import prep_pack
+    tracker, job, resume = _job_and_resume(user_id, job_id)
+    if not job:
+        return JSONResponse({'error': 'Job not found'}, status_code=404)
+    cached = None if refresh else tracker.get_application_extra(user_id, job_id, 'prep_pack')
+    if cached:
+        return cached
+    pack = prep_pack(job, resume, tracker.get_stories(user_id))
+    if not pack:
+        return JSONResponse({'error': 'Prep pack generation failed — try again in a minute.'}, status_code=502)
+    tracker.save_application_extra(user_id, job_id, 'prep_pack', pack)
+    return pack
+
+
+@app.get('/api/jobs/{job_id}/followup-draft')
+def get_followup_draft(job_id: str, user_id: str = Depends(get_current_user)):
+    from agents.application_kit import followup_draft
+    tracker, job, resume = _job_and_resume(user_id, job_id)
+    if not job:
+        return JSONResponse({'error': 'Job not found'}, status_code=404)
+    with tracker._get_conn() as conn:
+        row = conn.execute("SELECT date_applied FROM applications WHERE job_id = ? AND user_id = ?", (job_id, user_id)).fetchone()
+    try:
+        days = (datetime.now() - datetime.fromisoformat(row[0])).days if row and row[0] else 7
+    except ValueError:
+        days = 7
+    return followup_draft(job, resume, days)
+
+
+@app.post('/api/jobs/check-listings')
+def check_job_listings(limit: int = Query(default=15, le=40), user_id: str = Depends(get_current_user)):
+    """Re-open the top unchecked listings now (the daily cron does this too):
+    archives closed/stale ones, downgrades ones asking for 2+ years."""
+    from agents.listing_checker import check_listings
+    return check_listings(user_id, limit=limit)
+
+
 @app.post('/api/jobs/{job_id}/blacklist')
 def blacklist_job_company(job_id: str, user_id: str = Depends(get_current_user)):
     tracker = TrackerAgent()
@@ -632,6 +702,14 @@ async def cron_auto_find(request: Request):
             jobs = finder.find_jobs()
             added_jobs = [j for j in jobs if t.add_job(user_id, j)]
 
+            # Keep the top matches honest: archive closed/stale listings and
+            # downgrade ones whose live page asks for 2+ years.
+            try:
+                from agents.listing_checker import check_listings
+                check_listings(user_id, limit=25)
+            except Exception:
+                pass
+
             notified = 0
             chat_id = profile.get('telegram_chat_id')
             notifier = TelegramNotifierAgent()
@@ -708,7 +786,10 @@ async def generate_application(job_id: str, force: bool = Query(default=False), 
         }, status_code=400)
     loop = asyncio.get_event_loop()
     resume = tracker.get_resume(user_id)
-    package = await loop.run_in_executor(None, lambda: CVCustomizerAgent().prepare_full_package(row, resume=resume))
+    try:
+        package = await loop.run_in_executor(None, lambda: CVCustomizerAgent().prepare_full_package(row, resume=resume))
+    except GenerationFailed:
+        return JSONResponse({'error': 'CV generation failed after retries — try again in a minute.'}, status_code=502)
     tracker.update_status(
         user_id, job_id, 'applied',
         cv_path=package.get('cv_path', ''),
@@ -754,9 +835,10 @@ async def email_apply(job_id: str, to_email: str = Query(default=''), force: boo
 
     loop = asyncio.get_event_loop()
     resume = tracker.get_resume(user_id)
-    package = await loop.run_in_executor(None, lambda: CVCustomizerAgent().prepare_full_package(row, resume=resume))
-    if 'generation failed' in package.get('cv_markdown', ''):
-        return JSONResponse({'error': 'CV generation failed, not sending email — try again.'}, status_code=502)
+    try:
+        package = await loop.run_in_executor(None, lambda: CVCustomizerAgent().prepare_full_package(row, resume=resume))
+    except GenerationFailed:
+        return JSONResponse({'error': 'CV generation failed after retries — try again in a minute.'}, status_code=502)
 
     applier = JobApplierAgent()
     sent = await loop.run_in_executor(None, lambda: applier.send_email_application(user_id, row, email, package, profile))
@@ -798,9 +880,10 @@ async def telegram_notify(job_id: str, force: bool = Query(default=False), user_
 
     loop = asyncio.get_event_loop()
     resume = tracker.get_resume(user_id)
-    package = await loop.run_in_executor(None, lambda: CVCustomizerAgent().prepare_full_package(row, resume=resume))
-    if 'generation failed' in package.get('cv_markdown', ''):
-        return JSONResponse({'error': 'CV generation failed, not notifying — try again.'}, status_code=502)
+    try:
+        package = await loop.run_in_executor(None, lambda: CVCustomizerAgent().prepare_full_package(row, resume=resume))
+    except GenerationFailed:
+        return JSONResponse({'error': 'CV generation failed after retries — try again in a minute.'}, status_code=502)
 
     sent = await loop.run_in_executor(
         None, lambda: notifier.send_job_alert(user_id, row, package['cv_path'], package['cover_letter_path'], package['cv_markdown'], chat_id=chat_id)

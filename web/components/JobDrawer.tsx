@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { FormAnswersSection, FollowupSection, PrepSection } from '@/components/ApplicationKit';
 import gsap from 'gsap';
 import clsx from 'clsx';
 import { X, MapPin, CurrencyDollar, ArrowSquareOut, Star, Copy, Check, CircleNotch, CaretDown, Calendar, Clock, Prohibit, DownloadSimple, CaretRight, Plus, FileText, Envelope, ShieldCheck, UserFocus } from '@phosphor-icons/react';
@@ -15,7 +16,7 @@ interface JobDrawerProps {
   onStarChange?: (id: string, starred: boolean) => void;
 }
 
-type DrawerTab = 'overview' | 'track' | 'cv';
+type DrawerTab = 'overview' | 'apply' | 'prep' | 'track' | 'cv';
 
 const statusConfig: Record<Job['status'], { label: string; color: string }> = {
   found: { label: 'Found', color: 'text-white/50' },
@@ -656,6 +657,8 @@ export default function JobDrawer({ jobId, onClose, onStatusChange, onStarChange
 
   const tabs: { key: DrawerTab; label: string }[] = [
     { key: 'overview', label: 'Overview' },
+    { key: 'apply', label: 'Apply kit' },
+    { key: 'prep', label: 'Prep' },
     { key: 'track', label: 'Track' },
     { key: 'cv', label: 'CV' },
   ];
@@ -883,6 +886,17 @@ export default function JobDrawer({ jobId, onClose, onStatusChange, onStarChange
                   </div>
                 </>
               )}
+
+              {/* ── APPLY KIT tab: ready-to-paste form answers + follow-ups ── */}
+              {tab === 'apply' && (
+                <div className="space-y-6">
+                  {['applied', 'ghosted'].includes(currentStatus) && <FollowupSection jobId={job.id} />}
+                  <FormAnswersSection jobId={job.id} />
+                </div>
+              )}
+
+              {/* ── PREP tab: interview prep pack ── */}
+              {tab === 'prep' && <PrepSection jobId={job.id} />}
 
               {/* ── CV tab ── */}
               {tab === 'cv' && (

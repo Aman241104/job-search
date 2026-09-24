@@ -17,6 +17,7 @@ Goal: Find and secure a software job (8+ LPA, remote or Ahmedabad/Gujarat) as ba
 .venv/bin/python main.py find                    # Fetch & score new jobs from Remotive, The Muse, Adzuna
 .venv/bin/python main.py links                   # Open Ahmedabad/Gujarat job boards in browser
 .venv/bin/python main.py vault-sync              # Sync ~/Obsidian Vault notes to Learning > Obsidian Vault tab
+.venv/bin/python main.py check                   # Re-open top listings: archive closed/old jobs, re-score 2+ yr ones
 .venv/bin/python main.py track                   # View dashboard
 .venv/bin/python main.py apply --top 5           # Apply to top 5 scored jobs interactively
 .venv/bin/python main.py export                  # Export to output/job_tracker.xlsx
@@ -132,6 +133,15 @@ Frontend Developer, React Developer, Next.js Developer, Full Stack Developer, UI
 - Each video's transcript is summarized into notes via `ask_ai()` and chunked/embedded (NVIDIA `bge-m3`) into a combined FAISS index (`data/study_index.faiss`)
 - Questions are answered by RAG: embed the question, retrieve top-k chunks, ground `ask_ai()`'s answer in them
 - No CLI command — web dashboard only (`POST /api/learning/playlists/ingest`, `GET /api/learning/playlists[/{id}]`, `POST /api/learning/playlists/ask`)
+
+### Listing quality (agents/job_quality.py, agents/listing_checker.py)
+- Scoring reads the listing's real minimum years (`required_years`) and full salary range; low ceilings are penalised
+- `check_listings` (daily cron, `main.py check`, dashboard "Re-check top listings"): archives untouched jobs found >30 days ago and closed listings (status `skipped`, note `[auto-archived: ...]`), and re-scores ones whose live page asks for 2+ years
+- Undo an archive: set status back to `found` (notes keep the `auto-archived` marker)
+
+### CV validator + application kit (agents/cv_validator.py, agents/application_kit.py)
+- Every generated CV/cover letter is checked against the resume: unsupported technologies are removed, CGPA corrected, failures retried then raised as `GenerationFailed` (no more "generation failed" PDFs), CVs trimmed to 1 page
+- Job drawer "Apply kit" tab: ready-to-copy form answers (+ follow-up drafts once applied); "Prep" tab: interview prep pack from the JD, resume and story bank. Cached in `applications.form_answers` / `prep_pack`
 
 ### Obsidian vault (agents/vault.py)
 - Learning > **Obsidian Vault** tab: folder tree, search, tag filters, rendered notes (frontmatter as properties, callouts, working `[[wikilinks]]`, backlinks; dataview blocks show as "runs inside Obsidian")
