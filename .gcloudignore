@@ -1,0 +1,12 @@
+# What `gcloud run deploy --source .` uploads for the API image.
+# Everything git ignores (secrets, venv, caches) ...
+#!include:.gitignore
+
+# ... plus local-only material the backend never needs: generated CVs and
+# screenshots with personal data, the Next.js frontend (deployed to Vercel
+# separately), and dev/test/tooling folders.
+output/
+web/
+tests/
+.playwright-mcp/
+.git/
