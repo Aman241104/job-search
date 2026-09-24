@@ -27,7 +27,7 @@ export interface Job {
   location: string;
   salary?: string;
   source: string;
-  status: 'found' | 'applied' | 'interviewing' | 'offer' | 'rejected' | 'ghosted';
+  status: 'found' | 'applied' | 'interviewing' | 'offer' | 'rejected' | 'ghosted' | 'skipped';
   url: string;
   score_reason?: string;
   description?: string;

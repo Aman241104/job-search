@@ -271,6 +271,10 @@ def get_jobs(
 
     if status:
         all_apps = [a for a in all_apps if a.get('status') == status]
+    else:
+        # Archived jobs (listing checker: closed / stale / needs 2+ yrs) stay
+        # out of the default list; ?status=skipped still shows them.
+        all_apps = [a for a in all_apps if a.get('status') != 'skipped']
     if min_score:
         all_apps = [a for a in all_apps if (a.get('score') or 0) >= min_score]
     if search:

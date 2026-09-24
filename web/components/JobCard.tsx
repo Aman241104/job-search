@@ -25,6 +25,8 @@ const statusConfig: Record<
   offer: { label: 'Offer', bg: 'bg-accent-green/10', text: 'text-accent-green', border: 'border-accent-green/20' },
   rejected: { label: 'Rejected', bg: 'bg-accent-pink/10', text: 'text-accent-pink', border: 'border-accent-pink/20' },
   ghosted: { label: 'Ghosted', bg: 'bg-white/5', text: 'text-white/30', border: 'border-white/10' },
+  // Auto-archived by the listing checker (closed, stale, or needs 2+ yrs)
+  skipped: { label: 'Archived', bg: 'bg-white/5', text: 'text-white/25', border: 'border-white/5' },
 };
 
 const sourceColors: Record<string, string> = {

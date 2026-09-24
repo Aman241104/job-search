@@ -25,6 +25,7 @@ const statusConfig: Record<Job['status'], { label: string; color: string }> = {
   offer: { label: 'Offer', color: 'text-accent-green' },
   rejected: { label: 'Rejected', color: 'text-accent-pink' },
   ghosted: { label: 'Ghosted', color: 'text-white/30' },
+  skipped: { label: 'Archived', color: 'text-white/25' },
 };
 
 const sourceColors: Record<string, string> = {
