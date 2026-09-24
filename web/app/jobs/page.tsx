@@ -97,7 +97,7 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="bg-bg-2 border border-border rounded-2xl p-6 w-80 shadow-2xl"
+        className="glass-panel rounded-2xl p-6 w-80 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
@@ -994,7 +994,7 @@ function JobsPageInner() {
               {loading && (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                   {[...Array(12)].map((_, i) => (
-                    <div key={i} className="bg-bg-2 border border-border rounded-2xl p-4">
+                    <div key={i} className="glass-panel rounded-2xl p-4">
                       <div className="flex items-start gap-3">
                         <div className="skeleton w-12 h-12 rounded-full" />
                         <div className="flex-1 space-y-2">
@@ -1313,7 +1313,7 @@ function JobsPageInner() {
                               setViewMode('list');
                             }}
                             className={clsx(
-                              'text-left bg-bg-2 border border-border rounded-2xl p-5 hover:border-white/15 transition-all duration-150',
+                              'text-left glass-panel rounded-2xl p-5 hover:border-white/15 transition-all duration-150',
                               tileGlow[tile.color]
                             )}
                           >
@@ -1326,7 +1326,7 @@ function JobsPageInner() {
 
                       {/* AI Job Insights — trending companies / matched skills / highest paying */}
                       <div className="grid md:grid-cols-3 gap-4 mt-4">
-                        <div className="bg-bg-2 border border-border rounded-2xl p-5">
+                        <div className="glass-panel rounded-2xl p-5">
                           <p className="text-sm font-semibold text-white/85 mb-3">Trending companies</p>
                           {trendingCompanies.length === 0 ? (
                             <p className="text-xs text-white/25">Not enough data yet.</p>
@@ -1342,7 +1342,7 @@ function JobsPageInner() {
                           )}
                         </div>
 
-                        <div className="bg-bg-2 border border-border rounded-2xl p-5">
+                        <div className="glass-panel rounded-2xl p-5">
                           <p className="text-sm font-semibold text-white/85 mb-3">Most matched skills</p>
                           {skillCounts.length === 0 ? (
                             <p className="text-xs text-white/25">Add skills to your resume to see this.</p>
@@ -1357,7 +1357,7 @@ function JobsPageInner() {
                           )}
                         </div>
 
-                        <div className="bg-bg-2 border border-border rounded-2xl p-5">
+                        <div className="glass-panel rounded-2xl p-5">
                           <p className="text-sm font-semibold text-white/85 mb-3">Highest paying today</p>
                           {highestPaying.length === 0 ? (
                             <p className="text-xs text-white/25">No salary data in current jobs.</p>
@@ -1409,7 +1409,7 @@ function JobsPageInner() {
       {/* Keyboard shortcut hint */}
       <button
         onClick={() => setShowShortcuts(true)}
-        className="fixed bottom-6 left-6 z-40 flex items-center gap-1.5 px-3 py-2 rounded-full bg-bg-2 border border-border text-white/20 hover:text-white/50 hover:border-white/15 text-xs transition-all duration-150"
+        className="fixed bottom-6 left-6 md:left-[104px] z-40 flex items-center gap-1.5 px-3 py-2 rounded-full bg-bg-2 border border-border text-white/20 hover:text-white/50 hover:border-white/15 text-xs transition-all duration-150"
         title="Keyboard shortcuts (?)"
       >
         <Keyboard size={11} />

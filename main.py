@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import os
 import sys
 from rich.console import Console
 from rich.panel import Panel
@@ -59,6 +60,11 @@ Commands:
 
     # links — show Gujarat/Ahmedabad job board links to open manually
     subparsers.add_parser("links", help="Show Ahmedabad/Gujarat job board links to open in browser")
+
+    # vault-sync — push Obsidian notes into the dashboard's Learning > Vault tab
+    vault_p = subparsers.add_parser("vault-sync", help="Sync your Obsidian vault's notes to the Learning > Vault tab")
+    vault_p.add_argument("--path", default=os.getenv("OBSIDIAN_VAULT_PATH", "~/Obsidian Vault"),
+                         help="Vault folder (default: $OBSIDIAN_VAULT_PATH or ~/Obsidian Vault)")
 
     args = parser.parse_args()
 
@@ -131,6 +137,14 @@ Commands:
             webbrowser.open(l["url"])
         console.print("\n[green]All links opened! Apply and then run:[/green]")
         console.print("  python main.py update <job_id> applied --notes 'Applied via Naukri'")
+
+    elif args.command == "vault-sync":
+        from agents.vault import read_vault_dir
+        notes = read_vault_dir(args.path)
+        count = orch.tracker.replace_vault_notes(orch.user_id, notes)
+        folders = sorted({n["folder"] or "(root)" for n in notes})
+        console.print(f"[green]Synced {count} notes[/green] from [cyan]{os.path.expanduser(args.path)}[/cyan]")
+        console.print(f"  [dim]Folders: {', '.join(folders)}[/dim]")
 
 
 if __name__ == "__main__":

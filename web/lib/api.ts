@@ -121,6 +121,26 @@ export interface LearningBook {
   cloudinary_url?: string;
 }
 
+export interface VaultNoteMeta {
+  path: string;
+  folder: string;
+  title: string;
+  frontmatter: Record<string, unknown>;
+  tags: string[];
+  links: string[];
+  synced_at: string;
+}
+
+export interface VaultNote extends VaultNoteMeta {
+  content: string;
+}
+
+export interface VaultSearchHit {
+  path: string;
+  title: string;
+  snippet: string;
+}
+
 export interface BookPage {
   id: string;
   book_id: string;
@@ -375,7 +395,7 @@ export const api = {
       return r.json();
     }),
 
-  learningChat: (itemId: string, message: string): Promise<{ response: string }> =>
+  learningChat: (itemId: string, message: string): Promise<{ response: string; messages?: LearningMessage[] }> =>
     apiFetch(`/api/learning/${itemId}/chat?message=${encodeURIComponent(message)}`, {
       method: 'POST',
     }).then((r) => {
@@ -406,6 +426,38 @@ export const api = {
     formData.append('file', file);
     return apiFetch(`/api/learning/books/upload`, { method: 'POST', body: formData }).then((r) => {
       if (!r.ok) throw new Error(`Book upload failed: ${r.status}`);
+      return r.json();
+    });
+  },
+
+  listVault: (): Promise<{ notes: VaultNoteMeta[]; synced_at: string | null }> =>
+    apiFetch(`/api/learning/vault`).then((r) => {
+      if (!r.ok) throw new Error(`Load vault failed: ${r.status}`);
+      return r.json();
+    }),
+
+  getVaultNote: (path: string): Promise<VaultNote> =>
+    apiFetch(`/api/learning/vault/note?path=${encodeURIComponent(path)}`).then((r) => {
+      if (!r.ok) throw new Error(`Load note failed: ${r.status}`);
+      return r.json();
+    }),
+
+  searchVault: (q: string): Promise<VaultSearchHit[]> =>
+    apiFetch(`/api/learning/vault/search?q=${encodeURIComponent(q)}`).then((r) => {
+      if (!r.ok) throw new Error(`Search failed: ${r.status}`);
+      return r.json();
+    }),
+
+  // files: one .zip, or the .md files from a folder pick — each sent under
+  // its path inside the vault (webkitRelativePath) so folders survive.
+  uploadVault: (files: File[]): Promise<{ ok: boolean; note_count: number }> => {
+    const formData = new FormData();
+    for (const f of files) formData.append('files', f, f.webkitRelativePath || f.name);
+    return apiFetch(`/api/learning/vault/upload`, { method: 'POST', body: formData }).then(async (r) => {
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(body.error || `Vault upload failed: ${r.status}`);
+      }
       return r.json();
     });
   },

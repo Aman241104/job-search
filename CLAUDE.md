@@ -1,7 +1,7 @@
 # Job Search AI System — Claude Code Guide
 
 ## About this project
-Multi-agent job search automation system for Aman Patel (EC fresher, LDCE Ahmedabad, CGPA 8.0).
+Multi-agent job search automation system for Aman Patel (EC fresher, LDCE Ahmedabad, CGPA 8.67).
 Goal: Find and secure a software job (8+ LPA, remote or Ahmedabad/Gujarat) as backup to TCS Digital offer (7 LPA, no joining date).
 
 ## Quick Commands (run these from this directory)
@@ -16,6 +16,7 @@ Goal: Find and secure a software job (8+ LPA, remote or Ahmedabad/Gujarat) as ba
 # Daily workflow
 .venv/bin/python main.py find                    # Fetch & score new jobs from Remotive, The Muse, Adzuna
 .venv/bin/python main.py links                   # Open Ahmedabad/Gujarat job boards in browser
+.venv/bin/python main.py vault-sync              # Sync ~/Obsidian Vault notes to Learning > Obsidian Vault tab
 .venv/bin/python main.py track                   # View dashboard
 .venv/bin/python main.py apply --top 5           # Apply to top 5 scored jobs interactively
 .venv/bin/python main.py export                  # Export to output/job_tracker.xlsx
@@ -72,7 +73,7 @@ job-serach/
 
 - **Name:** Aman Patel
 - **Email:** patelaman0241@gmail.com | **Phone:** +91 9558009550
-- **College:** LDCE Ahmedabad, B.E. EC Engineering, GTU, CGPA 8.00 (2022-2026)
+- **College:** LDCE Ahmedabad, B.E. EC Engineering, GTU, CGPA 8.67 (2022-2026)
 - **GitHub:** github.com/Aman241104 | **Portfolio:** portfolio-1byaman.vercel.app
 - **Current offer:** TCS Digital 7 LPA (no joining date)
 - **Target:** 8-12 LPA, Remote or Ahmedabad/Gujarat
@@ -131,6 +132,11 @@ Frontend Developer, React Developer, Next.js Developer, Full Stack Developer, UI
 - Each video's transcript is summarized into notes via `ask_ai()` and chunked/embedded (NVIDIA `bge-m3`) into a combined FAISS index (`data/study_index.faiss`)
 - Questions are answered by RAG: embed the question, retrieve top-k chunks, ground `ask_ai()`'s answer in them
 - No CLI command — web dashboard only (`POST /api/learning/playlists/ingest`, `GET /api/learning/playlists[/{id}]`, `POST /api/learning/playlists/ask`)
+
+### Obsidian vault (agents/vault.py)
+- Learning > **Obsidian Vault** tab: folder tree, search, tag filters, rendered notes (frontmatter as properties, callouts, working `[[wikilinks]]`, backlinks; dataview blocks show as "runs inside Obsidian")
+- Two ways in, both a full replace of the user's `vault_notes` rows: `main.py vault-sync [--path]` (default `$OBSIDIAN_VAULT_PATH` or `~/Obsidian Vault`), or the tab's "Choose vault folder" / ".zip" upload
+- Only `.md` notes are imported — `Assets/` PDFs/EPUBs make the vault ~576MB, far over Cloud Run's 32MB request limit
 
 ## How to update your resume
 

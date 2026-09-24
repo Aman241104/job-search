@@ -53,7 +53,7 @@ app.mount('/static', StaticFiles(directory='frontend'), name='static')
 
 
 @app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
+def global_exception_handler(request: Request, exc: Exception):
     """Catches anything an endpoint didn't handle itself (LLM API down, SMTP
     auth failure, DB timeout, etc.) — without this, FastAPI's default
     behavior is a bare, uninformative 500 instead of the app's usual
@@ -94,7 +94,7 @@ TOPIC_DESCRIPTIONS = {
 
 
 @app.get('/')
-async def root():
+def root():
     return FileResponse('frontend/index.html')
 
 
@@ -161,7 +161,7 @@ async def google_callback(request: Request):
 
 
 @app.get('/auth/me')
-async def auth_me(user_id: str = Depends(get_current_user)):
+def auth_me(user_id: str = Depends(get_current_user)):
     user = TrackerAgent().get_user(user_id)
     if not user:
         return JSONResponse({'error': 'user not found'}, status_code=404)
@@ -169,7 +169,7 @@ async def auth_me(user_id: str = Depends(get_current_user)):
 
 
 @app.post('/auth/logout')
-async def auth_logout():
+def auth_logout():
     response = JSONResponse({'ok': True})
     response.delete_cookie(SESSION_COOKIE, samesite='none', secure=True)
     return response
@@ -178,7 +178,7 @@ async def auth_logout():
 # ── Stats ──────────────────────────────────────────────────────────────────────
 
 @app.get('/api/stats')
-async def get_stats(user_id: str = Depends(get_current_user)):
+def get_stats(user_id: str = Depends(get_current_user)):
     tracker = TrackerAgent()
     stats = tracker.get_stats(user_id)
     top = tracker.get_unapplied_top_jobs(user_id, min_score=40, limit=20)
@@ -209,7 +209,7 @@ async def get_stats(user_id: str = Depends(get_current_user)):
 
 
 @app.get('/api/stats/timeline')
-async def get_stats_timeline(user_id: str = Depends(get_current_user)):
+def get_stats_timeline(user_id: str = Depends(get_current_user)):
     from datetime import timedelta
     tracker = TrackerAgent()
     today = datetime.now().date()
@@ -253,7 +253,7 @@ async def get_stats_timeline(user_id: str = Depends(get_current_user)):
 # ── Jobs ───────────────────────────────────────────────────────────────────────
 
 @app.get('/api/jobs')
-async def get_jobs(
+def get_jobs(
     status: Optional[str] = None,
     min_score: int = 0,
     min_lpa: int = 0,
@@ -316,7 +316,7 @@ async def get_jobs(
 
 
 @app.get('/api/jobs/{job_id}')
-async def get_job(job_id: str, user_id: str = Depends(get_current_user)):
+def get_job(job_id: str, user_id: str = Depends(get_current_user)):
     tracker = TrackerAgent()
     with tracker._get_conn() as conn:
         conn.row_factory = True
@@ -334,7 +334,7 @@ async def get_job(job_id: str, user_id: str = Depends(get_current_user)):
 
 
 @app.post('/api/jobs/{job_id}/star')
-async def star_job(job_id: str, user_id: str = Depends(get_current_user)):
+def star_job(job_id: str, user_id: str = Depends(get_current_user)):
     starred = TrackerAgent().toggle_star(user_id, job_id)
     return {'starred': starred}
 
@@ -382,7 +382,7 @@ async def find_job_contact(job_id: str, user_id: str = Depends(get_current_user)
 
 
 @app.post('/api/jobs/{job_id}/blacklist')
-async def blacklist_job_company(job_id: str, user_id: str = Depends(get_current_user)):
+def blacklist_job_company(job_id: str, user_id: str = Depends(get_current_user)):
     tracker = TrackerAgent()
     with tracker._get_conn() as conn:
         conn.row_factory = True
@@ -444,7 +444,7 @@ async def bulk_update_jobs(request: Request, user_id: str = Depends(get_current_
 # out of scope for this pass.
 
 @app.get('/api/files/cv/{job_id}/content')
-async def get_cv_content(job_id: str):
+def get_cv_content(job_id: str):
     # CVs are now generated as PDF (binary), so there's no text to inline-preview
     # here anymore — the frontend's markdown preview tab falls back to its existing
     # empty state. Download the PDF directly via /api/files/cv/{job_id} instead.
@@ -455,7 +455,7 @@ async def get_cv_content(job_id: str):
 
 
 @app.get('/api/files/cv/{job_id}')
-async def download_cv(job_id: str):
+def download_cv(job_id: str):
     path = Path(OUTPUT_DIR) / f'cv_{job_id}.pdf'
     if not path.exists():
         return JSONResponse({'error': 'CV not found. Generate it by clicking Apply first.'}, status_code=404)
@@ -463,7 +463,7 @@ async def download_cv(job_id: str):
 
 
 @app.get('/api/files/cover/{job_id}')
-async def download_cover(job_id: str):
+def download_cover(job_id: str):
     path = Path(OUTPUT_DIR) / f'cover_{job_id}.pdf'
     if not path.exists():
         return JSONResponse({'error': 'Cover letter not found. Generate it by clicking Apply first.'}, status_code=404)
@@ -494,21 +494,43 @@ async def find_jobs_stream(user_id: str = Depends(get_current_user)):
             await asyncio.sleep(0.1)
 
             loop = asyncio.get_event_loop()
+            # The finder runs in a worker thread; its progress callback hands
+            # each event to this coroutine through a queue so the browser sees
+            # every source and every scored job live, not one long spinner.
+            events: asyncio.Queue = asyncio.Queue()
+
+            def on_progress(event: dict):
+                loop.call_soon_threadsafe(events.put_nowait, event)
 
             def run_finder():
                 tracker = TrackerAgent()
                 profile = tracker.get_profile(user_id) or {}
                 finder = JobFinderAgent(profile=profile, user_id=user_id)
-                jobs = finder.find_jobs()
+                jobs = finder.find_jobs(progress=on_progress)
                 added = sum(1 for j in jobs if tracker.add_job(user_id, j))
                 return jobs, added
 
             yield 'data: ' + json.dumps({
                 'type': 'progress',
-                'message': 'Scraping 12 sources: Internshala, LinkedIn, Jobicy, WWR, Arbeitnow, Remotive, RemoteOK, Remote.co, TheMuse, Himalayas, HN Who\'s Hiring, Adzuna...',
-                'percent': 10,
+                'message': 'Scraping job sources...',
+                'percent': 5,
             }) + '\n\n'
-            jobs, added = await loop.run_in_executor(None, run_finder)
+            finder_task = loop.run_in_executor(None, run_finder)
+            while True:
+                getter = asyncio.ensure_future(events.get())
+                done, _ = await asyncio.wait({getter, finder_task}, timeout=15, return_when=asyncio.FIRST_COMPLETED)
+                if getter in done:
+                    yield 'data: ' + json.dumps(getter.result()) + '\n\n'
+                    continue
+                getter.cancel()
+                if finder_task in done:
+                    while not events.empty():
+                        yield 'data: ' + json.dumps(events.get_nowait()) + '\n\n'
+                    break
+                # Nothing for 15s (a slow source or AI call): a comment line
+                # keeps proxies from closing the idle connection.
+                yield ': keep-alive\n\n'
+            jobs, added = finder_task.result()
             yield 'data: ' + json.dumps({
                 'type': 'progress',
                 'message': f'Scoring {len(jobs)} jobs with AI...',
@@ -792,7 +814,7 @@ async def telegram_notify(job_id: str, force: bool = Query(default=False), user_
 
 
 @app.get('/api/telegram/connect-link')
-async def telegram_connect_link(user_id: str = Depends(get_current_user)):
+def telegram_connect_link(user_id: str = Depends(get_current_user)):
     """Returns a personal t.me deep-link — tapping it and hitting Start on
     Telegram sends /start <token> to the shared bot, which the webhook below
     uses to link that chat_id to this account (see the "connect" design in
@@ -815,7 +837,7 @@ async def telegram_connect_link(user_id: str = Depends(get_current_user)):
 
 
 @app.post('/api/telegram/disconnect')
-async def telegram_disconnect(user_id: str = Depends(get_current_user)):
+def telegram_disconnect(user_id: str = Depends(get_current_user)):
     tracker = TrackerAgent()
     profile = tracker.get_profile(user_id) or _default_profile()
     profile['telegram_chat_id'] = ''
@@ -968,13 +990,13 @@ async def telegram_webhook(request: Request):
 
 
 @app.post('/api/update/{job_id}')
-async def update_job(job_id: str, status: str, notes: str = '', user_id: str = Depends(get_current_user)):
+def update_job(job_id: str, status: str, notes: str = '', user_id: str = Depends(get_current_user)):
     TrackerAgent().update_status(user_id, job_id, status, notes=notes)
     return {'ok': True}
 
 
 @app.post('/api/notes/{job_id}')
-async def save_notes(job_id: str, notes: str = Query(...), user_id: str = Depends(get_current_user)):
+def save_notes(job_id: str, notes: str = Query(...), user_id: str = Depends(get_current_user)):
     tracker = TrackerAgent()
     with tracker._get_conn() as conn:
         conn.execute(
@@ -988,7 +1010,7 @@ async def save_notes(job_id: str, notes: str = Query(...), user_id: str = Depend
 # ── Export ─────────────────────────────────────────────────────────────────────
 
 @app.get('/api/export')
-async def export_excel(user_id: str = Depends(get_current_user)):
+def export_excel(user_id: str = Depends(get_current_user)):
     path = TrackerAgent().export_to_excel(user_id)
     return FileResponse(
         path,
@@ -1000,7 +1022,7 @@ async def export_excel(user_id: str = Depends(get_current_user)):
 # ── Training ───────────────────────────────────────────────────────────────────
 
 @app.get('/api/train/topics')
-async def get_topics():
+def get_topics():
     return [
         {
             'key': k,
@@ -1121,7 +1143,7 @@ async def training_chat(session_id: str, message: str, user_id: str = Depends(ge
 
 
 @app.get('/api/train/progress')
-async def training_progress(user_id: str = Depends(get_current_user)):
+def training_progress(user_id: str = Depends(get_current_user)):
     tracker = TrackerAgent()
     return tracker.get_training_progress(user_id)
 
@@ -1147,7 +1169,7 @@ LEARNING_SYSTEM_PROMPT_TEMPLATE = (
 
 
 @app.get('/api/learning/topics')
-async def get_learning_topics(user_id: str = Depends(get_current_user)):
+def get_learning_topics(user_id: str = Depends(get_current_user)):
     tracker = TrackerAgent()
     tracker.seed_learning_items(user_id, LEARNING_TRACK)
     items = tracker.get_learning_items(user_id)
@@ -1216,13 +1238,13 @@ async def get_item_topics(item_id: str, user_id: str = Depends(get_current_user)
 
 
 @app.post('/api/learning/topics/{topic_id}/toggle')
-async def toggle_topic(topic_id: str):
+def toggle_topic(topic_id: str):
     covered = TrackerAgent().toggle_learning_topic(topic_id)
     return {'ok': True, 'covered': covered}
 
 
 @app.post('/api/learning/{item_id}/status')
-async def set_learning_status(item_id: str, status: str, notes: str = Query(default=''), user_id: str = Depends(get_current_user)):
+def set_learning_status(item_id: str, status: str, notes: str = Query(default=''), user_id: str = Depends(get_current_user)):
     if not _get_learning_item(user_id, item_id):
         return JSONResponse({'error': 'Unknown learning item'}, status_code=404)
     TrackerAgent().update_learning_status(user_id, item_id, status, notes)
@@ -1268,7 +1290,12 @@ async def learning_chat(item_id: str, message: str = Query(default=''), user_id:
                 )
 
     if not message:
-        return JSONResponse({'error': 'message is required'}, status_code=400)
+        # Re-opening an item that already has a conversation (in memory or
+        # rehydrated from the DB): hand the history back instead of a 400 —
+        # the tab opens every item with an empty message.
+        history = _learning_sessions[item_id]['messages']
+        last = next((m['content'] for m in reversed(history) if m['role'] == 'assistant'), '')
+        return {'response': last, 'messages': history, 'item_id': item_id}
 
     session = _learning_sessions[item_id]
     chat: GeminiChat = session['chat']
@@ -1353,13 +1380,69 @@ async def upload_book(file: UploadFile = File(...), user_id: str = Depends(get_c
     return {'ok': True, 'book_id': book_id, 'page_count': page_count}
 
 
+# ── Obsidian vault (Learning > Vault) ──────────────────────────────────────────
+# Notes arrive either from `main.py vault-sync` (reads the vault on disk and
+# writes the DB directly) or from this upload: one .zip, or the .md files the
+# browser picked from the vault folder. Either way it's a full replace.
+
+VAULT_UPLOAD_MAX_BYTES = 30 * 1024 * 1024  # under Cloud Run's 32MB request cap
+
+
+@app.post('/api/learning/vault/upload')
+async def upload_vault(files: list[UploadFile] = File(...), user_id: str = Depends(get_current_user)):
+    from agents.vault import read_vault_upload
+    payload, total = [], 0
+    for f in files:
+        raw = await f.read()
+        total += len(raw)
+        if total > VAULT_UPLOAD_MAX_BYTES:
+            return JSONResponse({'error': 'Upload too large (30MB max) — include only your .md notes, not Assets/'}, status_code=400)
+        payload.append((f.filename or '', raw))
+
+    def _import():
+        notes = read_vault_upload(payload)
+        if not notes:
+            return None
+        return TrackerAgent().replace_vault_notes(user_id, notes)
+
+    try:
+        count = await asyncio.get_event_loop().run_in_executor(None, _import)
+    except Exception as e:
+        return JSONResponse({'error': f'Could not read vault: {e}'}, status_code=400)
+    if count is None:
+        return JSONResponse({'error': 'No .md notes found in the upload'}, status_code=400)
+    return {'ok': True, 'note_count': count}
+
+
+@app.get('/api/learning/vault')
+def list_vault(user_id: str = Depends(get_current_user)):
+    notes = TrackerAgent().list_vault_notes(user_id)
+    return {
+        'notes': notes,
+        'synced_at': max((n['synced_at'] for n in notes), default=None),
+    }
+
+
+@app.get('/api/learning/vault/note')
+def get_vault_note(path: str = Query(...), user_id: str = Depends(get_current_user)):
+    note = TrackerAgent().get_vault_note(user_id, path)
+    if not note:
+        return JSONResponse({'error': 'Note not found'}, status_code=404)
+    return note
+
+
+@app.get('/api/learning/vault/search')
+def search_vault(q: str = Query(..., min_length=2), user_id: str = Depends(get_current_user)):
+    return TrackerAgent().search_vault_notes(user_id, q)
+
+
 @app.get('/api/learning/books')
-async def list_books(user_id: str = Depends(get_current_user)):
+def list_books(user_id: str = Depends(get_current_user)):
     return TrackerAgent().get_books(user_id)
 
 
 @app.get('/api/learning/books/{book_id}/page/{page_num}')
-async def get_book_page(book_id: str, page_num: int, user_id: str = Depends(get_current_user)):
+def get_book_page(book_id: str, page_num: int, user_id: str = Depends(get_current_user)):
     tracker = TrackerAgent()
     page = tracker.get_book_page(user_id, book_id, page_num)
     if not page:
@@ -1432,12 +1515,12 @@ async def ingest_playlist(background_tasks: BackgroundTasks, url: str = Query(..
 
 
 @app.get('/api/learning/playlists')
-async def list_playlists(user_id: str = Depends(get_current_user)):
+def list_playlists(user_id: str = Depends(get_current_user)):
     return TrackerAgent().get_playlists(user_id)
 
 
 @app.get('/api/learning/playlists/{playlist_id}')
-async def get_playlist_detail(playlist_id: str, user_id: str = Depends(get_current_user)):
+def get_playlist_detail(playlist_id: str, user_id: str = Depends(get_current_user)):
     tracker = TrackerAgent()
     playlist = tracker.get_playlist(user_id, playlist_id)
     if not playlist:
@@ -1461,12 +1544,12 @@ async def ask_playlists(question: str = Query(...), playlist_id: str = Query(def
 # ── Interview Story Bank (STAR + Reflection) ────────────────────────────────────
 
 @app.get('/api/stories')
-async def get_stories(user_id: str = Depends(get_current_user)):
+def get_stories(user_id: str = Depends(get_current_user)):
     return TrackerAgent().get_stories(user_id)
 
 
 @app.post('/api/stories')
-async def add_story(situation: str, task: str, action: str, result: str,
+def add_story(situation: str, task: str, action: str, result: str,
                      reflection: str, tags: str = Query(default=''), source_job_id: str = Query(default=''),
                      user_id: str = Depends(get_current_user)):
     """tags is a comma-separated string over the query string; stored as a JSON list."""
@@ -1486,7 +1569,7 @@ async def draft_story(notes: str):
 
 
 @app.put('/api/stories/{story_id}')
-async def update_story(story_id: str, situation: str, task: str, action: str,
+def update_story(story_id: str, situation: str, task: str, action: str,
                         result: str, reflection: str, tags: str = Query(default=''),
                         user_id: str = Depends(get_current_user)):
     tag_list = [t.strip() for t in tags.split(',') if t.strip()]
@@ -1495,7 +1578,7 @@ async def update_story(story_id: str, situation: str, task: str, action: str,
 
 
 @app.delete('/api/stories/{story_id}')
-async def delete_story(story_id: str, user_id: str = Depends(get_current_user)):
+def delete_story(story_id: str, user_id: str = Depends(get_current_user)):
     TrackerAgent().delete_story(user_id, story_id)
     return {'ok': True}
 
@@ -1503,7 +1586,7 @@ async def delete_story(story_id: str, user_id: str = Depends(get_current_user)):
 # ── Analytics ──────────────────────────────────────────────────────────────────
 
 @app.get('/api/analytics')
-async def get_analytics(user_id: str = Depends(get_current_user)):
+def get_analytics(user_id: str = Depends(get_current_user)):
     tracker = TrackerAgent()
     all_apps = tracker.get_all_applications(user_id)
 
@@ -1638,7 +1721,7 @@ def _default_resume() -> dict:
 
 
 @app.get('/api/resume')
-async def get_resume(user_id: str = Depends(get_current_user)):
+def get_resume(user_id: str = Depends(get_current_user)):
     data = TrackerAgent().get_resume(user_id)
     return data if data is not None else _default_resume()
 
@@ -1653,7 +1736,7 @@ async def save_resume(request: Request, user_id: str = Depends(get_current_user)
 # ── Interview Rounds ───────────────────────────────────────────────────────────
 
 @app.get('/api/interview/{job_id}')
-async def get_interview_rounds(job_id: str, user_id: str = Depends(get_current_user)):
+def get_interview_rounds(job_id: str, user_id: str = Depends(get_current_user)):
     rounds = TrackerAgent().get_interview_rounds(user_id, job_id)
     return {'rounds': rounds}
 
@@ -1683,7 +1766,7 @@ async def update_interview_round(round_id: str, request: Request, user_id: str =
 
 
 @app.delete('/api/interview/round/{round_id}')
-async def delete_interview_round(round_id: str, user_id: str = Depends(get_current_user)):
+def delete_interview_round(round_id: str, user_id: str = Depends(get_current_user)):
     TrackerAgent().delete_interview_round(user_id, round_id)
     return {'ok': True}
 
@@ -1691,7 +1774,7 @@ async def delete_interview_round(round_id: str, user_id: str = Depends(get_curre
 # ── Follow-ups ─────────────────────────────────────────────────────────────────
 
 @app.get('/api/followups')
-async def get_followups(user_id: str = Depends(get_current_user)):
+def get_followups(user_id: str = Depends(get_current_user)):
     return {'jobs': TrackerAgent().get_overdue_applications(user_id)}
 
 
@@ -1719,12 +1802,12 @@ async def notify_followups(user_id: str = Depends(get_current_user)):
 # ── Batch apply (email/telegram/browser, automatic or review-then-send) ────────
 
 @app.get('/api/settings/auto-apply-mode')
-async def get_auto_apply_mode(user_id: str = Depends(get_current_user)):
+def get_auto_apply_mode(user_id: str = Depends(get_current_user)):
     return {'mode': TrackerAgent().get_setting(user_id, 'auto_apply_mode', 'review')}
 
 
 @app.post('/api/settings/auto-apply-mode')
-async def set_auto_apply_mode(mode: str, user_id: str = Depends(get_current_user)):
+def set_auto_apply_mode(mode: str, user_id: str = Depends(get_current_user)):
     if mode not in ('automatic', 'review'):
         return JSONResponse({'error': 'mode must be "automatic" or "review"'}, status_code=400)
     TrackerAgent().set_setting(user_id, 'auto_apply_mode', mode)
@@ -1759,7 +1842,7 @@ async def run_batch(channel: str, job_ids: str = Query(...), mode: str = Query(d
 
 
 @app.get('/api/batch/insights')
-async def batch_insights(user_id: str = Depends(get_current_user)):
+def batch_insights(user_id: str = Depends(get_current_user)):
     """Real numbers for the Batch Apply page's hero/channel cards — per-
     channel historical response rate (jobs that reached interviewing/offer
     out of everything ever sent/prefilled via that channel) and the user's
@@ -1783,7 +1866,7 @@ async def batch_insights(user_id: str = Depends(get_current_user)):
 
 
 @app.get('/api/batch/{batch_id}')
-async def get_batch(batch_id: str, user_id: str = Depends(get_current_user)):
+def get_batch(batch_id: str, user_id: str = Depends(get_current_user)):
     batch = TrackerAgent().get_batch(user_id, batch_id)
     if not batch:
         return JSONResponse({'error': 'Batch not found'}, status_code=404)
@@ -1791,7 +1874,7 @@ async def get_batch(batch_id: str, user_id: str = Depends(get_current_user)):
 
 
 @app.post('/api/batch/{batch_id}/items/{item_id}/approval')
-async def set_batch_item_approval(batch_id: str, item_id: str, approved: bool):
+def set_batch_item_approval(batch_id: str, item_id: str, approved: bool):
     TrackerAgent().set_batch_item_approval(item_id, approved)
     return {'ok': True}
 
@@ -1812,7 +1895,7 @@ async def send_batch(batch_id: str, user_id: str = Depends(get_current_user)):
 # ── Blacklist ──────────────────────────────────────────────────────────────────
 
 @app.get('/api/blacklist')
-async def get_blacklist(user_id: str = Depends(get_current_user)):
+def get_blacklist(user_id: str = Depends(get_current_user)):
     companies = TrackerAgent().get_blacklisted(user_id)
     return {'companies': companies}
 
@@ -1860,7 +1943,7 @@ def _default_profile() -> dict:
 
 
 @app.get('/api/user/profile')
-async def get_user_profile(user_id: str = Depends(get_current_user)):
+def get_user_profile(user_id: str = Depends(get_current_user)):
     data = dict(TrackerAgent().get_profile(user_id) or _default_profile())
     # The stored value is an encrypted Gmail App Password — it must never
     # round-trip to the client. Only a boolean "is one set" flag goes out;
@@ -1889,7 +1972,7 @@ async def update_user_profile(request: Request, user_id: str = Depends(get_curre
 
 
 @app.get('/api/user/data-export')
-async def export_all_user_data(user_id: str = Depends(get_current_user)):
+def export_all_user_data(user_id: str = Depends(get_current_user)):
     """Full 'download my data' export — every table this account has rows
     in, as one JSON file. Distinct from /api/export, which only covers
     jobs/applications as an Excel sheet for day-to-day tracking use."""
@@ -1903,7 +1986,7 @@ async def export_all_user_data(user_id: str = Depends(get_current_user)):
 
 
 @app.delete('/api/user/account')
-async def delete_account(user_id: str = Depends(get_current_user)):
+def delete_account(user_id: str = Depends(get_current_user)):
     """Permanently deletes every row this account owns across every table,
     then clears the session cookie — irreversible, no confirmation step
     beyond whatever the frontend adds before calling this."""

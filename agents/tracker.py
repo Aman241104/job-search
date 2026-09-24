@@ -7,6 +7,7 @@ from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 import sys
 import os
+import threading
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import DATA_DIR, OUTPUT_DIR, PROFILE_ENCRYPTION_KEY
 from rich.console import Console
@@ -52,6 +53,12 @@ if not DATABASE_URL:
 import psycopg2
 import psycopg2.pool
 _pg_pool = psycopg2.pool.ThreadedConnectionPool(1, 10, DATABASE_URL)
+
+# The schema DDL below is ~5s against the remote Postgres, and app.py
+# constructs a fresh TrackerAgent() on nearly every request — running it once
+# per process instead of once per request is what keeps endpoints fast.
+_schema_ready = False
+_schema_lock = threading.Lock()
 
 ROW_DICT = True  # pass to `conn.row_factory = ROW_DICT` for dict-shaped rows
 
@@ -121,7 +128,12 @@ STATUS_COLORS = {
 class TrackerAgent:
     def __init__(self):
         self.excel_path = Path(OUTPUT_DIR) / "job_tracker.xlsx"
-        self._init_db()
+        global _schema_ready
+        if not _schema_ready:
+            with _schema_lock:
+                if not _schema_ready:
+                    self._init_db()
+                    _schema_ready = True
 
     def _get_conn(self):
         return _PgConnWrapper(_pg_pool)
@@ -244,6 +256,23 @@ class TrackerAgent:
                     order_index INTEGER,
                     covered INTEGER DEFAULT 0,
                     FOREIGN KEY (item_id) REFERENCES learning_items(id)
+                )
+            """)
+            # Obsidian vault notes (Learning > Vault). One row per note, keyed
+            # by its path inside the vault; each sync replaces the user's set.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS vault_notes (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT REFERENCES users(id),
+                    path TEXT,
+                    folder TEXT,
+                    title TEXT,
+                    frontmatter TEXT,
+                    tags TEXT,
+                    links TEXT,
+                    content TEXT,
+                    synced_at TEXT,
+                    UNIQUE (user_id, path)
                 )
             """)
             conn.execute("""
@@ -509,6 +538,7 @@ class TrackerAgent:
                 "DELETE FROM learning_book_pages WHERE book_id IN "
                 "(SELECT id FROM learning_books WHERE user_id = ?)", (user_id,))
             conn.execute("DELETE FROM learning_books WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM vault_notes WHERE user_id = ?", (user_id,))
             conn.execute(
                 "DELETE FROM learning_topics WHERE item_id IN "
                 "(SELECT id FROM learning_items WHERE user_id = ?)", (user_id,))
@@ -567,6 +597,7 @@ class TrackerAgent:
                 "batches": rows("SELECT * FROM batches WHERE user_id = ?"),
                 "learning_items": rows("SELECT * FROM learning_items WHERE user_id = ?"),
                 "learning_books": rows("SELECT * FROM learning_books WHERE user_id = ?"),
+                "vault_notes": rows("SELECT * FROM vault_notes WHERE user_id = ?"),
                 "learning_playlists": rows("SELECT * FROM learning_playlists WHERE user_id = ?"),
             }
 
@@ -1318,6 +1349,69 @@ class TrackerAgent:
                 )
             conn.commit()
         return book_id
+
+    # ── Obsidian vault notes ─────────────────────────────────────────────────
+
+    def replace_vault_notes(self, user_id: str, notes: list) -> int:
+        """Full sync: the user's vault becomes exactly `notes` (deleted/renamed
+        notes disappear too). One transaction, so a failed sync leaves the
+        previous vault intact instead of half-replaced."""
+        now = datetime.now().isoformat()
+        with self._get_conn() as conn:
+            conn.execute("DELETE FROM vault_notes WHERE user_id = ?", (user_id,))
+            for n in notes:
+                conn.execute(
+                    "INSERT INTO vault_notes (id, user_id, path, folder, title, frontmatter, tags, links, content, synced_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (str(uuid.uuid4()), user_id, n["path"], n["folder"], n["title"],
+                     json.dumps(n["frontmatter"], default=str), json.dumps(n["tags"]),
+                     json.dumps(n["links"]), n["content"], now),
+                )
+        return len(notes)
+
+    def list_vault_notes(self, user_id: str) -> list:
+        """Everything but the note bodies — enough to draw the folder tree,
+        tag filters and backlinks without shipping every note's content."""
+        with self._get_conn() as conn:
+            conn.row_factory = ROW_DICT
+            rows = conn.execute(
+                "SELECT path, folder, title, frontmatter, tags, links, synced_at FROM vault_notes "
+                "WHERE user_id = ? ORDER BY folder, title", (user_id,)
+            ).fetchall()
+        for r in rows:
+            for k in ("frontmatter", "tags", "links"):
+                r[k] = json.loads(r[k] or ("{}" if k == "frontmatter" else "[]"))
+        return rows
+
+    def get_vault_note(self, user_id: str, path: str) -> dict | None:
+        with self._get_conn() as conn:
+            conn.row_factory = ROW_DICT
+            row = conn.execute(
+                "SELECT path, folder, title, frontmatter, tags, links, content, synced_at FROM vault_notes "
+                "WHERE user_id = ? AND path = ?", (user_id, path)
+            ).fetchone()
+        if row:
+            for k in ("frontmatter", "tags", "links"):
+                row[k] = json.loads(row[k] or ("{}" if k == "frontmatter" else "[]"))
+        return row
+
+    def search_vault_notes(self, user_id: str, query: str, limit: int = 30) -> list:
+        like = f"%{query}%"
+        with self._get_conn() as conn:
+            conn.row_factory = ROW_DICT
+            rows = conn.execute(
+                "SELECT path, title, content FROM vault_notes WHERE user_id = ? "
+                "AND (title ILIKE ? OR content ILIKE ?) ORDER BY (title ILIKE ?) DESC, title LIMIT ?",
+                (user_id, like, like, like, limit),
+            ).fetchall()
+        results = []
+        q = query.lower()
+        for r in rows:
+            body = r.pop("content") or ""
+            i = body.lower().find(q)
+            r["snippet"] = body[max(0, i - 60): i + 100].replace("\n", " ").strip() if i >= 0 else ""
+            results.append(r)
+        return results
 
     def get_books(self, user_id: str) -> list:
         with self._get_conn() as conn:

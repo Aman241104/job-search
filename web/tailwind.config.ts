@@ -17,7 +17,8 @@ const config: Config = {
   // variant responds to OS-level prefers-color-scheme instead of the app's
   // actual theme toggle, while the CSS-var-based colors above (which read
   // .dark via plain CSS selector matching in globals.css) correctly do.
-  darkMode: 'class',
+  // .dim (the third theme) is a dark palette too, so dark: utilities apply there as well.
+  darkMode: ['variant', '&:is(.dark *, .dim *)'],
   content: [
     './pages/**/*.{js,ts,jsx,tsx,mdx}',
     './components/**/*.{js,ts,jsx,tsx,mdx}',

@@ -8,14 +8,14 @@
     "portfolio": "portfolio-1byaman.vercel.app",
     "location": "Ahmedabad, India"
   },
-  "summary": "Full-stack & AI engineer skilled in React, Next.js, TypeScript, and Python. EC Engineering graduate (CGPA 8.0), LDCE Ahmedabad. Shipped 15+ deployed projects: multi-tenant SaaS with Supabase RLS, LLM agents on Groq/Gemini, FastAPI automation pipelines, and GSAP-driven interfaces. Open to remote full-stack or AI-engineering roles.",
+  "summary": "Full-stack & AI engineer skilled in React, Next.js, TypeScript, and Python. EC Engineering graduate (CGPA 8.67), LDCE Ahmedabad. Shipped 15+ deployed projects: multi-tenant SaaS with OAuth/RLS, RAG and multi-agent LLM systems on Groq/Gemini/NVIDIA, FastAPI automation pipelines on GCP Cloud Run, and GSAP-driven interfaces. Open to remote full-stack or AI-engineering roles.",
   "education": [
     {
       "degree": "B.E. Electronics and Communications Engineering",
       "institution": "L.D. College of Engineering, Ahmedabad",
       "university": "GTU",
       "year": "2022-2026",
-      "cgpa": "8.00"
+      "cgpa": "8.67"
     }
   ],
   "work_experience": [
@@ -40,12 +40,12 @@
     "frontend": ["React", "Next.js", "Tailwind CSS", "HTML5", "CSS3", "GSAP", "Lenis", "Framer Motion", "Vite", "React Query", "React Hook Form", "Recharts", "Radix UI"],
     "backend": ["Node.js", "Express.js", "FastAPI", "NextAuth.js", "better-auth", "Inngest (background jobs)", "REST APIs", "Server-Sent Events (SSE)"],
     "databases": ["PostgreSQL", "Supabase", "MongoDB", "Mongoose", "MySQL", "Firebase"],
-    "ai_llm": ["Google Gemini API", "Groq API", "Anthropic Claude API", "LLM Tool-Calling / Function-Calling", "Multi-Agent Systems", "Prompt Engineering", "Knowledge-Base-Augmented Agents"],
-    "automation": ["n8n", "Airtable", "Apollo.io", "Playwright", "Web Scraping"],
-    "testing": ["Vitest", "Jest", "React Testing Library", "Test-Driven Development (TDD)", "Playwright"],
-    "tools": ["Git", "GitHub", "Docker", "Vercel", "Render", "Netlify", "Figma", "VSCode", "CI/CD"],
+    "ai_llm": ["Google Gemini API", "Groq API", "Anthropic Claude API", "NVIDIA NIM API", "LLM Tool-Calling / Function-Calling", "Multi-Agent Systems", "Prompt Engineering", "Retrieval-Augmented Generation (RAG)", "FAISS Vector Search", "Whisper (Speech-to-Text)", "Knowledge-Base-Augmented Agents"],
+    "automation": ["n8n", "Airtable", "Apollo.io", "Playwright", "Web Scraping", "crawl4ai", "yt-dlp", "Telegram Bot API"],
+    "testing": ["Vitest", "Jest", "Pytest", "React Testing Library", "Test-Driven Development (TDD)", "Playwright"],
+    "tools": ["Git", "GitHub", "Docker", "Vercel", "Google Cloud Platform (Cloud Run, Cloud Scheduler)", "Render", "Netlify", "Figma", "VSCode", "CI/CD"],
     "design": ["Figma", "Adobe Photoshop", "Adobe Illustrator", "After Effects", "Framer", "Canva"],
-    "security_architecture": ["Row-Level Security (RLS)", "Multi-Tenant Architecture", "OAuth (GitHub OAuth)"],
+    "security_architecture": ["Row-Level Security (RLS)", "Multi-Tenant Architecture", "OAuth 2.0 (Google & GitHub OAuth)", "JWT Session Auth", "Secret Encryption at Rest (Fernet/cryptography)", "Per-Tenant Data Isolation & PII-Leak Remediation"],
     "other": ["Web3.js", "WebGL", "Arduino", "ESP32", "IoT", "REST APIs"]
   },
   "projects": [
@@ -62,22 +62,23 @@
       ]
     },
     {
-      "name": "Job Search Automation Platform",
-      "description": "Self-built, fully deployed multi-agent job-search system: scrapes 12 job sources concurrently, scores every listing against a candidate profile via LLM + keyword heuristics, generates tailored ATS-friendly PDF CVs and cover letters per job, tracks the full application pipeline, and includes an AI-driven mock interview trainer with scored feedback.",
-      "tech_stack": ["Python", "FastAPI", "Next.js 14", "Supabase (Postgres)", "Gemini API", "Playwright", "SSE", "Docker"],
+      "name": "Job Search Automation Platform — Multi-User SaaS",
+      "description": "Self-built, fully deployed multi-agent, multi-user job-search SaaS: Google OAuth login with per-user data isolation, scrapes 12+ job sources concurrently, scores every listing via LLM + keyword heuristics, generates tailored ATS-friendly 1-page PDF CVs and cover letters, an AI Recruiter batch-apply flow (email/Telegram/browser prefill), a Career Intelligence analytics dashboard, an AI Interview Academy mock-interview trainer, and a RAG-based study tutor over ingested YouTube playlists.",
+      "tech_stack": ["Python", "FastAPI", "Next.js 14", "Postgres (Supabase)", "Google OAuth (Authlib)", "JWT", "Gemini/NVIDIA NIM/Claude APIs", "FAISS", "Google Cloud Run", "Cloud Scheduler", "Playwright", "SSE", "Docker"],
       "live_url": "https://job-search-zeta-ten.vercel.app",
       "github_url": "https://github.com/Aman241104/job-search",
       "bullets": [
-        "Built and deployed a multi-agent job-search platform (FastAPI on Render, Next.js on Vercel, Supabase Postgres) that scrapes 12 job boards, scores listings via a hybrid keyword+LLM pipeline, and auto-generates tailored PDF CVs per application",
-        "Designed a provider-agnostic AI abstraction supporting both a cloud LLM API and a local CLI-based model, with automatic fail-open fallback and rate-limit-aware model cascading",
-        "Implemented an AI mock-interview trainer with scored, topic-based feedback sessions"
+        "Built and deployed a multi-agent, multi-tenant job-search SaaS (FastAPI on Google Cloud Run, Next.js on Vercel, Postgres) with Google OAuth login, JWT session cookies, and per-user data isolation across every table",
+        "Designed a provider-agnostic AI abstraction cascading across Gemini, NVIDIA NIM, and Claude with automatic fail-open fallback and rate-limit-aware routing; built a RAG study tutor (FAISS + NVIDIA embeddings) over ingested YouTube playlist transcripts",
+        "Shipped an AI Recruiter batch-apply pipeline (email/Telegram/browser-prefill), a Career Intelligence analytics dashboard, and an AI Interview Academy with scored, topic-based mock-interview feedback",
+        "Found and fixed a real cross-tenant PII leak and other per-user data-isolation bugs via targeted pytest coverage; automated daily job discovery with Cloud Scheduler"
       ]
     },
     {
       "name": "Zing Bliss Events — Luxury Event Agency Platform",
       "description": "A high-end event-management agency platform: public routes (home, about, services, gallery, per-event case studies, contact) plus an interactive AI-style client-preference quiz, a private authenticated client portal with live event itineraries, and an admin dashboard/CMS for creating and managing events.",
       "tech_stack": ["Next.js 16", "React 19", "GSAP", "Lenis", "Tailwind 4"],
-      "live_url": "https://event-management-omega-one.vercel.app",
+      "live_url": "https://www.zingblissevents.com",
       "github_url": "https://github.com/Aman241104/event-management",
       "bullets": [
         "Built a full event-management agency platform (Next.js 16, GSAP, Lenis) with public marketing routes, an interactive client-preference quiz, a private client portal, and an admin CMS for event management",
@@ -109,18 +110,6 @@
       ]
     },
     {
-      "name": "Stock Trading Demo App",
-      "description": "A stock/trading demo application with authenticated and public route groups, background job processing via Inngest (for scheduled/async tasks like email notifications), and a Radix UI component system.",
-      "tech_stack": ["Next.js 15", "React 19", "MongoDB/Mongoose", "better-auth", "Inngest", "Radix UI"],
-      "live_url": "https://stock-app-demo.vercel.app",
-      "github_url": "https://github.com/Aman241104/stock_app_demo",
-      "bullets": [
-        "Built a stock-trading demo app (Next.js 15, MongoDB) with background job processing via Inngest for async/scheduled tasks",
-        "Implemented authentication with better-auth and accessible form UI with Radix UI + react-hook-form",
-        "Integrated transactional email (Nodemailer) triggered from background jobs"
-      ]
-    },
-    {
       "name": "Inventory Manager — Lot-Based Stock Ledger",
       "description": "A batch/lot-based inventory management system with products, vendors, and customers CRUD, buy/sell transaction ledgers, weighted-average cost calculation across lots, and a soft-delete trash bin.",
       "tech_stack": ["Next.js 16", "React 19", "MongoDB/Mongoose", "Tailwind 3"],
@@ -130,17 +119,6 @@
         "Built a lot-based inventory management system (Next.js, MongoDB) with weighted-average cost tracking across purchase batches",
         "Implemented transaction-safety validation logic (date-ordering checks) to prevent inconsistent stock ledger states",
         "Designed products/vendors/customers CRUD with a soft-delete trash pattern instead of destructive deletes"
-      ]
-    },
-    {
-      "name": "IoT Weather Dashboard (Frontend + Backend)",
-      "description": "Live dashboard visualizing real-time sensor readings (temperature/humidity/weather data) streamed from a physical IoT device, paired with a genuine Express/MongoDB backend ingesting live sensor data.",
-      "tech_stack": ["React", "Node.js", "Express 5", "MongoDB/Mongoose"],
-      "live_url": "https://iot-weather-frontend.vercel.app",
-      "github_url": "https://github.com/Aman241104/iot-weather-frontend",
-      "bullets": [
-        "Built a live IoT sensor dashboard in React consuming real-time weather/environmental data from a physical device's backend API",
-        "Built an Express/MongoDB REST API to ingest and serve real-time sensor readings from a physical IoT device"
       ]
     },
     {

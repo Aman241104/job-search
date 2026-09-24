@@ -53,7 +53,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${fragmentMono.variable} ${outfit.variable} ${cabinetGrotesk.variable}`} suppressHydrationWarning>
       <body className="bg-bg font-sans antialiased">
-        <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} themes={['light', 'dark', 'dim']}>
           {/* Google Material Symbols / Pixel-style icons read as filled, not
               thin-outline — this sets that as the app-wide default for every
               Phosphor icon; any icon with its own explicit `weight` prop

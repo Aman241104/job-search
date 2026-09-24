@@ -349,7 +349,7 @@ function BatchPageInner() {
       )}
 
       {/* ── Channels ── */}
-      <div className="bg-bg-2 border border-border rounded-2xl p-5 mb-5">
+      <div className="glass-panel rounded-2xl p-5 mb-5">
         <p className="text-xs font-medium text-white/40 uppercase tracking-wider mb-4">Application Channel</p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {(['email', 'telegram', 'browser'] as Channel[]).map((c) => {
@@ -392,7 +392,7 @@ function BatchPageInner() {
       </div>
 
       {/* ── AI Application Settings (sliders) ── */}
-      <div className="bg-bg-2 border border-border rounded-2xl p-5 mb-5">
+      <div className="glass-panel rounded-2xl p-5 mb-5">
         <p className="text-xs font-medium text-white/40 uppercase tracking-wider mb-4">AI Application Settings</p>
         <div className="grid sm:grid-cols-2 gap-6">
           <PremiumSlider
@@ -427,7 +427,7 @@ function BatchPageInner() {
 
       {/* ── Pipeline ── */}
       {candidates.length > 0 && (
-        <div className="bg-bg-2 border border-border rounded-2xl p-5 mb-5">
+        <div className="glass-panel rounded-2xl p-5 mb-5">
           <p className="text-xs font-medium text-white/40 uppercase tracking-wider mb-5">Application Pipeline</p>
           <div className="flex flex-col items-center">
             {pipelineStages.map((stage, i) => (
@@ -458,7 +458,7 @@ function BatchPageInner() {
 
       {/* ── Candidate selection ── */}
       {candidates.length > 0 && !batch && (
-        <div className="bg-bg-2 border border-border rounded-2xl p-4 mb-5">
+        <div className="glass-panel rounded-2xl p-4 mb-5">
           <p className="text-xs font-medium text-white/40 uppercase tracking-wider mb-3">
             {selected.size} of {candidates.length} selected
           </p>
@@ -516,7 +516,7 @@ function BatchPageInner() {
       )}
 
       {batch && (
-        <div className="bg-bg-2 border border-border rounded-2xl p-4">
+        <div className="glass-panel rounded-2xl p-4">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs font-medium text-white/40 uppercase tracking-wider">
               Batch — {batch.channel} — {batch.status}

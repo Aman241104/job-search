@@ -8,11 +8,12 @@ import TopicChecklist from '@/components/TopicChecklist';
 import BookReader from '@/components/BookReader';
 import { ToastProvider, useToast } from '@/components/Toast';
 import PlaylistPanel from '@/components/PlaylistPanel';
+import VaultPanel from '@/components/VaultPanel';
 import { api, LearningItem, LearningBook } from '@/lib/api';
 import clsx from 'clsx';
 
 const STATUS_CYCLE: LearningItem['status'][] = ['not_started', 'in_progress', 'done'];
-type Tab = 'skills' | 'books' | 'playlists';
+type Tab = 'skills' | 'books' | 'playlists' | 'vault';
 
 function StatusIcon({ status }: { status: LearningItem['status'] }) {
   if (status === 'done') return <Check size={14} className="text-accent-green" />;
@@ -137,11 +138,16 @@ function LearningPageInner() {
           {group.map((item) => {
             const isActive = selected?.id === item.id;
             return (
-              <button
+              // A div, not a <button>: the status toggle inside is itself a
+              // button, and nested buttons are invalid HTML (hydration error).
+              <div
                 key={item.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => setSelected(item)}
+                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), setSelected(item))}
                 className={clsx(
-                  'learning-item-card w-full text-left flex items-start gap-3 px-4 py-3.5 rounded-xl border transition-all duration-150',
+                  'learning-item-card w-full text-left flex items-start gap-3 px-4 py-3.5 rounded-xl border transition-all duration-150 cursor-pointer',
                   isActive
                     ? 'bg-accent-green/10 border-accent-green/25 text-white/90'
                     : 'bg-bg-2 border-border text-white/60 hover:border-white/10 hover:text-white/80'
@@ -169,7 +175,7 @@ function LearningPageInner() {
                 >
                   <StatusIcon status={item.status} />
                 </button>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -184,7 +190,7 @@ function LearningPageInner() {
           <div>
             <h1 className="text-2xl font-bold text-white/90 mb-1">Learning</h1>
             <p className="text-white/35 text-sm">
-              Curated Phase 2/3 track + any skill you add, an AI tutor per topic, and your own PDF/book library.
+              Curated Phase 2/3 track + any skill you add, an AI tutor per topic, your PDF/book library, and your Obsidian vault.
             </p>
           </div>
           {!loading && tab === 'skills' && (
@@ -230,6 +236,17 @@ function LearningPageInner() {
             )}
           >
             Playlists
+          </button>
+          <button
+            onClick={() => setTab('vault')}
+            className={clsx(
+              'text-xs font-semibold px-4 py-2 rounded-lg border transition-all',
+              tab === 'vault'
+                ? 'bg-accent-green/10 border-accent-green/30 text-accent-green'
+                : 'border-border text-white/40 hover:text-white/70'
+            )}
+          >
+            Obsidian Vault
           </button>
         </div>
       </div>
@@ -331,8 +348,10 @@ function LearningPageInner() {
             <BookReader book={selectedBook} />
           </div>
         </div>
-      ) : (
+      ) : tab === 'playlists' ? (
         <PlaylistPanel />
+      ) : (
+        <VaultPanel />
       )}
     </div>
   );

@@ -222,7 +222,7 @@ export default function LinksPage() {
       </div>
 
       {/* Quick stats bar */}
-      <div className="flex flex-wrap items-center gap-5 mb-8 px-5 py-3.5 bg-bg-2 border border-border rounded-2xl">
+      <div className="flex flex-wrap items-center gap-5 mb-8 px-5 py-3.5 glass-panel rounded-2xl">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-accent-green animate-pulse" />
           <span className="text-xs text-white/50">Auto-scraped</span>

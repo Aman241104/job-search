@@ -1272,7 +1272,8 @@ class JobFinderAgent:
     # precise but free) keyword score rather than being dropped.
     MAX_AI_RESCORE_PER_RUN = 100
 
-    def score_jobs(self, jobs: list) -> list:
+    def score_jobs(self, jobs: list, progress=None) -> list:
+        emit = progress or (lambda event: None)
         results = []
         uncertain = []
         uncertain_idx = []
@@ -1299,10 +1300,20 @@ class JobFinderAgent:
         # gets the model's full attention instead of sharing a prompt with 9
         # others (should score more accurately). The 1.5s pacing keeps this
         # comfortably under NVIDIA's shared-across-models RPM cap.
+        def card(job, result):
+            return {"title": job.get("title", ""), "company": job.get("company", ""), "source": job.get("source", ""),
+                    "location": job.get("location", ""), "score": result.get("score", 0), "reason": result.get("reason", "")}
+
+        emit({"type": "keyword_scored", "total": len(jobs), "uncertain": len(uncertain),
+              "jobs": [card(j, r) for j, r in zip(jobs, results)]})
+
         if uncertain:
             console.print(f'  [dim]AI re-scoring {len(uncertain)} uncertain jobs (individually)...[/dim]')
             for i, (idx, job) in enumerate(zip(uncertain_idx, uncertain)):
+                emit({"type": "ai_start", "index": i + 1, "total": len(uncertain),
+                      "job": {"title": job.get("title", ""), "company": job.get("company", "")}})
                 results[idx] = score_job_single(job, self._profile_summary(), location_preference=self.profile.get('location_preference'))
+                emit({"type": "ai_scored", "index": i + 1, "total": len(uncertain), "job": card(job, results[idx])})
                 if i < len(uncertain) - 1:
                     time.sleep(1.5)
 
@@ -1336,108 +1347,122 @@ class JobFinderAgent:
 
     # ── Main entry point ──────────────────────────────────────────────────────
 
-    def find_jobs(self, keywords: list = None, limit: int = 500) -> list:
+    def find_jobs(self, keywords: list = None, limit: int = 500, progress=None) -> list:
+        """`progress`, if given, is called with small event dicts as the run
+        goes (source fetched, filter result, each job scored) so the web
+        dashboard can show live progress instead of one long spinner."""
         all_jobs: list = []
         console.print("[bold cyan]Fetching jobs from multiple sources...[/bold cyan]")
+        emit = progress or (lambda event: None)
+        current = {"label": ""}
+
+        def step(label: str):
+            console.print(f"  [dim]{label}[/dim]")
+            current["label"] = label
+            emit({"type": "source_start", "label": label})
+
+        def take(jobs: list):
+            all_jobs.extend(jobs)
+            emit({"type": "source_done", "label": current["label"], "count": len(jobs), "total": len(all_jobs)})
 
         # ── Internshala (primary — best for Indian freshers) ──
         if self._source_enabled('internshala'):
             for slug, loc in INTERNSHALA_SEARCHES:
-                console.print(f"  [dim]Internshala: {slug}[/dim]")
-                all_jobs.extend(self._scrape_internshala(slug, loc))
+                step(f"Internshala: {slug}")
+                take(self._scrape_internshala(slug, loc))
 
         # ── Jobicy (remote international jobs) ──
         if self._source_enabled('jobicy'):
             for tag in ["react", "javascript", "frontend", "typescript"]:
-                console.print(f"  [dim]Jobicy remote: '{tag}'[/dim]")
-                all_jobs.extend(self._fetch_jobicy(tag))
+                step(f"Jobicy remote: '{tag}'")
+                take(self._fetch_jobicy(tag))
 
         # ── Adzuna (optional — needs free key) ──
         if ADZUNA_APP_ID and self._source_enabled('adzuna'):
             for kw in ["react developer fresher", "frontend developer fresher"]:
-                console.print(f"  [dim]Adzuna India: '{kw}'[/dim]")
-                all_jobs.extend(self._fetch_adzuna(kw))
-                console.print(f"  [dim]Adzuna Ahmedabad: '{kw}'[/dim]")
-                all_jobs.extend(self._fetch_adzuna(kw, where="Ahmedabad"))
+                step(f"Adzuna India: '{kw}'")
+                take(self._fetch_adzuna(kw))
+                step(f"Adzuna Ahmedabad: '{kw}'")
+                take(self._fetch_adzuna(kw, where="Ahmedabad"))
 
         # ── Jooble (optional — needs free key) ──
         if JOOBLE_API_KEY and self._source_enabled('jooble'):
             for kw in ["react developer", "frontend developer"]:
-                console.print(f"  [dim]Jooble: '{kw}'[/dim]")
-                all_jobs.extend(self._fetch_jooble(kw))
+                step(f"Jooble: '{kw}'")
+                take(self._fetch_jooble(kw))
 
         # ── Careerjet (optional — needs free key) ──
         if CAREERJET_API_KEY and self._source_enabled('careerjet'):
             for kw in ["react developer", "frontend developer"]:
-                console.print(f"  [dim]Careerjet: '{kw}'[/dim]")
-                all_jobs.extend(self._fetch_careerjet(kw))
+                step(f"Careerjet: '{kw}'")
+                take(self._fetch_careerjet(kw))
 
         # ── WeWorkRemotely (remote programming jobs) ──
         if self._source_enabled('weworkremotely'):
-            console.print("  [dim]WeWorkRemotely: remote programming jobs[/dim]")
-            all_jobs.extend(self._fetch_weworkremotely())
+            step("WeWorkRemotely: remote programming jobs")
+            take(self._fetch_weworkremotely())
 
         # ── Arbeitnow (free API — worldwide remote tech jobs) ──
         if self._source_enabled('arbeitnow'):
-            console.print("  [dim]Arbeitnow: worldwide remote tech jobs[/dim]")
-            all_jobs.extend(self._fetch_arbeitnow())
+            step("Arbeitnow: worldwide remote tech jobs")
+            take(self._fetch_arbeitnow())
 
         # ── LinkedIn (guest API — no auth) ──
         if self._source_enabled('linkedin'):
-            console.print("  [dim]LinkedIn: React/Frontend/FullStack jobs India + Ahmedabad[/dim]")
-            all_jobs.extend(self._fetch_linkedin())
+            step("LinkedIn: React/Frontend/FullStack jobs India + Ahmedabad")
+            take(self._fetch_linkedin())
 
         # ── Remotive (curated remote tech jobs API) ──
         if self._source_enabled('remotive'):
-            console.print("  [dim]Remotive: curated remote tech jobs[/dim]")
-            all_jobs.extend(self._fetch_remotive())
+            step("Remotive: curated remote tech jobs")
+            take(self._fetch_remotive())
 
         # ── RemoteOK (remote dev jobs JSON API) ──
         if self._source_enabled('remoteok'):
-            console.print("  [dim]RemoteOK: remote dev jobs[/dim]")
-            all_jobs.extend(self._fetch_remoteok())
+            step("RemoteOK: remote dev jobs")
+            take(self._fetch_remoteok())
 
         # ── Remote.co (vetted remote developer jobs RSS) ──
         if self._source_enabled('remoteco'):
-            console.print("  [dim]Remote.co: vetted remote developer jobs[/dim]")
-            all_jobs.extend(self._fetch_remoteco())
+            step("Remote.co: vetted remote developer jobs")
+            take(self._fetch_remoteco())
 
         # ── The Muse (entry-level engineering jobs API) ──
         if self._source_enabled('themuse'):
-            console.print("  [dim]TheMuse: entry-level engineering jobs[/dim]")
-            all_jobs.extend(self._fetch_themuse())
+            step("TheMuse: entry-level engineering jobs")
+            take(self._fetch_themuse())
 
         # ── Himalayas (remote-first job board, India-eligible filter) ──
         if self._source_enabled('himalayas'):
-            console.print("  [dim]Himalayas: remote-first jobs[/dim]")
-            all_jobs.extend(self._fetch_himalayas())
+            step("Himalayas: remote-first jobs")
+            take(self._fetch_himalayas())
 
         # ── HN "Who is hiring" (monthly thread, real startups posting directly) ──
         if self._source_enabled('hn_hiring'):
-            console.print("  [dim]HN Who's Hiring: this month's thread[/dim]")
-            all_jobs.extend(self._fetch_hn_hiring())
+            step("HN Who's Hiring: this month's thread")
+            take(self._fetch_hn_hiring())
 
         # ── Cutshort (startups; only ≤1-year-experience listings kept) ──
         if self._source_enabled('cutshort'):
             for slug in CUTSHORT_SEARCHES:
-                console.print(f"  [dim]Cutshort: {slug}[/dim]")
-                all_jobs.extend(self._fetch_cutshort(slug))
+                step(f"Cutshort: {slug}")
+                take(self._fetch_cutshort(slug))
 
         # ── Talent.com (aggregator with good Ahmedabad/Gujarat coverage) ──
         if self._source_enabled('talent'):
             for kw, loc in TALENT_SEARCHES:
-                console.print(f"  [dim]Talent.com: {kw} / {loc}[/dim]")
-                all_jobs.extend(self._fetch_talent(kw, loc))
+                step(f"Talent.com: {kw} / {loc}")
+                take(self._fetch_talent(kw, loc))
 
         # ── Shine + Freshersworld (Ahmedabad + nearby Gujarat cities) ──
         if self._source_enabled('shine'):
             for role, city in GUJARAT_SEARCHES:
-                console.print(f"  [dim]Shine: {role} / {city}[/dim]")
-                all_jobs.extend(self._fetch_shine(role, city))
+                step(f"Shine: {role} / {city}")
+                take(self._fetch_shine(role, city))
         if self._source_enabled('freshersworld'):
             for role, city in GUJARAT_SEARCHES:
-                console.print(f"  [dim]Freshersworld: {role} / {city}[/dim]")
-                all_jobs.extend(self._fetch_freshersworld(role, city))
+                step(f"Freshersworld: {role} / {city}")
+                take(self._fetch_freshersworld(role, city))
 
         # ── Deduplicate + filter ──
         # Two dedup checks: exact URL (handles the same source returning a
@@ -1468,6 +1493,7 @@ class JobFinderAgent:
             unique_jobs.append(j)
 
         console.print(f"\n[green]Found {len(unique_jobs)} new jobs. Scoring with Gemini (batched)...[/green]")
+        emit({"type": "filtered", "raw": len(all_jobs), "unique": len(unique_jobs)})
 
         # `limit` used to silently starve scoring for whichever source is
         # fetched last (HN Who's Hiring, currently) on any run finding more
@@ -1478,7 +1504,7 @@ class JobFinderAgent:
         # of how many jobs are passed in. Raised the default well above any
         # realistic single-run volume rather than truncating silently.
         to_score = unique_jobs[:limit]
-        scores   = self.score_jobs(to_score)
+        scores   = self.score_jobs(to_score, progress=progress)
         for job, result in zip(to_score, scores):
             job["score"]        = result.get("score", 40)
             job["score_reason"] = result.get("reason", "")

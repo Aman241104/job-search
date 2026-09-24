@@ -69,7 +69,10 @@ export default function TrainChat({ topic, interviewer, onSessionEnd }: TrainCha
   const { toast } = useToast();
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Scroll only the chat's own container — scrollIntoView also scrolls
+    // the window, which yanked the whole page down on load.
+    const box = messagesEndRef.current?.closest('.overflow-y-auto') as HTMLElement | null;
+    box?.scrollTo({ top: box.scrollHeight, behavior: 'smooth' });
   };
 
   useEffect(() => {
@@ -280,7 +283,7 @@ export default function TrainChat({ topic, interviewer, onSessionEnd }: TrainCha
             )}
 
             {messages.length > 0 && messages[messages.length - 1].role === 'assistant' && (
-              <div className="text-left bg-bg-2 border border-border rounded-2xl p-4 mb-6">
+              <div className="text-left glass-panel rounded-2xl p-4 mb-6">
                 <p className="text-xs font-medium text-white/35 uppercase tracking-wider mb-2">Coach Notes</p>
                 <div
                   className="text-sm text-white/70 leading-relaxed"

@@ -77,7 +77,7 @@ export default function JobMatchCard({ job, onStatusChange, allJobs }: JobMatchC
   };
 
   return (
-    <div className="group bg-bg-2 border border-border rounded-2xl p-5 hover:border-white/15 transition-colors">
+    <div className="group glass-panel rounded-2xl p-5 hover:border-white/15 transition-colors">
       <div className="flex items-start gap-4">
         <ScoreRing score={job.score} size={52} />
         <div className="flex-1 min-w-0">

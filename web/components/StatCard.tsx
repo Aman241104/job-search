@@ -97,7 +97,7 @@ export default function StatCard({
 
   if (loading) {
     return (
-      <div className="bg-bg-2 border border-border rounded-2xl p-6">
+      <div className="glass-panel rounded-2xl p-6">
         <div className="skeleton h-8 w-8 rounded-lg mb-4" />
         <div className="skeleton h-8 w-20 rounded-lg mb-2" />
         <div className="skeleton h-4 w-28 rounded" />
@@ -111,7 +111,7 @@ export default function StatCard({
       whileTap={{ scale: 0.98 }}
       transition={{ type: 'spring', stiffness: 300, damping: 20 }}
       className={clsx(
-        'bg-bg-2 border border-border rounded-2xl p-6 relative overflow-hidden transition-shadow',
+        'glass-panel rounded-2xl p-6 relative overflow-hidden transition-shadow',
         featured && `${featuredShadow[color]} md:p-8`
       )}
     >

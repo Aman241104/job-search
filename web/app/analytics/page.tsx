@@ -296,7 +296,7 @@ export default function AnalyticsPage() {
       {data && (
         <div ref={pageRef} className="space-y-6">
           {/* ── Career Health hero ── */}
-          <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6 md:p-8 shadow-tint-green text-center">
+          <div className="anim-card glass-panel rounded-2xl p-6 md:p-8 shadow-tint-green text-center">
             <div className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1 rounded-full bg-white/5 border border-white/10 text-white/50 mb-4">
               <Sparkle size={11} weight="fill" className="text-accent-green" />
               Career Health
@@ -392,7 +392,7 @@ export default function AnalyticsPage() {
           )}
 
           {/* ── Career Journey (real 5-stage funnel) ── */}
-          <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
+          <div className="anim-card glass-panel rounded-2xl p-6">
             <h2 className="font-semibold text-white/90 mb-1">Career Journey</h2>
             <p className="text-xs text-white/30 mb-6">Your profile has discovered {data.total_jobs} opportunities so far — here&apos;s how far they&apos;ve traveled.</p>
             <div className="flex flex-col items-center max-w-xs mx-auto">
@@ -423,7 +423,7 @@ export default function AnalyticsPage() {
           </div>
 
           {/* ── Match Quality ── */}
-          <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
+          <div className="anim-card glass-panel rounded-2xl p-6">
             <h2 className="font-semibold text-white/90 mb-1">Match Quality</h2>
             <p className="text-xs text-white/30 mb-5">
               Your profile matches exceptionally well with {strengths[0]?.label || 'your top'} positions.
@@ -436,7 +436,7 @@ export default function AnalyticsPage() {
           </div>
 
           {/* ── Interview Simulator (real what-if projection) ── */}
-          <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
+          <div className="anim-card glass-panel rounded-2xl p-6">
             <div className="flex items-center gap-2 mb-1">
               <Lightning size={16} className="text-accent-yellow" />
               <h2 className="font-semibold text-white/90">Interview Simulator</h2>
@@ -470,7 +470,7 @@ export default function AnalyticsPage() {
           </div>
 
           {/* ── Success heatmap (real weekday activity) ── */}
-          <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
+          <div className="anim-card glass-panel rounded-2xl p-6">
             <div className="flex items-center gap-2 mb-1">
               <Fire size={16} className="text-accent-pink" />
               <h2 className="font-semibold text-white/90">Activity Heatmap</h2>
@@ -501,7 +501,7 @@ export default function AnalyticsPage() {
 
           {/* ── Top companies + Source performance ── */}
           <div className="grid md:grid-cols-2 gap-6">
-            <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
+            <div className="anim-card glass-panel rounded-2xl p-6">
               <div className="flex items-center gap-2 mb-1">
                 <Buildings size={16} className="text-accent-purple" />
                 <h2 className="font-semibold text-white/90">Top Companies</h2>
@@ -522,7 +522,7 @@ export default function AnalyticsPage() {
               )}
             </div>
 
-            <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
+            <div className="anim-card glass-panel rounded-2xl p-6">
               <div className="flex items-center gap-2 mb-1">
                 <Target size={16} className="text-accent-cyan" />
                 <h2 className="font-semibold text-white/90">Source Performance</h2>
@@ -545,7 +545,7 @@ export default function AnalyticsPage() {
           </div>
 
           {/* ── Salary Potential ── */}
-          <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
+          <div className="anim-card glass-panel rounded-2xl p-6">
             <div className="flex items-center gap-2 mb-1">
               <CurrencyDollar size={16} className="text-accent-green" />
               <h2 className="font-semibold text-white/90">Salary Potential</h2>

@@ -45,7 +45,10 @@ export default function BookReader({ book }: BookReaderProps) {
   }, [book?.id, pageNum]);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Scroll only the chat's own container — scrollIntoView also scrolls
+    // the window, which yanked the whole page down on load.
+    const box = chatEndRef.current?.closest('.overflow-y-auto') as HTMLElement | null;
+    box?.scrollTo({ top: box.scrollHeight, behavior: 'smooth' });
   }, [chatMessages]);
 
   const handleSummarize = async () => {

@@ -103,6 +103,15 @@
   --accent-purple: var(--purple-40);
   --accent-yellow: var(--yellow-40);
   --accent-pink: var(--pink-40);
+
+  /* Liquid glass surfaces (.glass-panel) — per-theme tint, rim and top
+     highlight, plus how strongly the ambient color field behind shows. */
+  --glass-tint: 255 255 255;
+  --glass-alpha: 0.58;
+  --glass-edge: 255 255 255;
+  --glass-edge-alpha: 0.75;
+  --glass-highlight: 0.9;
+  --ambient-alpha: 0.32;
 }
 
 .dark {
@@ -124,6 +133,39 @@
   --accent-purple: var(--purple-80);
   --accent-yellow: var(--yellow-80);
   --accent-pink: var(--pink-80);
+
+  --glass-tint: 44 40 33;
+  --glass-alpha: 0.55;
+  --glass-edge: 255 255 255;
+  --glass-edge-alpha: 0.09;
+  --glass-highlight: 0.08;
+  --ambient-alpha: 0.16;
+}
+
+/* Dim — the switcher's third mode: a cool slate midnight, softer than the
+   warm near-black of .dark. Tailwind's dark: variant also matches .dim
+   (tailwind.config.ts), so every dark-mode tweak applies here too. */
+.dim {
+  --bg: 27 31 41;
+  --bg-1: 34 39 51;
+  --bg-2: 40 46 60;
+  --bg-3: 48 55 71;
+  --ink: 232 236 244;
+  --ink-muted: 152 161 181;
+  --border: 58 66 84;
+
+  --accent-green: var(--green-80);
+  --accent-cyan: var(--blue-80);
+  --accent-purple: var(--purple-80);
+  --accent-yellow: var(--yellow-80);
+  --accent-pink: var(--pink-80);
+
+  --glass-tint: 42 48 63;
+  --glass-alpha: 0.5;
+  --glass-edge: 200 215 255;
+  --glass-edge-alpha: 0.12;
+  --glass-highlight: 0.1;
+  --ambient-alpha: 0.2;
 }
 
 html,
@@ -158,10 +200,183 @@ body {
 /* Subtle static warmth behind the page — a soft, slow-breathing radial glow
    instead of the old animated neon dot grid. Very low opacity by design:
    presence, not decoration. */
+/* Liquid glass needs something to refract: a soft, slowly drifting field of
+   accent-colored light behind every page. Kept low-saturation (tone 80/90 of
+   each ramp, --ambient-alpha per theme) so text on glass stays readable. */
 .dot-grid {
-  background-image: radial-gradient(circle at 20% 15%, rgb(var(--accent-green) / 0.05) 0%, transparent 45%),
-    radial-gradient(circle at 85% 80%, rgb(var(--accent-yellow) / 0.04) 0%, transparent 45%);
-  animation: breathe 12s ease-in-out infinite;
+  background-image:
+    radial-gradient(38vw 38vw at 12% 10%, rgb(var(--green-80) / var(--ambient-alpha)) 0%, transparent 70%),
+    radial-gradient(34vw 34vw at 88% 18%, rgb(var(--blue-80) / var(--ambient-alpha)) 0%, transparent 70%),
+    radial-gradient(40vw 40vw at 70% 92%, rgb(var(--purple-80) / var(--ambient-alpha)) 0%, transparent 70%),
+    radial-gradient(30vw 30vw at 22% 85%, rgb(var(--yellow-90) / var(--ambient-alpha)) 0%, transparent 70%);
+  background-size: 120% 120%;
+  animation: ambient-drift 28s ease-in-out infinite alternate;
+}
+
+@keyframes ambient-drift {
+  0% { background-position: 0% 0%; }
+  50% { background-position: 60% 40%; }
+  100% { background-position: 100% 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot-grid { animation: none; }
+}
+
+/* ── Liquid glass surface ──────────────────────────────────────────────────
+   Frosted, saturated backdrop + a bright rim and top highlight (the "lip" of
+   a glass edge) + a soft drop shadow. Used for cards, the sidebar, and
+   panels; the color field above is what shows through. */
+.glass-panel {
+  background: linear-gradient(
+    145deg,
+    rgb(var(--glass-tint) / calc(var(--glass-alpha) + 0.12)) 0%,
+    rgb(var(--glass-tint) / var(--glass-alpha)) 55%,
+    rgb(var(--glass-tint) / calc(var(--glass-alpha) - 0.08)) 100%
+  );
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  backdrop-filter: blur(22px) saturate(180%);
+  border: 1px solid rgb(var(--glass-edge) / var(--glass-edge-alpha));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / var(--glass-highlight)),
+    inset 0 -1px 0 rgb(var(--ink) / 0.04),
+    0 1px 2px rgb(var(--ink) / 0.04),
+    0 10px 36px -8px rgb(var(--ink) / 0.1);
+}
+
+/* Heavier glass for chrome that floats over content (sidebar, bottom bar). */
+.glass-strong {
+  --glass-alpha: 0.72;
+  -webkit-backdrop-filter: blur(30px) saturate(200%);
+  backdrop-filter: blur(30px) saturate(200%);
+}
+
+/* ── Liquid glass theme switcher (components/ui/apple-liquid-glass-switcher)
+   A glass pill of three options; the selected one sits under a smaller
+   glass lens that slides between them, refracting the icon beneath it via
+   the #toggler SVG filter (Chromium). Other engines drop the url() filter
+   declaration and keep the plain frosted blur. */
+.switcher {
+  --c: rgb(var(--ink) / 0.45);
+  --option: 44px;
+  position: relative;
+  display: flex;
+  margin: 0;
+  padding: 4px;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(var(--glass-tint) / 0.4);
+  -webkit-backdrop-filter: blur(10px) saturate(160%);
+  backdrop-filter: blur(10px) saturate(160%);
+  backdrop-filter: url(#switcher) blur(6px) saturate(170%);
+  box-shadow:
+    inset 0 0 0 1px rgb(var(--glass-edge) / var(--glass-edge-alpha)),
+    inset 0 1px 1px rgb(255 255 255 / var(--glass-highlight)),
+    0 6px 22px -6px rgb(var(--ink) / 0.18);
+}
+
+.switcher__legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.switcher__option {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: var(--option);
+  height: 34px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.switcher__input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.switcher__icon {
+  width: 24px;
+  height: 24px;
+  transition: scale 0.2s ease, filter 0.2s ease;
+  pointer-events: none;
+}
+
+.switcher__option:hover .switcher__icon {
+  scale: 1.08;
+}
+
+.switcher__option:has(.switcher__input:checked) {
+  --c: rgb(var(--ink));
+}
+
+.switcher__option:has(.switcher__input:focus-visible) {
+  outline: 2px solid rgb(var(--accent-green) / 0.6);
+  outline-offset: 1px;
+}
+
+/* The sliding lens */
+.switcher::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  top: 4px;
+  left: 4px;
+  width: var(--option);
+  height: 34px;
+  border-radius: 999px;
+  background: rgb(var(--glass-tint) / 0.55);
+  backdrop-filter: url(#toggler) saturate(180%);
+  box-shadow:
+    inset 0 0 0 1px rgb(var(--glass-edge) / calc(var(--glass-edge-alpha) + 0.1)),
+    inset 0 1px 1px rgb(255 255 255 / var(--glass-highlight)),
+    inset 0 -3px 8px rgb(var(--ink) / 0.06),
+    0 3px 10px rgb(var(--ink) / 0.14);
+  translate: calc(var(--i, 0) * var(--option)) 0;
+  transition: translate 0.5s cubic-bezier(0.3, 1.45, 0.5, 1);
+}
+
+/* A distinct keyframe name per target is what restarts the squash on every
+   change (same-name animations don't replay). */
+.switcher:has([c-option='1']:checked)::after { --i: 0; animation: scaleToggle 0.5s ease; }
+.switcher:has([c-option='2']:checked)::after { --i: 1; animation: scaleToggle2 0.5s ease; }
+.switcher:has([c-option='3']:checked)::after { --i: 2; animation: scaleToggle3 0.5s ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .switcher::after { transition: none; animation: none !important; }
+}
+
+.switcher__filter {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+@keyframes scaleToggle {
+  0% { scale: 1 1; }
+  50% { scale: 1.1 1; }
+  100% { scale: 1 1; }
+}
+
+@keyframes scaleToggle2 {
+  0% { scale: 1 1; }
+  50% { scale: 1.2 1; }
+  100% { scale: 1 1; }
+}
+
+@keyframes scaleToggle3 {
+  0% { scale: 1 1; }
+  50% { scale: 1.1 1; }
+  100% { scale: 1 1; }
 }
 
 @keyframes breathe {

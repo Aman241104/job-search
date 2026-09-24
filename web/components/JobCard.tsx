@@ -133,7 +133,7 @@ export default function JobCard({ job, onStatusChange, onStarChange, onView }: J
       ref={cardRef}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      className="card-hover bg-bg-2 border border-border rounded-2xl p-4 relative cursor-default"
+      className="card-hover glass-panel rounded-2xl p-4 relative cursor-default"
     >
       {/* Main row */}
       <div

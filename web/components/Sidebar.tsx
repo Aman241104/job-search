@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { motion } from 'framer-motion';
 import gsap from 'gsap';
-import { SquaresFour, Briefcase, Brain, LinkSimple, DownloadSimple, ChartBar, FileText, User, MagnifyingGlass, DotsThree, GraduationCap, BookmarkSimple, PaperPlaneTilt, BookOpen, Compass, Sun, Moon, SignOut, X as CloseIcon } from '@phosphor-icons/react';
+import { SquaresFour, Briefcase, Brain, LinkSimple, DownloadSimple, ChartBar, FileText, User, MagnifyingGlass, DotsThree, GraduationCap, BookmarkSimple, PaperPlaneTilt, BookOpen, Compass, Sun, Moon, CloudMoon, SignOut, X as CloseIcon } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import { useGlobalSearch } from '@/components/GlobalSearch';
 import { useAuth } from '@/components/AuthProvider';
@@ -40,9 +40,13 @@ export default function Sidebar() {
   const sidebarRef = useRef<HTMLDivElement>(null);
   const itemsRef = useRef<HTMLDivElement>(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const { open: openSearch } = useGlobalSearch();
   const { theme, setTheme } = useTheme();
+  const THEME_CYCLE = ['light', 'dark', 'dim'] as const;
+  const nextTheme = THEME_CYCLE[(THEME_CYCLE.indexOf((theme as (typeof THEME_CYCLE)[number]) ?? 'light') + 1) % THEME_CYCLE.length];
+  const themeLabel = { light: 'Light mode', dark: 'Dark mode', dim: 'Dim mode' }[nextTheme];
   const [mounted, setMounted] = useState(false);
 
   // next-themes reads localStorage client-side only — theme is undefined
@@ -78,7 +82,7 @@ export default function Sidebar() {
         onMouseLeave={() => setIsExpanded(false)}
         className={clsx(
           'hidden md:flex flex-col sticky top-4 z-40 my-4 ml-4 rounded-[28px]',
-          'h-[calc(100vh-2rem)] bg-bg-1 border border-border shadow-[0_4px_20px_rgb(var(--ink)/0.06)]',
+          'h-[calc(100vh-2rem)] glass-panel glass-strong',
           'transition-all duration-300 ease-in-out',
           isExpanded ? 'w-[220px]' : 'w-[64px]'
         )}
@@ -145,13 +149,13 @@ export default function Sidebar() {
         <div className="py-4 px-2 border-t border-border flex flex-col gap-1">
           {mounted && (
             <button
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              onClick={() => setTheme(nextTheme)}
               className="nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/40 hover:text-accent-purple hover:bg-accent-purple/5 transition-all duration-150 active:scale-[0.97]"
             >
-              {theme === 'dark' ? <Sun size={18} className="flex-shrink-0" /> : <Moon size={18} className="flex-shrink-0" />}
+              {nextTheme === 'light' ? <Sun size={18} className="flex-shrink-0" /> : nextTheme === 'dim' ? <CloudMoon size={18} className="flex-shrink-0" /> : <Moon size={18} className="flex-shrink-0" />}
               {isExpanded && (
                 <span className="text-sm font-medium whitespace-nowrap">
-                  {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+                  {themeLabel}
                 </span>
               )}
             </button>
@@ -165,10 +169,19 @@ export default function Sidebar() {
           </button>
 
           {/* User avatar */}
-          <div className="flex items-center gap-3 px-3 py-2.5 mt-1">
-            {user?.avatar_url ? (
+          <div className={clsx('flex gap-3 px-3 py-2.5 mt-1', isExpanded ? 'items-center' : 'flex-col items-start')}>
+            {user?.avatar_url && !avatarFailed ? (
+              // Google avatar URLs reject hotlinked requests that carry a
+              // Referer, so send none — and fall back to initials if it
+              // still fails, instead of rendering the broken-image alt text.
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={user.avatar_url} alt={user.name} className="w-8 h-8 rounded-full flex-shrink-0" />
+              <img
+                src={user.avatar_url}
+                alt={user.name}
+                referrerPolicy="no-referrer"
+                onError={() => setAvatarFailed(true)}
+                className="w-8 h-8 rounded-full flex-shrink-0"
+              />
             ) : (
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-accent-green to-accent-cyan flex items-center justify-center flex-shrink-0">
                 <span className="text-bg font-mono font-bold text-xs">
@@ -200,7 +213,7 @@ export default function Sidebar() {
             className="md:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
             onClick={() => setShowMore(false)}
           />
-          <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-bg-1 border-t border-border rounded-t-2xl px-4 pt-4 pb-8">
+          <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 glass-panel glass-strong rounded-t-2xl px-4 pt-4 pb-8">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-mono text-white/30 uppercase tracking-widest">More</span>
               <button onClick={() => setShowMore(false)} className="p-1 text-white/40">
@@ -240,11 +253,11 @@ export default function Sidebar() {
               </button>
               {mounted && (
                 <button
-                  onClick={() => { setTheme(theme === 'dark' ? 'light' : 'dark'); }}
+                  onClick={() => { setTheme(nextTheme); }}
                   className="flex flex-col items-center gap-1.5 py-3 rounded-xl text-white/50 bg-white/5 active:scale-95"
                 >
-                  {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-                  <span className="text-[10px] font-medium">{theme === 'dark' ? 'Light' : 'Dark'}</span>
+                  {nextTheme === 'light' ? <Sun size={20} /> : nextTheme === 'dim' ? <CloudMoon size={20} /> : <Moon size={20} />}
+                  <span className="text-[10px] font-medium">{themeLabel.replace(' mode', '')}</span>
                 </button>
               )}
             </div>
@@ -253,7 +266,7 @@ export default function Sidebar() {
       )}
 
       {/* Mobile Bottom Nav — 4 primary destinations + More, sized to fit 375px comfortably */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-bg-1/95 backdrop-blur-lg border-t border-border flex items-center justify-around px-2 py-2">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 glass-panel glass-strong !border-x-0 !border-b-0 flex items-center justify-around px-2 py-2">
         {mobilePrimaryItems.map(({ href, icon: Icon, label }) => {
           const isActive = pathname === href || pathname.startsWith(href + '/');
           return (

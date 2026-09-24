@@ -26,3 +26,4 @@ cryptography>=41.0
 pytest>=8.0
 httpx>=0.28
 itsdangerous>=2.2
+PyYAML>=6.0

@@ -29,7 +29,10 @@ export default function LearningChat({ item }: LearningChatProps) {
   const { toast } = useToast();
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Scroll only the chat's own container — scrollIntoView also scrolls
+    // the window, which yanked the whole page down on load.
+    const box = messagesEndRef.current?.closest('.overflow-y-auto') as HTMLElement | null;
+    box?.scrollTo({ top: box.scrollHeight, behavior: 'smooth' });
   };
 
   useEffect(() => {
@@ -52,7 +55,8 @@ export default function LearningChat({ item }: LearningChatProps) {
     api
       .learningChat(item.id, '')
       .then((res) => {
-        setMessages([{ role: 'assistant', content: res.response }]);
+        // A returning item gets its whole saved conversation back
+        setMessages(res.messages?.length ? res.messages : [{ role: 'assistant', content: res.response }]);
       })
       .catch(() => toast('Failed to load tutor for this topic', 'error'))
       .finally(() => {

@@ -122,7 +122,7 @@ function StoriesPageInner() {
       </div>
 
       {showForm && (
-        <div className="bg-bg-2 border border-border rounded-2xl p-5 mb-8 space-y-4">
+        <div className="glass-panel rounded-2xl p-5 mb-8 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-white/80">{editingId ? 'Edit Story' : 'New Story'}</h3>
             <button onClick={() => { setShowForm(false); setEditingId(null); setForm(EMPTY_FORM); setNotes(''); }} className="text-white/30 hover:text-white/60">

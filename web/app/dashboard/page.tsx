@@ -17,6 +17,8 @@ import Sparkline from '@/components/Sparkline';
 import { ToastProvider } from '@/components/Toast';
 import { api, Stats, Job } from '@/lib/api';
 import clsx from 'clsx';
+import { useTheme } from 'next-themes';
+import { ThemeSwitcher, type Theme } from '@/components/ui/apple-liquid-glass-switcher';
 
 /* ─────────── helpers ─────────── */
 
@@ -235,7 +237,7 @@ function FollowupsWidget({ onStatusChange }: { onStatusChange: () => void }) {
   if (jobs === null) return null; // endpoint failed → hide
   if (jobs.length === 0) {
     return (
-      <div className="anim-card bg-bg-2 border border-border rounded-2xl p-5">
+      <div className="anim-card glass-panel rounded-2xl p-5">
         <div className="flex items-center gap-2 mb-1">
           <Bell size={14} className="text-accent-cyan" />
           <h2 className="font-semibold text-white/90 text-sm">Follow-ups Needed</h2>
@@ -261,7 +263,7 @@ function FollowupsWidget({ onStatusChange }: { onStatusChange: () => void }) {
   }
 
   return (
-    <div className="anim-card bg-bg-2 border border-border rounded-2xl p-5">
+    <div className="anim-card glass-panel rounded-2xl p-5">
       <div className="flex items-center gap-2 mb-3">
         <Bell size={14} className="text-accent-yellow" />
         <h2 className="font-semibold text-white/90 text-sm">
@@ -454,6 +456,11 @@ export default function DashboardPage() {
   const [firstName, setFirstName] = useState<string>('');
   const [resume, setResume] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
+  const { theme, setTheme } = useTheme();
+  // next-themes only knows the theme after hydration — render the switcher
+  // client-side so the server HTML doesn't disagree with the stored theme.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const [error, setError] = useState<string | null>(null);
   const cardsRef = useRef<HTMLDivElement>(null);
 
@@ -616,13 +623,22 @@ export default function DashboardPage() {
             </h1>
             <p className="text-white/35 text-sm font-mono">{formatDate()}</p>
           </div>
-          <button
-            onClick={fetchData}
-            disabled={loading}
-            className="flex items-center gap-2 text-xs text-white/40 hover:text-white/60 transition-colors p-2"
-          >
-            <ArrowClockwise size={14} className={loading ? 'animate-spin' : ''} />
-          </button>
+          <div className="flex items-center gap-2">
+            {mounted && (
+              <ThemeSwitcher
+                value={(['light', 'dark', 'dim'].includes(theme ?? '') ? theme : 'light') as Theme}
+                onValueChange={setTheme}
+              />
+            )}
+            <button
+              onClick={fetchData}
+              disabled={loading}
+              title="Refresh"
+              className="flex items-center gap-2 text-xs text-white/40 hover:text-white/60 transition-colors p-2"
+            >
+              <ArrowClockwise size={14} className={loading ? 'animate-spin' : ''} />
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -635,7 +651,7 @@ export default function DashboardPage() {
           {/* Hero + stats row */}
           <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
             {/* Hero card — total jobs found, real 14-day sparkline */}
-            <div className="anim-card xl:col-span-2 bg-bg-2 border border-border rounded-2xl p-6 md:p-8 shadow-tint-green relative overflow-hidden">
+            <div className="anim-card xl:col-span-2 glass-panel rounded-2xl p-6 md:p-8 shadow-tint-green relative overflow-hidden">
               <div className="flex items-start justify-between">
                 <div
                   className={clsx(
@@ -707,7 +723,7 @@ export default function DashboardPage() {
                 right edge instead of truncating with an ellipsis. */}
             <div className="xl:col-span-2 space-y-6 min-w-0">
               {/* Find new jobs */}
-              <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
+              <div className="anim-card glass-panel rounded-2xl p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <h2 className="font-semibold text-white/90 mb-0.5">Find New Jobs</h2>
@@ -728,7 +744,7 @@ export default function DashboardPage() {
               </div>
 
               {/* Top Opportunities */}
-              <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
+              <div className="anim-card glass-panel rounded-2xl p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="font-semibold text-white/90">Top Opportunities</h2>
                   <div className="flex items-center gap-3">
@@ -777,7 +793,7 @@ export default function DashboardPage() {
 
               {/* Action Queue */}
               {actions.length > 0 && (
-                <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
+                <div className="anim-card glass-panel rounded-2xl p-6">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
                       <Fire size={15} className="text-accent-yellow" />
@@ -849,7 +865,7 @@ export default function DashboardPage() {
             {/* Right: Pipeline + Quick links */}
             <div className="space-y-6 min-w-0">
               {/* Application pipeline */}
-              <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
+              <div className="anim-card glass-panel rounded-2xl p-6">
                 <h2 className="font-semibold text-white/90 mb-4">Pipeline</h2>
                 {loading ? (
                   <div className="space-y-3">
@@ -913,7 +929,7 @@ export default function DashboardPage() {
               </div>
 
               {/* Quick links */}
-              <div className="anim-card bg-bg-2 border border-border rounded-2xl p-6">
+              <div className="anim-card glass-panel rounded-2xl p-6">
                 <h2 className="font-semibold text-white/90 mb-4">Quick Actions</h2>
                 <div className="grid grid-cols-2 gap-2.5">
                   <QuickActionCard icon={DownloadSimple} label="Export to Excel" color="yellow" onClick={() => api.export()} />

@@ -30,7 +30,7 @@ function ResumeSkeleton() {
   return (
     <div className="px-6 md:px-8 py-6 max-w-3xl space-y-5">
       {/* Header skeleton */}
-      <div className="bg-bg-2 border border-border rounded-2xl p-5 space-y-4">
+      <div className="glass-panel rounded-2xl p-5 space-y-4">
         <div className="skeleton h-4 w-32 rounded" />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -42,12 +42,12 @@ function ResumeSkeleton() {
         </div>
       </div>
       {/* Summary skeleton */}
-      <div className="bg-bg-2 border border-border rounded-2xl p-5 space-y-3">
+      <div className="glass-panel rounded-2xl p-5 space-y-3">
         <div className="skeleton h-4 w-40 rounded" />
         <div className="skeleton h-28 w-full rounded-xl" />
       </div>
       {/* Skills skeleton */}
-      <div className="bg-bg-2 border border-border rounded-2xl p-5 space-y-3">
+      <div className="glass-panel rounded-2xl p-5 space-y-3">
         <div className="skeleton h-4 w-24 rounded" />
         <div className="flex flex-wrap gap-2">
           {Array.from({ length: 8 }).map((_, i) => (
@@ -427,7 +427,7 @@ function ResumePageInner() {
         {activeTab === 'experience' && (
           <div className="space-y-5">
             {workExperience.map((exp, i) => (
-              <div key={i} className="bg-bg-2 border border-border rounded-2xl p-5">
+              <div key={i} className="glass-panel rounded-2xl p-5">
                 <div className="flex items-center justify-between mb-4 pb-3 border-b border-border">
                   <div className="flex items-center gap-2 flex-1">
                     <span
@@ -574,7 +574,7 @@ function ResumePageInner() {
         {activeTab === 'projects' && (
           <div className="space-y-5">
             {projects.map((project, i) => (
-              <div key={i} className="bg-bg-2 border border-border rounded-2xl p-5">
+              <div key={i} className="glass-panel rounded-2xl p-5">
                 {/* Project card header */}
                 <div className="flex items-center justify-between mb-4 pb-3 border-b border-border">
                   <input
@@ -704,7 +704,7 @@ function ResumePageInner() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-bg-2 border border-border rounded-2xl p-5">
+    <div className="glass-panel rounded-2xl p-5">
       <h3 className="font-sans font-semibold text-white/70 text-sm mb-4 pb-3 border-b border-border">{title}</h3>
       {children}
     </div>
