@@ -208,6 +208,28 @@ def get_stats(user_id: str = Depends(get_current_user)):
     return stats
 
 
+@app.get('/api/public/stats')
+def get_public_stats():
+    """Aggregate counts for the operator's own account (SMTP_EMAIL) — the
+    live ticker on the owner's portfolio site reads this. Only three
+    numbers, no job or personal data; open CORS since the portfolio is a
+    different origin and no credentials are involved."""
+    owner = TrackerAgent().get_user_by_email(os.getenv('SMTP_EMAIL', '')) if os.getenv('SMTP_EMAIL') else None
+    if not owner:
+        return JSONResponse({'error': 'not configured'}, status_code=404)
+    tracker = TrackerAgent()
+    counts = tracker.get_stats(owner['id'])
+    with tracker._get_conn() as conn:
+        high = conn.execute(
+            "SELECT COUNT(*) FROM jobs j JOIN applications a ON a.job_id = j.id "
+            "WHERE j.user_id = ? AND a.status != 'skipped' AND j.score >= 60", (owner['id'],)
+        ).fetchone()[0]
+    return JSONResponse(
+        {'total': counts.get('total', 0), 'applied': counts.get('applied', 0), 'high_match': high},
+        headers={'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=300'},
+    )
+
+
 @app.get('/api/stats/timeline')
 def get_stats_timeline(user_id: str = Depends(get_current_user)):
     from datetime import timedelta
