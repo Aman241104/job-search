@@ -110,7 +110,7 @@ RULES:
 - Name 1-2 concrete projects or experiences with real details from the resume
 - Never claim a technology, number or responsibility that isn't in the resume
 - If the job asks for something the candidate lacks, don't mention it
-- No filler ("passionate", "fast-paced", "cutting-edge", "I am writing to", "proven track record", "strong problem-solving mindset")
+- No filler ("passionate", "fast-paced", "cutting-edge", "I am writing to", "proven track record", "strong problem-solving mindset", "aligns perfectly", "extensive experience")
 - Do NOT start by restating the question ("I should be hired because...") — start with the substance
 Output only the answer text."""
     why = ask_ai(prompt, max_tokens=500, temperature=0.5) or ""
@@ -120,7 +120,19 @@ Output only the answer text."""
             f"Shorten this to at most 150 words. Keep every fact, change none, add nothing, plain text only:\n\n{why}",
             max_tokens=400, temperature=0.2,
         ) or why
+    # Hard ceiling if the tightening pass failed or ignored the limit:
+    # keep whole sentences up to ~170 words.
+    if len(why.split()) > 180:
+        kept, count = [], 0
+        for sentence in re.split(r"(?<=[.!?])\s+", why.strip()):
+            words = len(sentence.split())
+            if kept and count + words > 170:
+                break
+            kept.append(sentence)
+            count += words
+        why = " ".join(kept)
     why = re.sub(r"^\s*(I should be hired|You should hire me|I am the right fit)[^.,]*(because|as)\s+", "", why, flags=re.I)
+    why = re.sub(r"\b(aligns|align) perfectly\b", r"\1 closely", why, flags=re.I)
     why = why[:1].upper() + why[1:]
     why, removed = sanitize_cover_letter(why, resume_corpus(resume))
 

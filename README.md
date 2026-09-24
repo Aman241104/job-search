@@ -1,155 +1,143 @@
-# job-serach
+# Job Search OS
 
-A self-hosted AI job-hunting assistant, built for the Indian fresher job market
-(but the scrapers/AI pipeline aren't India-specific). It scrapes jobs from
-~14 sources, scores them against your resume with an LLM, generates a
-tailored CV + cover letter per job, and gives you a dashboard to track the
-whole pipeline — plus an interview trainer, a legitimacy checker for
-sketchy postings, a Story Bank for interview answers, and a "Learning"
-tutor with book/PDF upload for closing skill gaps.
+An AI-assisted job search platform: it scrapes openings from 19 job sources, scores each one against your resume, writes a tailored one-page CV and cover letter per job, and tracks every application from discovery to offer. Built and used daily for a real job search in the Indian fresher market.
 
-## Why self-host instead of one shared app
+**Live:** [job-search-zeta-ten.vercel.app](https://job-search-zeta-ten.vercel.app) (Google sign-in; each account's data is fully isolated)
 
-This started as a single-user tool built for one person's own job search,
-not a multi-tenant SaaS. Rather than turning it into a shared login-based
-product (which would mean building and maintaining real tenant isolation —
-the exact kind of cross-tenant data leak that's an easy, dangerous mistake
-to make under time pressure), it's set up so anyone can run **their own
-private copy** in a few minutes: your own free Supabase database, your own
-free AI API keys, your own deployed backend. Nobody else's job data ever
-touches your instance, and vice versa.
+![Dashboard](docs/screenshots/dashboard-light.jpg)
 
-## Quick start
+## What it does
 
-Requires `ffmpeg` on your system `PATH` (used as a Whisper transcription
-fallback for YouTube playlist videos with captions disabled — Learning >
-Playlists tab). `sudo apt install ffmpeg` / `brew install ffmpeg`.
+| Area | What you get |
+|---|---|
+| **Discovery** | Concurrent scraping of 19 sources (Internshala, LinkedIn guest search, Cutshort, Talent.com, Shine, Remotive, RemoteOK, WeWorkRemotely, Hacker News "Who is hiring", and more), deduplicated by URL and by title + company across sources. |
+| **Scoring** | Two-stage scoring: a fast keyword pass (skills, the listing's real minimum years of experience, full salary range, location) and an LLM re-score for borderline listings. Live progress streams to the dashboard per source and per evaluated job. |
+| **Listing checker** | Re-opens the top-scored listings daily: archives ones that closed or went stale, and lowers the score when the live page asks for more experience than the snippet showed. |
+| **Applications** | Tailored CV (one page, PDF) and cover letter per job, validated against the resume so no skill the candidate lacks can slip in. Ready-to-copy answers for common application-form questions, follow-up drafts, and batch apply by email, Telegram, or browser pre-fill. |
+| **Interview prep** | Per-job prep pack (likely questions with answer outlines, topics to revise, questions to ask), a scored mock-interview trainer across 8 topics, and a STAR story bank. |
+| **Learning** | Skill tracker with an AI tutor, PDF book reader, RAG over YouTube playlist transcripts, and an Obsidian vault viewer (callouts, wikilinks, backlinks, search). |
+| **Analytics** | Funnel, source ROI, salary insights and weekly activity. |
 
-```bash
-git clone <this-repo>
-cd job-serach
-python scripts/setup.py
+## Screenshots
+
+| Jobs | Job detail |
+|---|---|
+| ![Jobs](docs/screenshots/jobs.jpg) | ![Job detail](docs/screenshots/job-detail.jpg) |
+
+| Apply kit (copy-ready form answers) | Interview prep pack |
+|---|---|
+| ![Apply kit](docs/screenshots/apply-kit.jpg) | ![Interview prep](docs/screenshots/interview-prep.jpg) |
+
+| Career analytics | Interview trainer |
+|---|---|
+| ![Analytics](docs/screenshots/analytics.jpg) | ![Interview trainer](docs/screenshots/interview-trainer.jpg) |
+
+| Batch apply | Obsidian vault in Learning |
+|---|---|
+| ![Batch apply](docs/screenshots/batch-apply.jpg) | ![Obsidian vault](docs/screenshots/obsidian-vault.jpg) |
+
+| Dim theme | Dark theme |
+|---|---|
+| ![Dim theme](docs/screenshots/dashboard-dim.jpg) | ![Dark theme](docs/screenshots/dashboard-dark.jpg) |
+
+| Job board shortcuts | Sign-in | Mobile |
+|---|---|---|
+| ![Job boards](docs/screenshots/job-boards.jpg) | ![Sign-in](docs/screenshots/login.jpg) | ![Mobile](docs/screenshots/mobile-dashboard.jpg) |
+
+## Architecture
+
+```
+Browser ── Next.js 14 dashboard (static export, served by a Cloudflare Worker
+   │        or Vercel; /api and /auth proxied same-origin for session cookies)
+   ▼
+FastAPI (Google Cloud Run) ── Postgres (Supabase, per-user rows everywhere)
+   ├── agents/job_finder.py      19 scrapers, dedup, two-stage scoring, progress events
+   ├── agents/job_quality.py     experience / salary / closed-listing signals
+   ├── agents/listing_checker.py daily re-check of top listings
+   ├── agents/cv_customizer.py   tailored CV + cover letter -> WeasyPrint PDF
+   ├── agents/cv_validator.py    removes unsupported claims, retries, 1-page trim
+   ├── agents/application_kit.py form answers, follow-ups, interview prep
+   ├── agents/batch_applier.py   email / Telegram / browser pre-fill (never auto-submits)
+   ├── agents/trainer.py         mock interviews
+   ├── agents/study_agent.py     playlist transcripts -> notes + FAISS RAG
+   ├── agents/vault.py           Obsidian vault import
+   └── claude_client.py          LLM layer: NVIDIA NIM -> Gemini fallback, rate-limit aware
 ```
 
-The script walks you through every account you need (all free tier, no
-credit card required except optionally for deployment — see below), and
-writes your `.env` file. Then:
+**Stack:** Python, FastAPI, PostgreSQL (Supabase), Next.js 14, TypeScript, Tailwind CSS, GSAP, Framer Motion, Playwright, WeasyPrint, FAISS, Google Cloud Run, Cloud Scheduler, Cloudflare Workers, Docker.
+
+### Engineering notes
+
+- **Multi-tenant isolation.** Google OAuth with JWT session cookies; every table is scoped by `user_id`, covered by integration tests (a cross-tenant PII leak was found and fixed this way).
+- **Performance.** Schema setup runs once per process and request handlers run off the event loop; typical API responses are 0.2-0.9 s.
+- **LLM reliability.** Provider-agnostic layer that fails over between NVIDIA NIM and Gemini with rate-limit awareness; generated documents are validated against the resume before a PDF is written.
+- **Memory-aware PDF rendering.** WeasyPrint replaced headless Chromium after a production out-of-memory crash (about 591 MB for one render against a 512 MB limit).
+- **Tests.** 27 pytest cases covering tenant isolation, scoring signals, the listing checker, the CV validator, streaming progress and vault parsing.
+
+## Running locally
+
+Requires Python 3.11+, Node 20+, and `ffmpeg` (Whisper fallback for playlists without captions).
 
 ```bash
+git clone https://github.com/Aman241104/job-search.git
+cd job-search
+python scripts/setup.py          # walks through the free-tier accounts below and writes .env
 pip install -r requirements.txt
-uvicorn app:app --reload
+uvicorn app:app --reload         # API on http://localhost:8000
 ```
 
 ```bash
 cd web
 npm install
 echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > .env.local
-npm run dev
+npm run dev                      # dashboard on http://localhost:3000
 ```
 
-Open `http://localhost:3000`, go to Profile, and fill in your resume
-details — everything else (scraping, scoring, CV generation) reads from
-that.
-
-## What you need accounts for
-
-| Service | Required? | Free tier | Used for |
-|---|---|---|---|
-| [Supabase](https://supabase.com) | Yes | Yes | Postgres database — tables auto-create on first run |
-| [NVIDIA NIM](https://build.nvidia.com) | Yes | Yes, ~40 req/min | Primary AI: scoring, CV/cover-letter gen, interview trainer, legitimacy check, contact discovery, Learning tutor |
-| [Google Gemini](https://aistudio.google.com/apikey) | Recommended | Yes | Fallback AI if NVIDIA is rate-limited |
-| Gmail App Password | For email-apply | Yes | Sending applications directly from the dashboard |
-| [Adzuna](https://developer.adzuna.com/signup) / [Jooble](https://jooble.org/api/about) | Optional | Yes | Two extra job-listing sources |
-| Telegram Bot ([@BotFather](https://t.me/botfather)) | Optional | Yes | Job alerts to your phone, reply "applied"/an email to update status |
-| [Cloudinary](https://cloudinary.com) | Optional | Yes | Persists uploaded book/PDF files across restarts (Learning feature) |
-
-## Architecture
-
-```
-web/ (Next.js, Vercel)  ──HTTP──►  app.py (FastAPI)  ──────►  Supabase Postgres
-                                        │
-                                        ├──► agents/job_finder.py    (14 scrapers)
-                                        ├──► claude_client.py         (local Claude CLI, if opted in → NVIDIA → Gemini;
-                                        │                              also: job scoring, legitimacy check, STAR story drafting)
-                                        ├──► agents/cv_customizer.py (CV + cover letter, WeasyPrint → PDF)
-                                        ├──► agents/job_applier.py   (SMTP email-apply)
-                                        ├──► agents/batch_applier.py (batch apply: email/telegram/browser)
-                                        ├──► agents/telegram_notifier.py (alerts + inbound webhook)
-                                        ├──► agents/trainer.py       (interview trainer)
-                                        ├──► agents/contact_finder.py
-                                        ├──► agents/tracker.py       (all DB access — SQLite locally, Postgres in production)
-                                        └──► agents/cloudinary_storage.py (book PDFs)
-```
-
-**Job sources scraped:** Internshala, Jobicy, WeWorkRemotely, Arbeitnow,
-LinkedIn (guest search — no login), Remotive, RemoteOK, TheMuse,
-Remote.co, Himalayas, Hacker News "Who is hiring", Adzuna, Jooble — plus a
-hardcoded list of manual-browsing links (`get_gujarat_job_links` in
-`job_finder.py`, shown on the `/links` page) for platforms that actively
-block automated access (Naukri, Indeed, Glassdoor, Wellfound, Cutshort).
-
-**AI provider chain (for CV/cover-letter generation specifically):** your
-local `claude` CLI session first, only if you explicitly set
-`AI_PROVIDER=claude_code` (local dev only — uses your Claude subscription,
-never set this in a deployed environment) → NVIDIA NIM (free, generous
-rate limit) → Gemini if NVIDIA fails/rate-limits. Every other AI feature
-(scoring, legitimacy check, interview trainer, Learning tutor, contact
-discovery) goes straight to NVIDIA → Gemini, since `AI_PROVIDER` only
-gates CV/cover-letter generation.
-
-## Batch Apply
-
-The `/batch` page lets you pick a batch of jobs (top N by score, or hand-
-picked) and run them all at once through one of three channels:
-
-- **Email** — generates a tailored CV + cover letter per job and sends it
-  to whatever email address it finds in the posting. Toggle between
-  **Automatic** (sends immediately) and **Review** (stage everything,
-  approve/skip per item, then one confirm-and-send).
-- **Telegram** — pushes a batch of job alerts to your configured chat.
-- **Browser pre-fill** — opens each job's own page in a headless browser
-  and fills whatever common fields it can match (name/email/phone/resume
-  upload). **This never clicks submit, in either mode.** Two reasons: ATS
-  platforms have mixed and sometimes explicit ToS prohibitions on
-  automated submission, and generic form-filling is too unreliable across
-  different job board layouts to trust unattended. You finish and submit
-  by hand using the screenshot it saves.
-  **Known limitation:** doesn't work on platforms that gate the
-  application form behind a login wall (e.g. Internshala) — there's
-  nothing to fill until you're signed in, and this project deliberately
-  does not automate logins against platforms whose ToS prohibits it.
-
-## A note on scraping and ToS
-
-Some sources here (Naukri, Indeed, Wellfound) were tried and abandoned —
-they actively detect and block automated access. LinkedIn's guest search
-works but visiting many individual job pages in a row (rather than just
-the search results) triggers its anti-bot system — that's deliberately
-**not** enabled by default (see `_enrich_linkedin_descriptions` in
-`job_finder.py` for the one-off local-testing path). Internshala's own ToS
-explicitly prohibits automated access; this project runs that scraper
-anyway at low volume for personal use, which is a real, acknowledged
-gray area, not a claim of blanket permission — the deliberate exclusion of
-Internshala from the batch browser channel's login flow (above) reflects
-this same caution, not just a technical limitation.
-
-## Deploying
-
-`scripts/setup.py` can deploy to Google Cloud Run for you at the end (needs
-the `gcloud` CLI and a GCP project with billing linked — some regions
-require a small refundable prepayment, you won't be charged unless you
-exceed the free tier). Manually:
+A CLI covers the daily workflow without the dashboard:
 
 ```bash
-gcloud run deploy job-serach-api --source . --region <your-region> \
-  --project <your-project-id> --allow-unauthenticated --memory 2Gi \
-  --set-env-vars "$(grep -v '^#' .env | grep -v '^$' | tr '\n' ',' | sed 's/,$//')"
+python main.py find              # scrape and score new jobs
+python main.py check             # re-check top listings (closed / stale / over-experienced)
+python main.py vault-sync        # import ~/Obsidian Vault notes
+python main.py train --topic react
+python main.py export            # Excel tracker
 ```
 
-`render.yaml` is also included if you'd rather use Render instead — simpler
-setup, but its free tier has slow cold starts after idling (which is why
-this project's own deployment moved to Cloud Run).
+### Accounts
 
-Frontend: `cd web && vercel --prod` (set `NEXT_PUBLIC_API_URL` to your
-backend's URL in the Vercel project's environment variables first — it's
-baked in at build time, so redeploy after changing it).
+| Service | Required | Used for |
+|---|---|---|
+| [Supabase](https://supabase.com) | Yes | Postgres; tables are created on first run |
+| [NVIDIA NIM](https://build.nvidia.com) | Yes | Primary LLM (scoring, documents, trainer, tutor) |
+| [Google Gemini](https://aistudio.google.com/apikey) | Recommended | Fallback LLM |
+| Google OAuth client | For the dashboard | Sign-in |
+| Gmail App Password | Optional | Email applications |
+| [Adzuna](https://developer.adzuna.com/signup), [Jooble](https://jooble.org/api/about) | Optional | Extra job sources |
+| Telegram bot | Optional | Job alerts and status updates from the phone |
+| [Cloudinary](https://cloudinary.com) | Optional | Persistent storage for uploaded books |
+
+## Deployment
+
+**API (Cloud Run):**
+
+```bash
+gcloud run deploy job-serach-api --source . --region <region> --allow-unauthenticated --memory 2Gi
+```
+
+`.gcloudignore` keeps generated CVs, the frontend and tests out of the upload.
+
+**Dashboard (Cloudflare Workers):**
+
+```bash
+cd web
+npm run cf:deploy     # static export + Worker that proxies /api and /auth to the API
+```
+
+Vercel works as well (`vercel --prod`), using Next's rewrites for the same proxying.
+
+## Scope and limitations
+
+- Browser pre-fill never clicks submit, and it cannot fill forms behind a login (Internshala, LinkedIn). Those applications are finished by hand using the generated CV and copy-ready answers.
+- Naukri, Indeed and Wellfound block automated access and are offered as manual links instead. Internshala's terms prohibit automated access; its scraper runs at low volume for personal use, which is an acknowledged grey area.
+- LLM output is checked against the resume, but prep packs and cover letters should still be read before use.
+- Built for one person's search first; the multi-user mode is real but has not been load-tested beyond a handful of accounts.
