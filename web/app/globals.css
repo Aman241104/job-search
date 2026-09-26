@@ -114,14 +114,16 @@
   --ambient-alpha: 0.32;
 }
 
+/* AMOLED black: the page itself is pure #000 (pixels off on OLED screens),
+   and cards step up in small neutral greys so they still separate from it. */
 .dark {
-  --bg: 26 24 21;
-  --bg-1: 35 32 25;
-  --bg-2: 42 38 32;
-  --bg-3: 50 45 37;
-  --ink: 242 238 228;
-  --ink-muted: 166 158 141;
-  --border: 58 52 42;
+  --bg: 0 0 0;
+  --bg-1: 12 12 12;
+  --bg-2: 20 20 20;
+  --bg-3: 29 29 29;
+  --ink: 240 240 240;
+  --ink-muted: 158 158 158;
+  --border: 38 38 38;
 
   /* Dark mode uses tone 80 for the flat aliases — Material's own convention
      is to flip to a *lighter* tone in dark mode for adequate contrast
@@ -134,16 +136,16 @@
   --accent-yellow: var(--yellow-80);
   --accent-pink: var(--pink-80);
 
-  --glass-tint: 44 40 33;
-  --glass-alpha: 0.55;
+  --glass-tint: 18 18 18;
+  --glass-alpha: 0.6;
   --glass-edge: 255 255 255;
-  --glass-edge-alpha: 0.09;
-  --glass-highlight: 0.08;
-  --ambient-alpha: 0.16;
+  --glass-edge-alpha: 0.1;
+  --glass-highlight: 0.07;
+  --ambient-alpha: 0.12;
 }
 
 /* Dim — the switcher's third mode: a cool slate midnight, softer than the
-   warm near-black of .dark. Tailwind's dark: variant also matches .dim
+   AMOLED black of .dark. Tailwind's dark: variant also matches .dim
    (tailwind.config.ts), so every dark-mode tweak applies here too. */
 .dim {
   --bg: 27 31 41;
