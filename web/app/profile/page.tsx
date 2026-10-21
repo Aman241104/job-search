@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
-import { ArrowSquareOut, Check, CircleNotch, TelegramLogo, DownloadSimple, Trash } from '@phosphor-icons/react';
+import { ArrowSquareOut, Check, CircleNotch, Copy, TelegramLogo, DownloadSimple, Trash } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import { ChipEditor, Field, Section } from '@/components/ProfileFields';
 import { useAuth } from '@/components/AuthProvider';
@@ -55,6 +55,8 @@ const ALL_SOURCES = [
   { key: 'talent', label: 'Talent.com (Gujarat)' },
   { key: 'shine', label: 'Shine (Gujarat)' },
   { key: 'freshersworld', label: 'Freshersworld (Gujarat)' },
+  { key: 'ats_boards', label: 'Company ATS Boards (Greenhouse/Lever/Ashby)' },
+  { key: 'simplify', label: 'Simplify New-Grad List' },
 ];
 
 const DEFAULT_PROFILE: ProfileData = {
@@ -98,6 +100,7 @@ export default function ProfilePage() {
   const [error, setError] = useState<string | null>(null);
   const [telegramConnectUrl, setTelegramConnectUrl] = useState<string | null>(null);
   const [telegramBusy, setTelegramBusy] = useState(false);
+  const [autofillCopy, setAutofillCopy] = useState<'idle' | 'copied' | 'failed'>('idle');
   const [telegramError, setTelegramError] = useState<string | null>(null);
 
   const isDirty = JSON.stringify(profile) !== JSON.stringify(original);
@@ -597,6 +600,33 @@ export default function ProfilePage() {
             onChange={(v) => set('current_offer', v)}
             placeholder="Acme Corp, 7 LPA"
           />
+        </Section>
+
+        <Section title="Browser Autofill">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <p className="text-sm text-white/70">Copy autofill profile</p>
+              <p className="text-xs text-white/35">
+                Paste into the Job Search Autofill extension (the repo&apos;s <code>extension/</code> folder, loaded
+                unpacked at chrome://extensions). It fills application forms; you review and submit.
+              </p>
+            </div>
+            <button
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(JSON.stringify(await api.autofillProfile()));
+                  setAutofillCopy('copied');
+                } catch {
+                  setAutofillCopy('failed');
+                }
+                setTimeout(() => setAutofillCopy('idle'), 2500);
+              }}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 text-white/60 border border-border hover:bg-white/10 transition-colors"
+            >
+              {autofillCopy === 'copied' ? <Check size={14} className="text-accent-green" /> : <Copy size={14} />}
+              {autofillCopy === 'copied' ? 'Copied' : autofillCopy === 'failed' ? 'Copy failed' : 'Copy'}
+            </button>
+          </div>
         </Section>
 
         {/* 12. Danger Zone */}

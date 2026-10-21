@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { motion } from 'framer-motion';
 import gsap from 'gsap';
-import { SquaresFour, Briefcase, Brain, LinkSimple, DownloadSimple, ChartBar, FileText, User, MagnifyingGlass, DotsThree, GraduationCap, BookmarkSimple, PaperPlaneTilt, BookOpen, Compass, Sun, Moon, CloudMoon, SignOut, X as CloseIcon } from '@phosphor-icons/react';
+import { Cards, SquaresFour, Briefcase, Brain, LinkSimple, DownloadSimple, ChartBar, FileText, User, MagnifyingGlass, DotsThree, GraduationCap, BookmarkSimple, PaperPlaneTilt, BookOpen, Compass, Sun, Moon, CloudMoon, SignOut, X as CloseIcon } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import { useGlobalSearch } from '@/components/GlobalSearch';
 import { useAuth } from '@/components/AuthProvider';
@@ -18,6 +18,7 @@ export const navItems = [
   { href: '/batch', icon: PaperPlaneTilt, label: 'Batch Apply' },
   { href: '/analytics', icon: ChartBar, label: 'Analytics' },
   { href: '/train', icon: Brain, label: 'Train' },
+  { href: '/review', icon: Cards, label: 'Review' },
   { href: '/learning', icon: GraduationCap, label: 'Learning' },
   { href: '/stories', icon: BookmarkSimple, label: 'Story Bank' },
   { href: '/resume', icon: FileText, label: 'Resume' },

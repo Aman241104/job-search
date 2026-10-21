@@ -1,7 +1,9 @@
+import html
 import json
 import re
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 import requests
 from datetime import datetime
 from pathlib import Path
@@ -10,7 +12,8 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import DATA_DIR, ADZUNA_APP_ID, ADZUNA_APP_KEY, JOOBLE_API_KEY, CAREERJET_API_KEY
 from claude_client import ask_claude_json, score_job_single
-from agents.job_quality import EXPERIENCE_POINTS, required_years, annual_rupee_range
+from agents.job_quality import (EXPERIENCE_POINTS, required_years, annual_rupee_range,
+                                red_flags, location_abroad, india_eligible)
 from bs4 import BeautifulSoup
 from rich.console import Console
 from rich.progress import track
@@ -88,6 +91,36 @@ DEFAULT_LOCATIONS = ['remote', 'ahmedabad', 'gandhinagar', 'vadodara', 'baroda',
 SENIOR_WORDS = {"staff", "principal", "lead", "senior", "sr.", "head of",
                 "director", "manager", "architect", "vp", "vice president", "cto"}
 
+# ── Source: company ATS boards (Greenhouse / Lever / Ashby) ──
+# Same trick career-ops.org uses for its 150+-source scan: these three ATS
+# vendors publish each customer's job board as a free, unauthenticated JSON
+# API, keyed by a per-company slug — no API token, no scraping. Slugs below
+# were live-checked (200, non-empty board) on 2026-10-21; a board that closes
+# just returns an empty list, so a stale slug is harmless, not broken.
+# Add more by checking https://boards-api.greenhouse.io/v1/boards/<slug>/jobs,
+# https://api.lever.co/v0/postings/<slug>, or
+# https://api.ashbyhq.com/posting-api/job-board/<slug>.
+# Find more with scripts/discover_ats.py, then check the board's job links:
+# a short slug can belong to a namesake (greenhouse "slice" is not slice.in).
+TRACKED_ATS_COMPANIES = {
+    "greenhouse": ["stripe", "gitlab", "airbnb", "coinbase", "asana", "figma", "robinhood", "vercel",
+                   "netlify", "groww", "inmobi", "druva"],
+    "lever":      ["whoop", "cred", "meesho"],
+    "ashby":      ["openai", "ramp", "linear", "notion", "clickhouse", "deel", "cohere", "watershed",
+                   "supabase", "atlan", "plane", "clerk"],
+}
+
+ATS_DIRECTORY_FILE = Path(DATA_DIR) / "ats_directory.json"
+
+# Keeps these giant boards (Stripe alone lists 700+ roles, nearly all
+# non-engineering) from flooding find_jobs with sales/legal/finance noise.
+ATS_TECH_KW = {
+    "react", "next.js", "nextjs", "frontend", "front-end", "front end",
+    "full stack", "full-stack", "fullstack", "javascript", "typescript",
+    "node", "developer", "ui engineer", "software engineer", "backend",
+    "python", "sde", "software development engineer",
+}
+
 
 class JobFinderAgent:
     def __init__(self, profile: dict = None, user_id: str = None):
@@ -130,19 +163,34 @@ class JobFinderAgent:
             with TrackerAgent()._get_conn() as conn:
                 conn.row_factory = True
                 rows = conn.execute(
-                    "SELECT url, title, company FROM jobs WHERE user_id = ?", (self.user_id,)
+                    "SELECT id, url, title, company, date_found FROM jobs WHERE user_id = ?", (self.user_id,)
                 ).fetchall()
             urls = {r["url"] for r in rows if r.get("url")}
-            title_company = {self._title_company_key(r.get("title", ""), r.get("company", "")) for r in rows}
+            # key -> (job id, date_found), so a later sighting under a new URL
+            # can be recorded as a repost against the original row.
+            title_company = {self._title_company_key(r.get("title", ""), r.get("company", "")):
+                             (r["id"], r.get("date_found") or "") for r in rows}
             return urls, title_company
 
         if self.jobs_file.exists():
             with open(self.jobs_file) as f:
                 existing = json.load(f)
             urls = {j["url"] for j in existing}
-            title_company = {self._title_company_key(j.get("title", ""), j.get("company", "")) for j in existing}
+            title_company = {self._title_company_key(j.get("title", ""), j.get("company", "")):
+                             (j.get("id"), j.get("date_found") or "") for j in existing}
             return urls, title_company
-        return set(), set()
+        return set(), {}
+
+    REPOST_MIN_DAYS = 14
+
+    def _is_repost(self, first_seen: str) -> bool:
+        """Same role back under a new URL long after we first saw it — a
+        cross-post on another board turns up within days, a role that is
+        always open keeps coming back."""
+        try:
+            return (datetime.now() - datetime.fromisoformat(first_seen[:19])).days >= self.REPOST_MIN_DAYS
+        except (ValueError, TypeError):
+            return False
 
     def _load_all_jobs(self) -> list:
         if self.jobs_file.exists():
@@ -1093,6 +1141,210 @@ class JobFinderAgent:
             console.print(f"[yellow]Careerjet failed: {e}[/yellow]")
             return []
 
+    @staticmethod
+    def _ats_relevant(title: str) -> bool:
+        t = title.lower()
+        return any(kw in t for kw in ATS_TECH_KW)
+
+    def _fetch_greenhouse(self, slug: str) -> list:
+        try:
+            r = requests.get(
+                f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs",
+                params={"content": "true"}, headers=HEADERS, timeout=15,
+            )
+            r.raise_for_status()
+            jobs = []
+            for j in r.json().get("jobs", []):
+                title = j.get("title", "")
+                if not j.get("absolute_url") or not self._ats_relevant(title):
+                    continue
+                # Greenhouse's content field is HTML, entity-escaped once more
+                # on top (`&lt;p&gt;`) — unescape to real markup, strip tags,
+                # then unescape again for entities inside the text (`&amp;`).
+                raw = html.unescape(j.get("content") or "")
+                desc = html.unescape(BeautifulSoup(raw, "html.parser").get_text(separator=" "))[:2000]
+                jobs.append({
+                    "id":           str(uuid.uuid4()),
+                    "title":        title,
+                    "company":      slug,
+                    "description":  desc,
+                    "url":          j.get("absolute_url", ""),
+                    "source":       "Greenhouse",
+                    "location":     (j.get("location") or {}).get("name", ""),
+                    "salary":       "",
+                    "date_posted":  j.get("first_published", ""),
+                    "tags":         [],
+                    "score": 0, "score_reason": "",
+                    "date_found":   datetime.now().isoformat(),
+                })
+            return jobs
+        except Exception as e:
+            console.print(f"[yellow]Greenhouse ({slug}) failed: {e}[/yellow]")
+            return []
+
+    def _fetch_lever(self, slug: str) -> list:
+        # "eu:<slug>" = a board hosted on Lever's EU instance
+        host, _, bare = slug.rpartition(":")
+        api = "api.eu.lever.co" if host == "eu" else "api.lever.co"
+        try:
+            r = requests.get(f"https://{api}/v0/postings/{bare}", headers=HEADERS, timeout=15)
+            r.raise_for_status()
+            data = r.json()
+            if not isinstance(data, list):
+                return []
+            jobs = []
+            for j in data:
+                title = j.get("text", "")
+                if not j.get("hostedUrl") or not self._ats_relevant(title):
+                    continue
+                cats = j.get("categories") or {}
+                desc = BeautifulSoup(j.get("descriptionPlain") or j.get("description", ""),
+                                      "html.parser").get_text(separator=" ")[:2000]
+                posted = j.get("createdAt")
+                jobs.append({
+                    "id":           str(uuid.uuid4()),
+                    "title":        title,
+                    "company":      bare,
+                    "description":  desc,
+                    "url":          j.get("hostedUrl", ""),
+                    "source":       "Lever",
+                    # `location` is only the primary city; multi-site roles
+                    # list the rest in allLocations.
+                    "location":     "; ".join(dict.fromkeys(
+                        l for l in [cats.get("location", ""), *(cats.get("allLocations") or [])] if l)),
+                    "salary":       "",
+                    "date_posted":  datetime.fromtimestamp(posted / 1000).isoformat() if posted else "",
+                    "tags":         [],
+                    "score": 0, "score_reason": "",
+                    "date_found":   datetime.now().isoformat(),
+                })
+            return jobs
+        except Exception as e:
+            console.print(f"[yellow]Lever ({slug}) failed: {e}[/yellow]")
+            return []
+
+    def _fetch_ashby(self, slug: str) -> list:
+        try:
+            r = requests.get(
+                f"https://api.ashbyhq.com/posting-api/job-board/{slug}",
+                params={"includeCompensation": "true"}, headers=HEADERS, timeout=15,
+            )
+            r.raise_for_status()
+            jobs = []
+            for j in r.json().get("jobs", []):
+                title = j.get("title", "")
+                if not j.get("jobUrl") or not self._ats_relevant(title):
+                    continue
+                desc = BeautifulSoup(j.get("descriptionPlain", ""), "html.parser").get_text(separator=" ")[:2000]
+                # Ashby keeps naming the HQ city for remote roles; the work model
+                # lives in workplaceType (wins when present) / isRemote.
+                comp = j.get("compensation") or {}
+                salary = comp.get("compensationTierSummary") or ""
+                yearly_inr = [c for t in comp.get("compensationTiers") or [] for c in t.get("components") or []
+                              if c.get("compensationType") == "Salary" and c.get("currencyCode") == "INR"
+                              and c.get("interval") == "1 YEAR" and c.get("minValue")]
+                if yearly_inr:
+                    c = yearly_inr[0]
+                    salary = f"₹{c['minValue'] / 1e5:.1f}L - ₹{(c.get('maxValue') or c['minValue']) / 1e5:.1f}L / yr"
+                location = j.get("location", "")
+                wt = (j.get("workplaceType") or "").lower()
+                if (wt == "remote" if wt else j.get("isRemote")) and "remote" not in location.lower():
+                    location = f"{location} · Remote" if location else "Remote"
+                jobs.append({
+                    "id":           str(uuid.uuid4()),
+                    "title":        title,
+                    "company":      slug,
+                    "description":  desc,
+                    "url":          j.get("jobUrl", ""),
+                    "source":       "Ashby",
+                    "location":     location,
+                    "salary":       salary,
+                    "date_posted":  j.get("publishedAt", ""),
+                    "tags":         [],
+                    "score": 0, "score_reason": "",
+                    "date_found":   datetime.now().isoformat(),
+                })
+            return jobs
+        except Exception as e:
+            console.print(f"[yellow]Ashby ({slug}) failed: {e}[/yellow]")
+            return []
+
+    def _fetch_ats_boards(self, step=None) -> list:
+        """Scans the tracked-company boards in TRACKED_ATS_COMPANIES across
+        all three ATS vendors. One bad/renamed slug only drops that company
+        (each fetcher already catches its own errors) — never the whole scan."""
+        fetchers = {
+            "greenhouse": self._fetch_greenhouse,
+            "lever":      self._fetch_lever,
+            "ashby":      self._fetch_ashby,
+        }
+        boards = [(p, s) for p, slugs in TRACKED_ATS_COMPANIES.items() for s in slugs]
+        try:  # built by scripts/build_ats_directory.py
+            directory = json.loads(ATS_DIRECTORY_FILE.read_text())
+            boards += [(p, s) for p, slugs in directory.items() for s in slugs if (p, s) not in boards]
+        except (OSError, ValueError):
+            pass
+        if step:
+            step(f"Company ATS boards: {len(boards)} Greenhouse/Lever/Ashby boards")
+        with ThreadPoolExecutor(12) as ex:
+            results = ex.map(lambda b: fetchers[b[0]](b[1]), boards)
+            return [j for batch in results for j in batch if self._ats_keep(j)]
+
+    def _ats_keep(self, job: dict) -> bool:
+        # Global boards are mostly roles an India-based candidate can't take,
+        # plus months-old postings; drop both before they reach AI scoring.
+        return india_eligible(job["location"]) and not self._ats_stale(job["date_posted"])
+
+    SIMPLIFY_URL = "https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/.github/scripts/listings.json"
+
+    def _fetch_simplify(self) -> list:
+        """SimplifyJobs' curated new-grad list (public JSON, ~13 MB). It is
+        US-centric: on 2026-10-21 only 2 of ~3000 active roles were open to
+        India, so this is a small, high-precision source."""
+        try:
+            r = requests.get(self.SIMPLIFY_URL, headers=HEADERS, timeout=60)
+            r.raise_for_status()
+            jobs = []
+            for j in r.json():
+                if not (j.get("active") and j.get("is_visible", True)):
+                    continue
+                location = "; ".join(j.get("locations") or [])
+                posted = j.get("date_posted")
+                posted_iso = datetime.fromtimestamp(posted).isoformat() if posted else ""
+                if not india_eligible(location) or self._ats_stale(posted_iso):
+                    continue
+                jobs.append({
+                    "id":           str(uuid.uuid4()),
+                    "title":        j.get("title", ""),
+                    "company":      j.get("company_name", ""),
+                    "description":  f"New grad role. Category: {j.get('category', '')}. "
+                                    f"Degrees: {', '.join(j.get('degrees') or [])}.",
+                    "url":          j.get("url", ""),
+                    "source":       "Simplify",
+                    "location":     location,
+                    "salary":       "",
+                    "date_posted":  posted_iso,
+                    "tags":         ["new grad"],
+                    "score": 0, "score_reason": "",
+                    "date_found":   datetime.now().isoformat(),
+                })
+            return jobs
+        except Exception as e:
+            console.print(f"[yellow]Simplify failed: {e}[/yellow]")
+            return []
+
+    ATS_MAX_AGE_DAYS = 45
+
+    @classmethod
+    def _ats_stale(cls, posted: str) -> bool:
+        """Older than ATS_MAX_AGE_DAYS. Unknown/unparseable dates are kept."""
+        try:
+            dt = datetime.fromisoformat(posted.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            return False
+        now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
+        return (now - dt).days > cls.ATS_MAX_AGE_DAYS
+
     # Fallback only — real values now come from the calling user's profile
     # (see _profile_summary/_skill_weights/etc below). Kept so a caller with
     # no profile (CLI, legacy code) still gets a sane default instead of an
@@ -1221,7 +1473,10 @@ class JobFinderAgent:
         loc_weight = self._location_weight()
         preferred = self._location_preference()
         far_cities = ['bangalore', 'bengaluru', 'mumbai', 'pune', 'delhi', 'hyderabad', 'chennai', 'kolkata']
-        if any(w in location for w in ['remote', 'anywhere', 'worldwide', 'work from home', 'wfh']):
+        abroad = location_abroad(location)
+        if abroad:
+            score -= round(25 * loc_weight)
+        elif any(w in location for w in ['remote', 'anywhere', 'worldwide', 'work from home', 'wfh']):
             score += round(20 * loc_weight)
         elif any(c in location for c in preferred):
             score += round(15 * loc_weight)
@@ -1263,10 +1518,15 @@ class JobFinderAgent:
         elif any(t in title for t in title_ok):
             score += 6
 
+        flag_pts, flags = red_flags(text)
+        score += flag_pts
+
         reason_parts = []
         if skill_score > 20: reason_parts.append('strong skill match')
         if 'fresher' in text or 'entry' in text: reason_parts.append('fresher-friendly')
-        if 'remote' in location: reason_parts.append('remote')
+        if abroad: reason_parts.append('outside India')
+        elif 'remote' in location: reason_parts.append('remote')
+        reason_parts += [f'red flag: {f}' for f in flags]
         reason = ', '.join(reason_parts) or 'keyword match'
 
         return min(max(score, 0), 98), reason
@@ -1346,6 +1606,7 @@ class JobFinderAgent:
         'internshala', 'jobicy', 'adzuna', 'jooble', 'careerjet',
         'weworkremotely', 'arbeitnow', 'linkedin', 'remotive', 'remoteok',
         'remoteco', 'themuse', 'himalayas', 'hn_hiring', 'cutshort', 'talent', 'shine', 'freshersworld',
+        'ats_boards', 'simplify',
     ]
 
     def _source_enabled(self, key: str) -> bool:
@@ -1471,6 +1732,14 @@ class JobFinderAgent:
                 step(f"Freshersworld: {role} / {city}")
                 take(self._fetch_freshersworld(role, city))
 
+        # ── Company ATS boards (Greenhouse / Lever / Ashby — zero-token scan) ──
+        if self._source_enabled('ats_boards'):
+            take(self._fetch_ats_boards(step=step))
+
+        if self._source_enabled('simplify'):
+            step("Simplify: curated new-grad list")
+            take(self._fetch_simplify())
+
         # ── Deduplicate + filter ──
         # Two dedup checks: exact URL (handles the same source returning a
         # posting twice) and a normalized title+company key (handles the
@@ -1481,6 +1750,7 @@ class JobFinderAgent:
         seen_title_company: set = set()
         company_count: dict = {}
         unique_jobs:  list = []
+        reposted_ids: set = set()
 
         for j in all_jobs:
             url = j.get("url", "")
@@ -1489,15 +1759,24 @@ class JobFinderAgent:
             if self._is_senior(j.get("title", "")):
                 continue
             company = j.get("company", "unknown")
+            tc_key = self._title_company_key(j.get("title", ""), company)
+            if tc_key in self.existing_title_company:
+                job_id, first_seen = self.existing_title_company[tc_key]
+                if job_id and self._is_repost(first_seen):
+                    reposted_ids.add(job_id)
+                continue
             if company_count.get(company, 0) >= 3:
                 continue
-            tc_key = self._title_company_key(j.get("title", ""), company)
-            if tc_key in seen_title_company or tc_key in self.existing_title_company:
+            if tc_key in seen_title_company:
                 continue
             company_count[company] = company_count.get(company, 0) + 1
             seen_urls.add(url)
             seen_title_company.add(tc_key)
             unique_jobs.append(j)
+
+        if reposted_ids and self.user_id:
+            from agents.tracker import TrackerAgent
+            TrackerAgent().record_reposts(self.user_id, sorted(reposted_ids))
 
         console.print(f"\n[green]Found {len(unique_jobs)} new jobs. Scoring with Gemini (batched)...[/green]")
         emit({"type": "filtered", "raw": len(all_jobs), "unique": len(unique_jobs)})

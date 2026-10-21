@@ -6,7 +6,7 @@ import gsap from 'gsap';
 import clsx from 'clsx';
 import { X, MapPin, CurrencyDollar, ArrowSquareOut, Star, Copy, Check, CircleNotch, CaretDown, Calendar, Clock, Prohibit, DownloadSimple, CaretRight, Plus, FileText, Envelope, ShieldCheck, UserFocus } from '@phosphor-icons/react';
 import ScoreRing from './ScoreRing';
-import { api, Job, InterviewRound } from '@/lib/api';
+import { api, Job, InterviewRound, ResumeMatch } from '@/lib/api';
 import { useToast } from './Toast';
 
 interface JobDrawerProps {
@@ -517,6 +517,7 @@ export default function JobDrawer({ jobId, onClose, onStatusChange, onStarChange
   const [tab, setTab] = useState<DrawerTab>('overview');
   const [legitimacy, setLegitimacy] = useState<{ score: number | null; flags: string[] } | null>(null);
   const [checkingLegitimacy, setCheckingLegitimacy] = useState(false);
+  const [skillGap, setSkillGap] = useState<ResumeMatch | null>(null);
   const [contact, setContact] = useState<{ search_query: string; search_url: string; message_draft: string } | null>(null);
   const [findingContact, setFindingContact] = useState(false);
   const { toast } = useToast();
@@ -529,6 +530,8 @@ export default function JobDrawer({ jobId, onClose, onStatusChange, onStarChange
     setTab('overview');
     setLegitimacy(null);
     setContact(null);
+    setSkillGap(null);
+    api.jobSkillGap(jobId).then(setSkillGap).catch(() => {});
     api.job(jobId).then((j) => {
       setJob(j);
       setStarred(Boolean(j.starred));
@@ -787,6 +790,48 @@ export default function JobDrawer({ jobId, onClose, onStatusChange, onStarChange
                     <div className="bg-bg-2 border border-border rounded-xl px-4 py-3">
                       <p className="text-xs text-white/30 uppercase tracking-wider mb-1">AI Match Reason</p>
                       <p className="text-sm text-white/60 italic leading-relaxed">{job.score_reason}</p>
+                    </div>
+                  )}
+
+                  {skillGap && skillGap.have.length + skillGap.missing.length > 0 && (
+                    <div className="bg-bg-2 border border-border rounded-xl px-4 py-3">
+                      <p className="text-xs text-white/30 uppercase tracking-wider mb-2">
+                        Resume Match · {skillGap.match_pct}% ({skillGap.have.length}/{skillGap.have.length + skillGap.missing.length} skills)
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {skillGap.have.map((s) => (
+                          <span key={s} className="text-[11px] px-2 py-1 rounded-md bg-accent-green/10 border border-accent-green/25 text-accent-green">
+                            {s}
+                          </span>
+                        ))}
+                        {skillGap.missing.map((s) => (
+                          <span key={s} title="Not on your resume" className="text-[11px] px-2 py-1 rounded-md bg-accent-pink/10 border border-accent-pink/25 text-accent-pink">
+                            {s}
+                          </span>
+                        ))}
+                      </div>
+                      {(skillGap.add_to_skills.length > 0 || skillGap.lead_with.length > 0) && (
+                        <div className="mt-3 pt-3 border-t border-border space-y-2 text-xs text-white/50">
+                          {skillGap.add_to_skills.length > 0 && (
+                            <p>
+                              <span className="text-white/70">Add to your Skills section:</span>{' '}
+                              {skillGap.add_to_skills.join(', ')}. Your projects already show these; your Skills list doesn&apos;t.
+                            </p>
+                          )}
+                          {skillGap.lead_with.length > 0 && (
+                            <div>
+                              <p className="text-white/70 mb-1">Lead with these bullets for this job:</p>
+                              <ul className="space-y-1">
+                                {skillGap.lead_with.map((b, i) => (
+                                  <li key={i} className="pl-2 border-l-2 border-accent-green/30">
+                                    {b.bullet} <span className="text-white/30">· {b.where}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 

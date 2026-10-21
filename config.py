@@ -28,7 +28,9 @@ GEMINI_MODEL_FALLBACK = "gemini-2.5-flash"  # smarter/low-quota — only 20/day
 # timed out repeatedly — avoid it. Re-verify with a live call before changing
 # this default, don't assume a catalog listing means it actually works.
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "")
-NVIDIA_MODEL = os.getenv("NVIDIA_MODEL", "nvidia/llama-3.3-nemotron-super-49b-v1")
+# llama-3.3-nemotron-super-49b-v1 was retired 2026-08-26 (HTTP 410); every
+# AI call silently fell through to rate-limited Gemini until 2026-10-21.
+NVIDIA_MODEL = os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3.5-super-vl-120b-a12b")
 # "baai/bge-m3" started 500ing on every call as of 2026-07-23 (verified: other
 # embed models work fine on the same key/endpoint, so it's that model's hosted
 # NIM instance, not a request-format or account issue). Switched to

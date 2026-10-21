@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
-import { MagnifyingGlass, Sliders, CaretLeft, CaretRight, X, ListBullets, Columns, CheckSquare, Star, Trash, CaretDown, ArrowUp, Keyboard, Sparkle, Compass } from '@phosphor-icons/react';
+import { MagnifyingGlass, Sliders, CaretLeft, CaretRight, X, ListBullets, Columns, CheckSquare, Star, Trash, CaretDown, ArrowUp, Keyboard, Sparkle, Compass, Plus } from '@phosphor-icons/react';
 import JobMatchCard from '@/components/JobMatchCard';
 import JobCard from '@/components/JobCard';
 import JobDrawer from '@/components/JobDrawer';
+import AddJobModal from '@/components/AddJobModal';
 import EmptyState from '@/components/EmptyState';
 import ScoreRing from '@/components/ScoreRing';
 import { ToastProvider, useToast } from '@/components/Toast';
@@ -382,6 +383,8 @@ function JobsPageInner() {
   const [page, setPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
   const [drawerJobId, setDrawerJobId] = useState<string | null>(null);
+  const [showAddJob, setShowAddJob] = useState(false);
+  const [addUrl, setAddUrl] = useState('');
 
   // ── View mode ──
   const [viewMode, setViewMode] = useState<'list' | 'kanban' | 'discover' | 'explore'>('list');
@@ -473,14 +476,18 @@ function JobsPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
-  // Auto-open drawer from ?open=<id> query param (set by GlobalSearch)
+  // Auto-open drawer from ?open=<id> (GlobalSearch), or the Add Job dialog
+  // from ?add=<url> (the "Save to Job Search" bookmarklet).
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const openId = params.get('open');
-    if (openId) {
-      setDrawerJobId(openId);
+    const addUrl = params.get('add');
+    if (openId) setDrawerJobId(openId);
+    if (addUrl) { setAddUrl(addUrl); setShowAddJob(true); }
+    if (openId || addUrl) {
       const url = new URL(window.location.href);
       url.searchParams.delete('open');
+      url.searchParams.delete('add');
       window.history.replaceState({}, '', url.toString());
     }
   }, []);
@@ -687,6 +694,18 @@ function JobsPageInner() {
     <>
       {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
 
+      <AddJobModal
+        open={showAddJob}
+        initialUrl={addUrl}
+        onClose={() => { setShowAddJob(false); setAddUrl(''); }}
+        onAdded={(id) => {
+          setShowAddJob(false);
+          setAddUrl('');
+          setDrawerJobId(id);
+          if (viewMode === 'list') fetchJobs(page, false);
+        }}
+      />
+
       <JobDrawer
         jobId={drawerJobId}
         onClose={() => setDrawerJobId(null)}
@@ -730,6 +749,14 @@ function JobsPageInner() {
                 className="w-full bg-bg-2 border border-border rounded-xl pl-9 pr-4 py-2.5 text-sm text-white/80 placeholder:text-white/25"
               />
             </div>
+
+            <button
+              onClick={() => setShowAddJob(true)}
+              title="Save a job from a link or pasted text"
+              className="flex items-center gap-1.5 px-3 py-2.5 text-sm rounded-xl bg-accent-green/10 border border-accent-green/30 text-accent-green hover:bg-accent-green/15 transition-all"
+            >
+              <Plus size={14} /> <span className="hidden sm:inline">Add job</span>
+            </button>
 
             {/* View toggle */}
             <div className="flex items-center bg-bg-2 border border-border rounded-xl overflow-hidden">

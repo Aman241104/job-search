@@ -82,5 +82,53 @@ def sanitize_cover_letter(text: str, corpus: str) -> tuple[str, list[str]]:
     return text, bad
 
 
+# Core skills a JD asks for that TECH_TERMS (the "commonly invented" list)
+# leaves out because most candidates do have them.
+CORE_TERMS = [
+    "react", "next.js", "typescript", "javascript", "node.js", "express", "mongodb", "mysql", "postgresql",
+    "tailwind", "html", "css", "python", "fastapi", "git", "docker", "rest api", "sql", "figma", "jest",
+    "vite", "firebase", "supabase", "gsap", "three.js", "framer motion", "java", "go", "c++", "linux", "ci/cd",
+]
+_CORE_RE = {t: re.compile(rf"(?<![\w.#+-]){re.escape(t)}(?![\w#+-])", re.I) for t in CORE_TERMS}
+
+
+def skill_gap(jd_text: str, corpus: str) -> dict:
+    """Skills the JD names, split into ones the resume shows and ones it
+    doesn't. No LLM call (career-ops' jd-skill-gap idea)."""
+    terms = {**_TERM_RE, **_CORE_RE}
+    named = [t for t, rx in terms.items() if rx.search(jd_text or "")]
+    named = [t for t in named if not any(o != t and t in o for o in named)]   # "redux toolkit" over "redux"
+    have = sorted(t for t in named if terms[t].search(corpus))
+    return {"have": have, "missing": sorted(set(named) - set(have))}
+
+
+def resume_match(jd_text: str, resume: dict) -> dict:
+    """skill_gap plus what to change on the resume for this job (Teal's
+    Matchmaker idea, no LLM): match %, skills the resume already proves in a
+    project/job but leaves out of its Skills section, and the bullets that
+    hit the most JD skills (lead with these)."""
+    gap = skill_gap(jd_text, resume_corpus(resume))
+    named = gap["have"] + gap["missing"]
+    terms = {**_TERM_RE, **_CORE_RE}
+    skills_section = json.dumps(resume.get("skills", {})).lower()
+    add_to_skills = [t for t in gap["have"] if not terms[t].search(skills_section)]
+
+    bullets = []
+    for kind in ("work_experience", "projects"):
+        for item in resume.get(kind) or []:
+            label = item.get("name") or f"{item.get('title', '')} @ {item.get('company', '')}"
+            for b in item.get("bullets") or []:
+                hits = [t for t in gap["have"] if terms[t].search(b)]
+                if hits:
+                    bullets.append({"where": label, "bullet": b, "skills": hits})
+    bullets.sort(key=lambda b: -len(b["skills"]))
+    return {
+        **gap,
+        "match_pct": round(100 * len(gap["have"]) / len(named)) if named else None,
+        "add_to_skills": add_to_skills,
+        "lead_with": bullets[:3],
+    }
+
+
 def is_failed(text: str) -> bool:
     return not text or "generation failed" in text.lower()

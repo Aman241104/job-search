@@ -62,6 +62,7 @@ export default function TrainChat({ topic, interviewer, onSessionEnd }: TrainCha
   const [loading, setLoading] = useState(false);
   const [starting, setStarting] = useState(false);
   const [avgScore, setAvgScore] = useState<number | null>(null);
+  const [difficulty, setDifficulty] = useState<number | null>(null);
   const [finished, setFinished] = useState(false);
   const [reportProgress, setReportProgress] = useState<TrainProgress | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -102,6 +103,7 @@ export default function TrainChat({ topic, interviewer, onSessionEnd }: TrainCha
     try {
       const session = await api.trainStart(topic.key);
       setSessionId(session.session_id);
+      setDifficulty(session.difficulty ?? null);
       setMessages([
         {
           role: 'assistant',
@@ -132,6 +134,7 @@ export default function TrainChat({ topic, interviewer, onSessionEnd }: TrainCha
         score: res.score,
       };
       setMessages((prev) => [...prev, aiMsg]);
+      if (res.difficulty !== undefined) setDifficulty(res.difficulty);
 
       if (res.score !== undefined) {
         const existingScores = messages
@@ -214,6 +217,14 @@ export default function TrainChat({ topic, interviewer, onSessionEnd }: TrainCha
 
         <div className="flex items-center gap-3">
           {sessionId && !finished && <ThinkingTimer resetKey={messages.length} />}
+          {difficulty !== null && (
+            <span
+              title="Question level adapts to your answers: it aims for questions you get right about 70% of the time"
+              className="text-xs font-mono text-accent-cyan bg-bg-3 px-3 py-1.5 rounded-lg border border-border"
+            >
+              Lv {difficulty}
+            </span>
+          )}
           {avgScore !== null && (
             <div className="flex items-center gap-1.5 bg-bg-3 px-3 py-1.5 rounded-lg border border-border">
               <Star size={12} className="text-accent-yellow" />

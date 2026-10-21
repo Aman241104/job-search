@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "Job Search Autofill",
+  "version": "1.0.0",
+  "description": "Fills job application forms from your Job Search profile. You review and submit.",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "action": { "default_popup": "popup.html", "default_title": "Fill this application" }
+}

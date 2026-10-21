@@ -174,6 +174,9 @@ class TrackerAgent:
             conn.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS date_posted TEXT")
             # Last time agents/listing_checker.py re-opened the live listing
             conn.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS checked_at TEXT")
+            # Times the same title+company came back under a new URL 14+ days
+            # after we first saw it (find_jobs drops the duplicate itself).
+            conn.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS repost_count INTEGER DEFAULT 0")
             # url uniqueness is per-user (two users can independently find the
             # same posting) — a bare UNIQUE(url) from the single-tenant schema
             # would let user B's scrape silently no-op against user A's row.
@@ -316,6 +319,36 @@ class TrackerAgent:
                     source_job_id TEXT,
                     created_at TEXT,
                     updated_at TEXT
+                )
+            """)
+            # Spaced-repetition review (agents/review.py). source_ref ties a card
+            # to its story / prep-pack question so a re-sync updates the text
+            # without resetting the schedule.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS review_cards (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT REFERENCES users(id),
+                    source_ref TEXT,
+                    deck TEXT,
+                    front TEXT,
+                    back TEXT,
+                    ease REAL DEFAULT 2.5,
+                    interval_days INTEGER DEFAULT 0,
+                    reps INTEGER DEFAULT 0,
+                    due TEXT,
+                    created_at TEXT,
+                    UNIQUE (user_id, source_ref)
+                )
+            """)
+            # One row per day the user did something toward their goal (applied,
+            # trained, reviewed); drives the streak.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS activity_log (
+                    user_id TEXT REFERENCES users(id),
+                    day TEXT,
+                    kind TEXT,
+                    count INTEGER DEFAULT 0,
+                    PRIMARY KEY (user_id, day, kind)
                 )
             """)
             conn.execute("""
@@ -560,6 +593,8 @@ class TrackerAgent:
             conn.execute("DELETE FROM training_sessions WHERE user_id = ?", (user_id,))
             conn.execute("DELETE FROM blacklisted_companies WHERE user_id = ?", (user_id,))
             conn.execute("DELETE FROM story_bank WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM review_cards WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM activity_log WHERE user_id = ?", (user_id,))
             conn.execute("DELETE FROM settings WHERE user_id = ?", (user_id,))
             conn.execute("DELETE FROM resumes WHERE user_id = ?", (user_id,))
             conn.execute("DELETE FROM profiles WHERE user_id = ?", (user_id,))
@@ -599,6 +634,8 @@ class TrackerAgent:
                 "training_sessions": rows("SELECT * FROM training_sessions WHERE user_id = ?"),
                 "interview_rounds": rows("SELECT * FROM interview_rounds WHERE user_id = ?"),
                 "story_bank": rows("SELECT * FROM story_bank WHERE user_id = ?"),
+                "review_cards": rows("SELECT * FROM review_cards WHERE user_id = ?"),
+                "activity_log": rows("SELECT * FROM activity_log WHERE user_id = ?"),
                 "blacklisted_companies": rows("SELECT * FROM blacklisted_companies WHERE user_id = ?"),
                 "batches": rows("SELECT * FROM batches WHERE user_id = ?"),
                 "learning_items": rows("SELECT * FROM learning_items WHERE user_id = ?"),
@@ -707,6 +744,8 @@ class TrackerAgent:
                 WHERE job_id=? AND user_id=?
             """, (status, notes, now, cv_path, cover_path, date_applied or '', job_id, user_id))
             conn.commit()
+        if status == "applied":
+            self.log_activity(user_id, "apply")
         console.print(f"[green]Status updated to '{status}'[/green]")
 
     # ── Listing freshness (agents/listing_checker.py) ───────────────────────
@@ -806,6 +845,85 @@ class TrackerAgent:
                 (score, json.dumps(flags), job_id, user_id),
             )
             conn.commit()
+
+    # ── Spaced-repetition review ────────────────────────────────────────────
+
+    def sync_review_cards(self, user_id: str, cards: list) -> int:
+        now = datetime.now().isoformat()
+        with self._get_conn() as conn:
+            for c in cards:
+                conn.execute("""
+                    INSERT INTO review_cards (id, user_id, source_ref, deck, front, back, due, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (user_id, source_ref) DO UPDATE
+                    SET deck = EXCLUDED.deck, front = EXCLUDED.front, back = EXCLUDED.back
+                """, (str(uuid.uuid4()), user_id, c["source_ref"], c["deck"], c["front"], c["back"], now, now))
+            total = conn.execute("SELECT COUNT(*) FROM review_cards WHERE user_id = ?", (user_id,)).fetchone()[0]
+        return total
+
+    def due_review_cards(self, user_id: str, limit: int = 20) -> dict:
+        now = datetime.now().isoformat()
+        with self._get_conn() as conn:
+            conn.row_factory = ROW_DICT
+            cards = conn.execute(
+                "SELECT id, deck, front, back, reps, interval_days FROM review_cards "
+                "WHERE user_id = ? AND due <= ? ORDER BY due LIMIT ?", (user_id, now, limit)
+            ).fetchall()
+            conn.row_factory = None
+            due_total, total = conn.execute(
+                "SELECT COUNT(*) FILTER (WHERE due <= ?), COUNT(*) FROM review_cards WHERE user_id = ?",
+                (now, user_id)).fetchone()
+        return {"cards": cards, "due": due_total, "total": total}
+
+    def grade_review_card(self, user_id: str, card_id: str, grade: str) -> dict | None:
+        from agents.review import sm2
+        with self._get_conn() as conn:
+            row = conn.execute("SELECT ease, interval_days, reps FROM review_cards WHERE id = ? AND user_id = ?",
+                               (card_id, user_id)).fetchone()
+            if not row:
+                return None
+            ease, interval, reps = sm2(row[0], row[1], row[2], grade)
+            # interval 0 = missed: show again in 10 minutes, same session
+            due = datetime.now() + (timedelta(days=interval) if interval else timedelta(minutes=10))
+            conn.execute("UPDATE review_cards SET ease = ?, interval_days = ?, reps = ?, due = ? WHERE id = ? AND user_id = ?",
+                         (ease, interval, reps, due.isoformat(), card_id, user_id))
+        self.log_activity(user_id, "review")
+        return {"interval_days": interval, "due": due.isoformat()}
+
+    # ── Daily goal / streak ─────────────────────────────────────────────────
+
+    def log_activity(self, user_id: str, kind: str, n: int = 1) -> None:
+        with self._get_conn() as conn:
+            conn.execute("""
+                INSERT INTO activity_log (user_id, day, kind, count) VALUES (?, ?, ?, ?)
+                ON CONFLICT (user_id, day, kind) DO UPDATE SET count = activity_log.count + EXCLUDED.count
+            """, (user_id, datetime.now().date().isoformat(), kind, n))
+
+    def activity_by_day(self, user_id: str, days: int = 60) -> dict:
+        """{day: {kind: count}} for the last `days` days."""
+        since = (datetime.now().date() - timedelta(days=days)).isoformat()
+        with self._get_conn() as conn:
+            rows = conn.execute("SELECT day, kind, count FROM activity_log WHERE user_id = ? AND day >= ?",
+                                (user_id, since)).fetchall()
+        out: dict = {}
+        for day, kind, count in rows:
+            out.setdefault(day, {})[kind] = count
+        return out
+
+    def record_reposts(self, user_id: str, job_ids: list) -> None:
+        with self._get_conn() as conn:
+            for job_id in job_ids:
+                conn.execute(
+                    "UPDATE jobs SET repost_count = COALESCE(repost_count, 0) + 1 WHERE id = ? AND user_id = ?",
+                    (job_id, user_id),
+                )
+
+    def repost_count(self, user_id: str, job_id: str) -> int:
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT repost_count FROM jobs WHERE id = ? AND user_id = ?", (job_id, user_id)
+            ).fetchone()
+        return (row[0] or 0) if row else 0
 
     # ── Interview Story Bank (STAR + Reflection) ────────────────────────────────
 
@@ -971,6 +1089,7 @@ class TrackerAgent:
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (session_id, user_id, topic_key, topic_name, messages_json, avg_score, now, now))
             conn.commit()
+        self.log_activity(user_id, "train")
 
     def get_training_session(self, user_id: str, session_id: str) -> dict | None:
         with self._get_conn() as conn:

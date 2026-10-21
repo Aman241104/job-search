@@ -40,12 +40,19 @@ def required_years(text: str) -> int | None:
     return max(found) if found else None
 
 
+_FOREIGN_CURRENCY = re.compile(r"[$€£]|\b(?:usd|eur|gbp|cad|aud|sgd)\b")
+
+
 def annual_rupee_range(salary: str) -> tuple[int, int] | None:
     """(low, high) annual rupees from strings like "₹ 2,00,000 - 3,50,000",
     "₹4L - ₹5L / yr", "₹30,000 - 35,000 /month". None if not parseable."""
     if not salary:
         return None
     s = salary.lower().replace(",", "")
+    # "$80,000 - $120,000" is not ₹0.8-1.2L — read as rupees it scored
+    # well-paid remote roles as badly underpaid.
+    if _FOREIGN_CURRENCY.search(s):
+        return None
     per_month = "month" in s or "/mo" in s
     lakhs = re.findall(r"(\d+(?:\.\d+)?)\s*l\b", s)
     if lakhs:
@@ -57,6 +64,71 @@ def annual_rupee_range(salary: str) -> tuple[int, int] | None:
     if per_month:
         vals = [v * 12 for v in vals]
     return int(min(vals)), int(max(vals))
+
+
+# Red flags, scored negative-only (career-ops' "red flags" dimension): they
+# pull a listing down however good its skill match is. Weighted for the Indian
+# fresher market, where bonds and pay-to-join "jobs" are the common traps.
+RED_FLAGS = [
+    (re.compile(r"service (?:bond|agreement)|\bbond (?:of|for|period)|\d+[- ]?(?:year|yr)s? bond", re.I), -20, "service bond"),
+    (re.compile(r"(?:registration|training|joining|security|processing) (?:fee|charges?|deposit)", re.I), -40, "asks candidate to pay"),
+    (re.compile(r"commission[- ]only|only commission|no fixed salary|unpaid", re.I), -30, "no fixed pay"),
+]
+
+
+def red_flags(text: str) -> tuple[int, list[str]]:
+    """(total penalty, labels) for the red flags present in a listing."""
+    hits = [(pts, label) for pattern, pts, label in RED_FLAGS if pattern.search(text or "")]
+    return sum(p for p, _ in hits), [label for _, label in hits]
+
+
+# Remote roles locked to another country ("US-Remote", "Remote - Canada") and
+# onsite roles abroad. Global ATS boards (Greenhouse/Lever/Ashby) are mostly
+# these, and plain "remote" matching used to give them the full remote bonus.
+# ponytail: deny-list, never complete — global boards also go through the
+# india_eligible() allow-list below, which is the real guard for them.
+_FOREIGN = re.compile(
+    r"\b(?:us|usa|u\.s\.|united states|canada|uk|united kingdom|europe|eu|emea|"
+    r"americas|latam|north america|germany|france|netherlands|ireland|australia|"
+    r"spain|italy|poland|portugal|brazil|mexico|argentina|colombia|chile|japan|"
+    r"israel|switzerland|sweden|"
+    r"san francisco|new york|nyc|seattle|toronto|london|dublin|berlin|amsterdam|"
+    r"washington|chicago|boston|austin|los angeles|denver|sf|ny|sea)\b",
+    re.I,
+)
+# Word-bounded: a bare "india" also matched "Indiana" / "Indianapolis".
+_OPEN_TO_INDIA = re.compile(
+    r"\b(?:india|worldwide|anywhere|global|apac|asia|ahmedabad|gandhinagar|vadodara|"
+    r"gujarat|bengaluru|bangalore|mumbai|pune|hyderabad|delhi|gurugram|gurgaon|"
+    r"noida|chennai|kolkata)\b",
+    re.I,
+)
+
+
+def location_abroad(location: str) -> bool:
+    """True when the listing names somewhere outside India and nothing that
+    lets an India-based candidate in. Unknown/blank locations are not abroad."""
+    loc = location or ""
+    return bool(_FOREIGN.search(loc)) and not _OPEN_TO_INDIA.search(loc)
+
+
+# Words that describe a work model, not a place. What's left of a location
+# after removing them (and punctuation) is the geography it names.
+_NOT_A_PLACE = re.compile(
+    r"\b(?:remote|hybrid|on-?site|in-?office|wfh|work from home|anywhere|worldwide|global|"
+    r"distributed|flexible|first|friendly|fully|full|time|only|based|in|or|and|of|the)\b|[^a-z]",
+    re.I,
+)
+
+
+def india_eligible(location: str) -> bool:
+    """Allow-list for global boards: names India (or an Indian city, APAC,
+    worldwide), or is remote and names no place at all. "China · Remote" or
+    "Remote - Brazil" fail without needing every country in a deny-list."""
+    loc = location or ""
+    if _OPEN_TO_INDIA.search(loc):
+        return True
+    return "remote" in loc.lower() and not _NOT_A_PLACE.sub("", loc.lower())
 
 
 # Phrases job boards show on a listing that no longer takes applications.

@@ -11,6 +11,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+import requests
+
 from fastapi import FastAPI, Query, Request, UploadFile, File, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse, RedirectResponse, Response
@@ -27,7 +29,8 @@ from agents.telegram_notifier import TelegramNotifierAgent
 from config import OUTPUT_DIR, DATA_DIR, MIN_APPLY_SCORE, LEARNING_TRACK, TELEGRAM_WEBHOOK_SECRET, TELEGRAM_CHAT_ID, CRON_SECRET
 from claude_client import GeminiChat, ask_gemini, ask_ai, check_legitimacy, draft_star_story
 from agents.contact_finder import draft_contact_outreach
-from agents.trainer import TRAINING_TOPICS, SYSTEM_PROMPTS
+from agents.trainer import (TRAINING_TOPICS, SYSTEM_PROMPTS, START_ABILITY, update_ability,
+                            next_difficulty, difficulty_instruction)
 from config import FRONTEND_URL
 from auth import oauth, issue_session_jwt, get_current_user, SESSION_COOKIE, SESSION_TTL_SECONDS
 from starlette.middleware.sessions import SessionMiddleware
@@ -372,7 +375,7 @@ async def get_job_legitimacy(job_id: str, user_id: str = Depends(get_current_use
     tracker = TrackerAgent()
     cached = tracker.get_legitimacy(user_id, job_id)
     if cached:
-        return cached
+        return _with_repost_flag(tracker, user_id, job_id, cached)
 
     limited = rate_limit_error(user_id, 'legitimacy_check', max_calls=60, window_seconds=3600)
     if limited:
@@ -388,7 +391,17 @@ async def get_job_legitimacy(job_id: str, user_id: str = Depends(get_current_use
     result = await loop.run_in_executor(None, lambda: check_legitimacy(row))
     if result.get('score') is not None:
         tracker.save_legitimacy(user_id, job_id, result['score'], result['flags'])
-    return result
+    return _with_repost_flag(tracker, user_id, job_id, result)
+
+
+def _with_repost_flag(tracker, user_id: str, job_id: str, result: dict) -> dict:
+    """Repost count changes after the AI verdict is cached, so it's added on
+    every read instead of being stored with it."""
+    n = tracker.repost_count(user_id, job_id)
+    if not n:
+        return result
+    flag = f"Reposted {n}x under a new link 2+ weeks later: may be an always-open or slow-to-hire role"
+    return {**result, 'flags': [flag, *result.get('flags', [])]}
 
 
 @app.post('/api/jobs/{job_id}/contact')
@@ -452,6 +465,123 @@ def get_prep_pack(job_id: str, refresh: bool = False, user_id: str = Depends(get
         return JSONResponse({'error': 'Prep pack generation failed — try again in a minute.'}, status_code=502)
     tracker.save_application_extra(user_id, job_id, 'prep_pack', pack)
     return pack
+
+
+@app.get('/api/autofill-profile')
+def autofill_profile(user_id: str = Depends(get_current_user)):
+    """The fields the browser extension (extension/) fills into application
+    forms, from the resume first and the profile second. Copied once from the
+    Profile page into the extension; never includes secrets."""
+    tracker = TrackerAgent()
+    resume = tracker.get_resume(user_id) or CVCustomizerAgent().master_resume
+    if isinstance(resume, str):
+        resume = json.loads(resume)
+    profile = tracker.get_profile(user_id) or {}
+    info = resume.get('personal_info', {})
+    edu = (resume.get('education') or [{}])[0]
+    job = next((w for w in resume.get('work_experience') or [] if w.get('current')), {})
+    name = (info.get('name') or profile.get('name') or '').strip()
+    url = lambda u: u if not u or u.startswith('http') else f'https://{u}'   # noqa: E731
+    years = re.findall(r'\d{4}', str(edu.get('year', '')))
+    target = profile.get('target_lpa') or {}
+    return {k: v for k, v in {
+        'full_name': name,
+        'first_name': name.split(' ')[0] if name else '',
+        'last_name': ' '.join(name.split(' ')[1:]),
+        'email': info.get('email') or profile.get('email'),
+        'phone': info.get('phone') or profile.get('phone'),
+        'linkedin': url(info.get('linkedin', '')),
+        'github': url(info.get('github') or profile.get('github', '')),
+        'portfolio': url(info.get('portfolio') or profile.get('portfolio', '')),
+        'location': info.get('location', ''),
+        'college': edu.get('institution') or profile.get('college'),
+        'degree': edu.get('degree', ''),
+        'graduation_year': years[-1] if years else '',
+        'cgpa': str(edu.get('cgpa') or profile.get('cgpa') or ''),
+        'current_company': job.get('company', ''),
+        'current_title': job.get('title', ''),
+        'expected_ctc': f"{target.get('min')}-{target.get('max')} LPA" if target.get('min') else '',
+    }.items() if v}
+
+
+@app.post('/api/jobs/import')
+def import_job_endpoint(payload: dict, user_id: str = Depends(get_current_user)):
+    """Save a job from a link or pasted text (body: {"url": "..."} or {"text": "..."})."""
+    from agents.job_import import import_job, JobImportError
+    limited = rate_limit_error(user_id, 'job_import', max_calls=60, window_seconds=3600)
+    if limited:
+        return limited
+    try:
+        job = import_job(url=str(payload.get('url') or '').strip(), text=str(payload.get('text') or ''))
+    except JobImportError as e:
+        return JSONResponse({'error': str(e)}, status_code=400)
+    except requests.RequestException:
+        return JSONResponse({'error': "Couldn't open that page. Paste the job text instead."}, status_code=400)
+    tracker = TrackerAgent()
+    scorer = JobFinderAgent.__new__(JobFinderAgent)   # skip __init__'s load of every saved job
+    scorer.profile = tracker.get_profile(user_id) or {}
+    job['score'], job['score_reason'] = scorer.keyword_score(job)
+    tracker.add_job(user_id, job)
+    with tracker._get_conn() as conn:
+        row = conn.execute("SELECT id FROM jobs WHERE user_id = ? AND url = ?", (user_id, job['url'])).fetchone()
+    return {**job, 'id': row[0] if row else job['id']}
+
+
+# ── Spaced-repetition review + daily goal / streak ───────────────────────────
+
+@app.post('/api/review/sync')
+def sync_review(user_id: str = Depends(get_current_user)):
+    """Rebuild cards from the story bank and every cached prep pack."""
+    from agents.review import cards_from_sources
+    tracker = TrackerAgent()
+    with tracker._get_conn() as conn:
+        conn.row_factory = True
+        packs = conn.execute("""
+            SELECT a.job_id, a.prep_pack AS pack, j.title, j.company FROM applications a
+            JOIN jobs j ON j.id = a.job_id AND j.user_id = a.user_id
+            WHERE a.user_id = ? AND a.prep_pack IS NOT NULL
+        """, (user_id,)).fetchall()
+    cards = cards_from_sources(tracker.get_stories(user_id), packs)
+    return {'synced': len(cards), 'total': tracker.sync_review_cards(user_id, cards)}
+
+
+@app.get('/api/review/due')
+def due_reviews(user_id: str = Depends(get_current_user)):
+    return TrackerAgent().due_review_cards(user_id)
+
+
+@app.post('/api/review/{card_id}')
+def grade_review(card_id: str, grade: str = Query(..., pattern='^(again|hard|good|easy)$'),
+                 user_id: str = Depends(get_current_user)):
+    result = TrackerAgent().grade_review_card(user_id, card_id, grade)
+    return result or JSONResponse({'error': 'Card not found'}, status_code=404)
+
+
+def _streak_for(tracker, user_id: str) -> dict:
+    from agents.review import streak, DEFAULT_GOAL
+    goal = int(tracker.get_setting(user_id, 'daily_goal', str(DEFAULT_GOAL)) or DEFAULT_GOAL)
+    return streak(tracker.activity_by_day(user_id, days=366), goal, datetime.now().date())
+
+
+@app.get('/api/streak')
+def get_streak(user_id: str = Depends(get_current_user)):
+    return _streak_for(TrackerAgent(), user_id)
+
+
+@app.put('/api/streak/goal')
+def set_daily_goal(goal: int = Query(..., ge=1, le=100), user_id: str = Depends(get_current_user)):
+    tracker = TrackerAgent()
+    tracker.set_setting(user_id, 'daily_goal', str(goal))
+    return _streak_for(tracker, user_id)
+
+
+@app.get('/api/jobs/{job_id}/skill-gap')
+def get_skill_gap(job_id: str, user_id: str = Depends(get_current_user)):
+    from agents.cv_validator import resume_match
+    _, job, resume = _job_and_resume(user_id, job_id)
+    if not job:
+        return JSONResponse({'error': 'Job not found'}, status_code=404)
+    return resume_match(f"{job.get('title', '')} {job.get('description', '')}", resume)
 
 
 @app.get('/api/jobs/{job_id}/followup-draft')
@@ -686,6 +816,28 @@ async def find_jobs_stream(user_id: str = Depends(get_current_user)):
         media_type='text/event-stream',
         headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
     )
+
+
+@app.post('/internal/cron/streak-nudge')
+def cron_streak_nudge(request: Request):
+    """Evening Cloud Scheduler call (e.g. 19:30 IST): a Telegram nudge to each
+    auto-find user who hasn't met today's goal yet. Same secret-header auth
+    as /internal/cron/auto-find."""
+    if not CRON_SECRET or request.headers.get('X-Cron-Secret', '') != CRON_SECRET:
+        return JSONResponse({'error': 'unauthorized'}, status_code=403)
+    tracker, notifier = TrackerAgent(), TelegramNotifierAgent()
+    sent = 0
+    for uid in tracker.get_auto_find_user_ids():
+        chat_id = (tracker.get_profile(uid) or {}).get('telegram_chat_id')
+        s = _streak_for(tracker, uid)
+        if not chat_id or not notifier.enabled or s['met_today']:
+            continue
+        left = s['goal'] - s['today_points']
+        msg = (f"🔥 {s['streak']}-day streak: {left} point{'s' if left != 1 else ''} to go today.\n"
+               f"One application = 5, each review or trainer answer = 1. {FRONTEND_URL}/review")
+        if notifier._send_message(msg, chat_id=chat_id):
+            sent += 1
+    return {'nudged': sent}
 
 
 @app.post('/internal/cron/auto-find')
@@ -1154,8 +1306,10 @@ async def start_training(topic_key: str, user_id: str = Depends(get_current_user
     system = SYSTEM_PROMPTS.get(topic_id, SYSTEM_PROMPTS['behavioral'])
     session_id = str(uuid.uuid4())
     chat = GeminiChat(system=system, temperature=0.8)
+    ability = _ability(user_id, topic_key)
     first_q = await asyncio.get_event_loop().run_in_executor(
-        None, lambda: chat.send('Start the interview. Greet me briefly and ask your first question.')
+        None, lambda: chat.send('Start the interview. Greet me briefly and ask your first question. '
+                                + difficulty_instruction(next_difficulty(ability)))
     )
     _chat_sessions[session_id] = {
         'chat': chat,
@@ -1164,6 +1318,7 @@ async def start_training(topic_key: str, user_id: str = Depends(get_current_user
         'user_id': user_id,
         'scores': [],
         'messages': [],
+        'difficulty': next_difficulty(ability),
     }
     first_msg = first_q or f"Welcome to the {topic_name} interview! Let's begin with the first question."
     _chat_sessions[session_id]['messages'].append({'role': 'assistant', 'content': first_msg, 'score': None})
@@ -1172,7 +1327,16 @@ async def start_training(topic_key: str, user_id: str = Depends(get_current_user
         'topic_key': topic_key,
         'topic_name': topic_name,
         'message': first_msg,
+        'difficulty': _chat_sessions[session_id]['difficulty'],
     }
+
+
+def _ability(user_id: str, topic_key: str) -> float:
+    """Per-topic Elo-style ability (agents/trainer.py), kept in settings."""
+    try:
+        return float(TrackerAgent().get_setting(user_id, f'ability:{topic_key}', '') or START_ABILITY)
+    except ValueError:
+        return START_ABILITY
 
 
 def _rehydrate_chat_session(user_id: str, session_id: str) -> dict | None:
@@ -1205,6 +1369,7 @@ def _rehydrate_chat_session(user_id: str, session_id: str) -> dict | None:
         'user_id': user_id,
         'scores': scores,
         'messages': messages,
+        'difficulty': next_difficulty(_ability(user_id, topic_key)),
     }
 
 
@@ -1222,13 +1387,20 @@ async def training_chat(session_id: str, message: str, user_id: str = Depends(ge
         return JSONResponse({'error': 'Session expired'}, status_code=400)
     chat: GeminiChat = session['chat']
     session['messages'].append({'role': 'user', 'content': message, 'score': None})
-    prompt = f"{message}\n\n[Score my answer /10, give specific feedback, model answer, then ask next question.]"
+    # The next question's level comes from ability as of the previous answer
+    # (this answer isn't scored until the reply arrives): a one-question lag.
+    prompt = (f"{message}\n\n[Score my answer /10, give specific feedback, model answer, then ask next question. "
+              f"{difficulty_instruction(session['difficulty'])}]")
     loop = asyncio.get_event_loop()
     response = await loop.run_in_executor(None, lambda: chat.send(prompt, max_tokens=700))
     score_match = re.search(r'(\d+)\s*/\s*10', response or '')
     score = int(score_match.group(1)) if score_match else None
-    if score:
+    if score is not None and 0 <= score <= 10:
         session['scores'].append(score)
+        topic_key = session.get('topic_key', '')
+        ability = update_ability(_ability(user_id, topic_key), session['difficulty'], score)
+        TrackerAgent().set_setting(user_id, f'ability:{topic_key}', f'{ability:.2f}')
+        session['difficulty'] = next_difficulty(ability)
     session['messages'].append({'role': 'assistant', 'content': response or '', 'score': score})
     avg_score = sum(session['scores']) / len(session['scores']) if session['scores'] else 0
     # Persist session
@@ -1248,6 +1420,7 @@ async def training_chat(session_id: str, message: str, user_id: str = Depends(ge
         'response': response,
         'score': score,
         'avg_score': avg_score if session['scores'] else None,
+        'difficulty': session['difficulty'],
     }
 
 
@@ -1636,6 +1809,31 @@ def get_playlist_detail(playlist_id: str, user_id: str = Depends(get_current_use
         return JSONResponse({'error': 'Playlist not found'}, status_code=404)
     playlist['videos'] = tracker.get_videos_for_playlist(playlist_id)
     return playlist
+
+
+@app.post('/api/learning/playlists/{playlist_id}/audio-overview')
+def playlist_audio_overview(playlist_id: str, refresh: bool = False, user_id: str = Depends(get_current_user)):
+    """Two-host script from the playlist's notes; the browser speaks it.
+    Cached per playlist in settings; ?refresh=1 rewrites it."""
+    from agents.audio_overview import write_script
+    tracker = TrackerAgent()
+    playlist = tracker.get_playlist(user_id, playlist_id)
+    if not playlist:
+        return JSONResponse({'error': 'Playlist not found'}, status_code=404)
+    key = f'audio:playlist:{playlist_id}'
+    cached = None if refresh else tracker.get_setting(user_id, key, '')
+    if cached:
+        return {'turns': json.loads(cached)}
+    limited = rate_limit_error(user_id, 'audio_overview', max_calls=10, window_seconds=3600)
+    if limited:
+        return limited
+    notes = [v.get('notes_md') for v in tracker.get_videos_for_playlist(playlist_id)]
+    turns = write_script(playlist.get('title') or 'this playlist', notes)
+    if not turns:
+        return JSONResponse({'error': 'No notes to work from yet, or the AI is unavailable. Try again shortly.'},
+                            status_code=502)
+    tracker.set_setting(user_id, key, json.dumps(turns))
+    return {'turns': turns}
 
 
 @app.post('/api/learning/playlists/ask')

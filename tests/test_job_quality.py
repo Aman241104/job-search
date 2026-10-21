@@ -1,4 +1,6 @@
-from agents.job_quality import required_years, annual_rupee_range, listing_is_closed
+from agents.job_quality import (required_years, annual_rupee_range, listing_is_closed,
+                                red_flags, location_abroad, india_eligible)
+from agents.job_finder import JobFinderAgent
 from agents.cv_validator import resume_corpus, sanitize_cv, sanitize_cover_letter, unsupported_terms
 from agents.application_kit import _resume_facts, _parse_json
 
@@ -33,6 +35,8 @@ def test_annual_rupee_range_formats():
     assert annual_rupee_range("₹4L - ₹5L / yr") == (400000, 500000)
     assert annual_rupee_range("₹ 30,000 - 35,000 /month") == (360000, 420000)
     assert annual_rupee_range("Not specified") is None
+    assert annual_rupee_range("$80,000 - $120,000") is None
+    assert annual_rupee_range("USD 90000 - 110000 / yr") is None
 
 
 # ── closed listings ──
@@ -74,6 +78,26 @@ def test_sanitize_cover_letter_drops_false_sentences():
     assert "Kubernetes" not in clean and "React and FastAPI" in clean
 
 
+def test_skill_gap():
+    from agents.cv_validator import skill_gap
+    jd = "Frontend role: React, Next.js, TypeScript, Redux Toolkit and GraphQL. Docker is a plus."
+    gap = skill_gap(jd, resume_corpus(RESUME))
+    assert gap["have"] == ["next.js", "react"]
+    assert gap["missing"] == ["docker", "graphql", "redux toolkit", "typescript"]
+
+
+def test_resume_match_suggestions():
+    from agents.cv_validator import resume_match
+    resume = {**RESUME, "skills": {"frontend": ["React"]},
+              "projects": [{"name": "Shop", "tech_stack": ["Next.js"],
+                            "bullets": ["Built checkout in Next.js and React", "Wrote docs"]}]}
+    m = resume_match("React, Next.js and Docker", resume)
+    assert m["match_pct"] == 67
+    assert m["add_to_skills"] == ["next.js"]
+    assert m["lead_with"] == [{"where": "Shop", "bullet": "Built checkout in Next.js and React",
+                               "skills": ["next.js", "react"]}]
+
+
 def test_unsupported_terms_respects_word_boundaries():
     corpus = resume_corpus(RESUME)
     assert unsupported_terms("React and Next.js", corpus) == []
@@ -92,6 +116,68 @@ def test_resume_facts_are_deterministic():
 def test_parse_json_tolerates_prose():
     assert _parse_json('Sure! {"a": 1} hope that helps') == {"a": 1}
     assert _parse_json("nothing here") is None
+
+
+# ── red flags / location eligibility ──
+
+def test_red_flags():
+    pts, labels = red_flags("Freshers welcome. 2 year bond. Refundable security deposit of Rs 5000.")
+    assert labels == ["service bond", "asks candidate to pay"] and pts == -60
+    assert red_flags("React developer, 6 LPA, hybrid") == (0, [])
+
+
+def test_location_abroad():
+    for loc in ["US-Remote", "Remote in Canada", "San Francisco, Seattle, New York", "London"]:
+        assert location_abroad(loc), loc
+    for loc in ["Remote", "Remote (India)", "Ahmedabad", "Worldwide", "Remote - US or India", "", "Bengaluru"]:
+        assert not location_abroad(loc), loc
+
+
+def test_india_eligible():
+    for loc in ["India", "Remote", "Bengaluru · Remote", "Worldwide", "Remote - APAC", "Remote, Global",
+                "Remote (Anywhere)", "Fully remote"]:
+        assert india_eligible(loc), loc
+    for loc in ["Remote - Brazil", "Spain · Remote", "Zurich", "Washington, DC", "US-Remote", "",
+                "Indianapolis, IN", "Indiana", "China · Remote", "Bogota · Remote"]:
+        assert not india_eligible(loc), loc
+
+
+def test_ats_stale():
+    from datetime import datetime, timedelta, timezone
+    recent = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+    old = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
+    assert not JobFinderAgent._ats_stale(recent)
+    assert JobFinderAgent._ats_stale(old)
+    assert JobFinderAgent._ats_stale("2026-01-01T00:00:00Z")
+    assert not JobFinderAgent._ats_stale("") and not JobFinderAgent._ats_stale(None)
+
+
+def test_is_repost_needs_two_weeks():
+    from datetime import datetime, timedelta
+    a = JobFinderAgent.__new__(JobFinderAgent)
+    assert a._is_repost((datetime.now() - timedelta(days=20)).isoformat())
+    assert not a._is_repost((datetime.now() - timedelta(days=3)).isoformat())   # cross-post, not repost
+    assert not a._is_repost("") and not a._is_repost(None)
+
+
+def test_breaker_skips_provider_after_repeated_failures(monkeypatch):
+    import claude_client as c
+    monkeypatch.setattr(c, "_fails", {})
+    for _ in range(c.BREAKER_FAILS):
+        assert not c._breaker_open("x")
+        c._record("x", False)
+    assert c._breaker_open("x")
+    c._record("x", True)
+    assert not c._breaker_open("x")
+
+
+def test_keyword_score_no_remote_bonus_for_us_only_roles():
+    a = JobFinderAgent.__new__(JobFinderAgent)
+    a.profile = {}
+    job = {"title": "Frontend Engineer", "description": "React, TypeScript", "salary": ""}
+    us, _ = a.keyword_score({**job, "location": "US-Remote"})
+    anywhere, _ = a.keyword_score({**job, "location": "Remote"})
+    assert anywhere - us >= 40
 
 
 def test_required_years_ignores_dash_dropped_ranges():

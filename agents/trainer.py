@@ -1,4 +1,5 @@
 import json
+import math
 import re
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,33 @@ from rich.panel import Panel
 from rich.markdown import Markdown
 
 console = Console()
+
+# ── Adaptive difficulty (Duolingo's Birdbrain idea, Elo-style) ──────────────
+# Ability and question difficulty share one 1-10 scale. After each scored
+# answer the ability moves toward what the score says; the next question is
+# pitched where the expected score is ~70%: hard enough to teach, easy enough
+# not to demoralise.
+START_ABILITY = 4.0      # fresher
+TARGET_SUCCESS = 0.7
+
+
+def expected_score(ability: float, difficulty: float) -> float:
+    return 1 / (1 + math.exp(difficulty - ability))
+
+
+def update_ability(ability: float, difficulty: float, score10: int, k: float = 2.0) -> float:
+    return min(10.0, max(1.0, ability + k * (score10 / 10 - expected_score(ability, difficulty))))
+
+
+def next_difficulty(ability: float) -> float:
+    # solve expected_score(ability, d) == TARGET_SUCCESS for d
+    return round(min(10.0, max(1.0, ability - math.log(TARGET_SUCCESS / (1 - TARGET_SUCCESS)))), 1)
+
+
+def difficulty_instruction(d: float) -> str:
+    return (f"Pitch the next question at difficulty {d}/10 "
+            f"(1 = fresher basics, 5 = solid junior, 8 = mid-level depth, 10 = senior deep-dive).")
+
 
 TRAINING_TOPICS = {
     "1": ("Technical - React/JS/TS", "react_js"),

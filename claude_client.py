@@ -95,6 +95,42 @@ NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 _COOLDOWN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "gemini_cooldowns.json")
 
 
+_warned: set = set()
+
+
+def _warn_once(key: str, msg: str) -> None:
+    if key not in _warned:
+        _warned.add(key)
+        print(msg, flush=True)
+
+
+# Circuit breaker: after BREAKER_FAILS failures in a row a provider is skipped
+# for BREAKER_SECONDS, so a down provider costs a run a few slow calls, not
+# one per job. ponytail: per-process state, fine for one worker per container.
+BREAKER_FAILS, BREAKER_SECONDS = 3, 600
+_fails: dict = {}          # provider -> (consecutive failures, last failure ts)
+
+
+def _breaker_open(provider: str) -> bool:
+    n, ts = _fails.get(provider, (0, 0))
+    return n >= BREAKER_FAILS and time.time() - ts < BREAKER_SECONDS
+
+
+def _record(provider: str, ok: bool) -> None:
+    if ok:
+        _fails.pop(provider, None)
+    else:
+        n, _ = _fails.get(provider, (0, 0))
+        _fails[provider] = (n + 1, time.time())
+        if n + 1 == BREAKER_FAILS:
+            print(f"[{provider}] {BREAKER_FAILS} failures in a row; skipping it for {BREAKER_SECONDS // 60} min", flush=True)
+
+
+# Longer than this and waiting can't help within one run (daily quota) —
+# give up and let the caller's keyword fallback answer instead of sleeping.
+MAX_GEMINI_WAIT = 30
+
+
 def _load_cooldowns() -> dict:
     try:
         with open(_COOLDOWN_FILE) as f:
@@ -136,7 +172,7 @@ def ask_gemini(prompt: str, system: str = "", model: str = "",
     """
     api_key, default_model, fallback_model = _cfg()
 
-    if not api_key:
+    if not api_key or _breaker_open("gemini"):
         return _keyword_fallback(prompt)
 
     if model:
@@ -177,8 +213,10 @@ def ask_gemini(prompt: str, system: str = "", model: str = "",
             chosen_model = models_order[model_idx]
 
         wait = _cooldown_remaining(chosen_model)
+        if wait > MAX_GEMINI_WAIT:
+            break
         if wait > 0:
-            time.sleep(min(wait, 30))
+            time.sleep(wait)
 
         try:
             resp = _requests.post(
@@ -193,6 +231,7 @@ def ask_gemini(prompt: str, system: str = "", model: str = "",
             data = resp.json()
 
             if resp.status_code == 200:
+                _record("gemini", True)
                 return data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
             err_code = data.get("error", {}).get("code", 0)
@@ -207,9 +246,10 @@ def ask_gemini(prompt: str, system: str = "", model: str = "",
                     model_idx += 1
                     chosen_model = models_order[model_idx]
                     continue
-                if attempt < retries - 1:
-                    time.sleep(min(delay + 2, 60))
+                if attempt < retries - 1 and delay + 2 <= MAX_GEMINI_WAIT:
+                    time.sleep(delay + 2)
                     continue
+                break
 
             if err_code in (503, 500) and attempt < retries - 1:
                 time.sleep(5 * (attempt + 1))
@@ -229,6 +269,7 @@ def ask_gemini(prompt: str, system: str = "", model: str = "",
             continue
 
     # All retries exhausted — use keyword fallback for scoring prompts
+    _record("gemini", False)
     return _keyword_fallback(prompt)
 
 
@@ -249,7 +290,7 @@ def ask_nvidia(prompt: str, system: str = "", model: str = "",
     fall back to Gemini/keyword scoring, same contract as ask_gemini.
     """
     api_key, default_model = _nvidia_cfg()
-    if not api_key:
+    if not api_key or _breaker_open("nvidia"):
         return ""
 
     chosen_model = model or default_model
@@ -282,15 +323,32 @@ def ask_nvidia(prompt: str, system: str = "", model: str = "",
             )
             if resp.status_code == 200:
                 data = resp.json()
-                return data["choices"][0]["message"]["content"].strip()
+                # Reasoning models can spend all of max_tokens thinking and
+                # return content=None; that's a miss, not a crash.
+                content = (data["choices"][0]["message"].get("content") or "").strip()
+                if content:
+                    _record("nvidia", True)
+                    return content
+                _warn_once(f"nvidia:{chosen_model}:empty",
+                           f"[ask_nvidia] {chosen_model} returned no content "
+                           f"(finish_reason={data['choices'][0].get('finish_reason')}); raise max_tokens?")
+                break
             if resp.status_code == 429 and attempt < retries - 1:
                 time.sleep(5 * (attempt + 1))
                 continue
+            # 404/410 = model retired or not on this account. Printed because
+            # a silent "" here hid a dead primary model for two months.
+            _warn_once(f"nvidia:{chosen_model}:{resp.status_code}",
+                       f"[ask_nvidia] {chosen_model} -> HTTP {resp.status_code}: {resp.text[:200]}")
+            break
+        except _requests.Timeout:
+            # A model that took 60s once won't be faster on retry; move on.
             break
         except Exception:
             if attempt < retries - 1:
                 time.sleep(3)
             continue
+    _record("nvidia", False)
     return ""
 
 

@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { width: 300px; font: 13px system-ui, sans-serif; margin: 12px; color: #1f2937; }
+  h1 { font-size: 14px; margin: 0 0 8px; }
+  button { width: 100%; padding: 8px; border: 0; border-radius: 8px; background: #059669; color: #fff; font-weight: 600; cursor: pointer; }
+  button:disabled { background: #9ca3af; cursor: default; }
+  textarea { width: 100%; box-sizing: border-box; height: 90px; font: 11px monospace; margin: 6px 0; }
+  .muted { color: #6b7280; font-size: 11px; }
+  #status { margin-top: 8px; min-height: 16px; }
+  details { margin-top: 10px; }
+</style>
+</head>
+<body>
+  <h1>Job Search Autofill</h1>
+  <button id="fill">Fill this page</button>
+  <p id="status" class="muted"></p>
+  <p class="muted">Fills empty fields only and highlights them in green. It never submits: review and submit yourself.</p>
+  <details id="setup">
+    <summary>Profile</summary>
+    <p class="muted">In the Job Search app, Profile → "Copy autofill profile", then paste here.</p>
+    <textarea id="profile" placeholder='{"full_name": "...", "email": "..."}'></textarea>
+    <button id="save">Save profile</button>
+  </details>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

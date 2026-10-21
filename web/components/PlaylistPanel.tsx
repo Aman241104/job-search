@@ -5,6 +5,7 @@ import clsx from 'clsx';
 import { YoutubeLogo, Plus, CircleNotch, CheckCircle, XCircle, PaperPlaneTilt } from '@phosphor-icons/react';
 import { api, StudyPlaylist, StudyVideo } from '@/lib/api';
 import { useToast } from './Toast';
+import AudioOverview from './AudioOverview';
 
 function StatusBadge({ status }: { status: StudyVideo['status'] }) {
   if (status === 'done') return <CheckCircle size={14} className="text-accent-green" />;
@@ -177,6 +178,7 @@ export default function PlaylistPanel() {
             </div>
 
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+              {(selected.videos ?? []).some((v) => v.notes_md) && <AudioOverview playlistId={selected.id} />}
               <div className="space-y-2">
                 {(selected.videos ?? []).map((v) => (
                   <div key={v.id} className="bg-bg-3 border border-border rounded-xl px-4 py-3">

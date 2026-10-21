@@ -72,6 +72,7 @@ export interface TrainSession {
   topic_key: string;
   topic_name: string;
   message: string;
+  difficulty?: number;
 }
 
 export interface TrainMessage {
@@ -189,6 +190,31 @@ export interface BookPage {
 export interface LearningMessage {
   role: 'user' | 'assistant';
   content: string;
+}
+
+export interface ResumeMatch {
+  have: string[];
+  missing: string[];
+  match_pct: number | null;
+  add_to_skills: string[];
+  lead_with: { where: string; bullet: string; skills: string[] }[];
+}
+
+export interface ReviewCard {
+  id: string;
+  deck: string;
+  front: string;
+  back: string;
+  reps: number;
+  interval_days: number;
+}
+
+export interface Streak {
+  streak: number;
+  today_points: number;
+  goal: number;
+  met_today: boolean;
+  frozen_days: string[];
 }
 
 export interface Story {
@@ -321,6 +347,66 @@ export const api = {
       return r.json();
     }),
 
+  autofillProfile: (): Promise<Record<string, string>> =>
+    apiFetch(`/api/autofill-profile`).then((r) => {
+      if (!r.ok) throw new Error(`Autofill profile failed: ${r.status}`);
+      return r.json();
+    }),
+
+  playlistAudioOverview: (id: string): Promise<{ turns: { speaker: string; text: string }[] }> =>
+    apiFetch(`/api/learning/playlists/${id}/audio-overview`, { method: 'POST' }).then(async (r) => {
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || `Audio overview failed: ${r.status}`);
+      return data;
+    }),
+
+  importJob: (body: { url: string } | { text: string }): Promise<{ id: string; title: string; company: string }> =>
+    apiFetch(`/api/jobs/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(async (r) => {
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || `Import failed: ${r.status}`);
+      return data;
+    }),
+
+  reviewSync: (): Promise<{ synced: number; total: number }> =>
+    apiFetch(`/api/review/sync`, { method: 'POST' }).then((r) => {
+      if (!r.ok) throw new Error(`Review sync failed: ${r.status}`);
+      return r.json();
+    }),
+
+  reviewDue: (): Promise<{ cards: ReviewCard[]; due: number; total: number }> =>
+    apiFetch(`/api/review/due`).then((r) => {
+      if (!r.ok) throw new Error(`Review load failed: ${r.status}`);
+      return r.json();
+    }),
+
+  reviewGrade: (id: string, grade: 'again' | 'hard' | 'good' | 'easy'): Promise<{ interval_days: number; due: string }> =>
+    apiFetch(`/api/review/${id}?grade=${grade}`, { method: 'POST' }).then((r) => {
+      if (!r.ok) throw new Error(`Review grade failed: ${r.status}`);
+      return r.json();
+    }),
+
+  streak: (): Promise<Streak> =>
+    apiFetch(`/api/streak`).then((r) => {
+      if (!r.ok) throw new Error(`Streak failed: ${r.status}`);
+      return r.json();
+    }),
+
+  setDailyGoal: (goal: number): Promise<Streak> =>
+    apiFetch(`/api/streak/goal?goal=${goal}`, { method: 'PUT' }).then((r) => {
+      if (!r.ok) throw new Error(`Goal update failed: ${r.status}`);
+      return r.json();
+    }),
+
+  jobSkillGap: (id: string): Promise<ResumeMatch> =>
+    apiFetch(`/api/jobs/${id}/skill-gap`).then((r) => {
+      if (!r.ok) throw new Error(`Skill gap failed: ${r.status}`);
+      return r.json();
+    }),
+
   jobLegitimacy: (id: string): Promise<{ score: number | null; flags: string[] }> =>
     apiFetch(`/api/jobs/${id}/legitimacy`).then((r) => {
       if (!r.ok) throw new Error(`Legitimacy check failed: ${r.status}`);
@@ -405,7 +491,7 @@ export const api = {
   trainChat: (
     sessionId: string,
     message: string
-  ): Promise<{ response: string; score?: number; avg_score?: number }> =>
+  ): Promise<{ response: string; score?: number; avg_score?: number; difficulty?: number }> =>
     apiFetch(
       `/api/train/chat?session_id=${sessionId}&message=${encodeURIComponent(message)}`,
       { method: 'POST' }
