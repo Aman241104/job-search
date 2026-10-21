@@ -169,7 +169,7 @@ export default function TrainPage() {
 
   return (
     <ToastProvider>
-      <div className="min-h-screen pb-24 md:pb-8">
+      <div className="min-h-screen pb-8">
         {/* Header + Confidence hero */}
         <div className="px-6 md:px-8 py-6 border-b border-border">
           <div className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1 rounded-full bg-white/5 border border-white/10 text-white/50 mb-3">

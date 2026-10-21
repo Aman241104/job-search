@@ -256,7 +256,7 @@ function ResumePageInner() {
   ] as const;
 
   return (
-    <div className="min-h-screen pb-24 md:pb-8">
+    <div className="min-h-screen pb-8">
       {/* Header */}
       <div ref={headerRef} className="sticky top-0 z-30 bg-bg/90 backdrop-blur-lg border-b border-border px-6 md:px-8 py-4 flex items-center justify-between">
         <div>
@@ -290,7 +290,8 @@ function ResumePageInner() {
       </div>
 
       {/* Tabs */}
-      <div className="px-6 md:px-8 pt-5 pb-1 flex items-center gap-1 border-b border-border overflow-x-auto">
+      {/* Phones: wrap instead of scrolling sideways, where the last tabs were cut off unseen */}
+      <div className="px-6 md:px-8 pt-5 pb-1 flex flex-wrap md:flex-nowrap items-center gap-1 border-b border-border md:overflow-x-auto">
         {tabs.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -751,7 +752,8 @@ function ChipEditor({
             {chip}
             <button
               onClick={() => onChange(chips.filter((c) => c !== chip))}
-              className="ml-0.5 opacity-60 hover:opacity-100"
+              aria-label={`Remove ${chip}`}
+              className="tap-target ml-0.5 opacity-60 hover:opacity-100"
             >
               <X size={9} />
             </button>
@@ -814,7 +816,8 @@ function BulletEditor({
           />
           <button
             onClick={() => onChange(bullets.filter((_, j) => j !== i))}
-            className="p-1.5 rounded-lg text-white/20 hover:text-accent-pink opacity-0 group-hover:opacity-100 transition-all mt-0.5"
+            aria-label="Remove bullet"
+            className="tap-target p-1.5 rounded-lg text-white/20 hover:text-accent-pink md:opacity-0 md:group-hover:opacity-100 transition-all mt-0.5"
           >
             <X size={11} />
           </button>

@@ -117,7 +117,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 pointer-events-none">
+      {/* Phones: full width, above the bottom nav. Desktop: bottom-right. */}
+      <div className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] left-4 right-4 md:left-auto md:bottom-6 md:right-6 z-[60] flex flex-col gap-3 pointer-events-none">
         {toasts.map((t) => (
           <SingleToast key={t.id} item={t} onRemove={remove} />
         ))}

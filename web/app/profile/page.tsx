@@ -55,7 +55,7 @@ const ALL_SOURCES = [
   { key: 'talent', label: 'Talent.com (Gujarat)' },
   { key: 'shine', label: 'Shine (Gujarat)' },
   { key: 'freshersworld', label: 'Freshersworld (Gujarat)' },
-  { key: 'ats_boards', label: 'Company ATS Boards (Greenhouse/Lever/Ashby)' },
+  { key: 'ats_boards', label: 'Company Career Pages' },
   { key: 'simplify', label: 'Simplify New-Grad List' },
 ];
 
@@ -231,16 +231,17 @@ export default function ProfilePage() {
       <div className="flex items-center justify-center h-full min-h-screen">
         <div className="text-center">
           <p className="text-accent-pink text-sm mb-1">{error}</p>
-          <p className="text-white/30 text-xs font-mono">Check that the backend is running on port 8000.</p>
+          <p className="text-white/30 text-xs font-mono">Check your connection and reload the page.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div ref={pageRef} className="max-w-2xl mx-auto px-4 py-8 pb-24 md:pb-8">
+    <div ref={pageRef} className="max-w-2xl mx-auto px-4 py-8 pb-8">
       {/* Header */}
-      <div className="profile-section flex items-center justify-between mb-6 rounded-2xl border border-border bg-bg-2 px-5 py-4">
+      {/* Sticky: on a phone the form is ~10 screens long and Save sat only at the top */}
+      <div className="profile-section sticky top-2 z-30 flex items-center justify-between mb-6 rounded-2xl border border-border bg-bg-2/95 backdrop-blur px-5 py-4 shadow-sm">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold text-white/90">My Profile</h1>
           {isDirty && (
@@ -365,7 +366,7 @@ export default function ProfilePage() {
                     max={20}
                     value={profile.skill_weights[skill] ?? 10}
                     onChange={(e) => setSkillWeight(skill, parseInt(e.target.value, 10))}
-                    className="flex-1 accent-accent-green"
+                    className="flex-1 h-8 accent-accent-green"
                   />
                   <span className="text-xs font-mono text-white/40 w-6 text-right">
                     {profile.skill_weights[skill] ?? 10}
@@ -412,7 +413,7 @@ export default function ProfilePage() {
               max={100}
               value={profile.salary_weight}
               onChange={(e) => set('salary_weight', parseInt(e.target.value, 10))}
-              className="w-full accent-accent-green"
+              className="w-full h-8 accent-accent-green"
             />
           </div>
           <div>
@@ -426,7 +427,7 @@ export default function ProfilePage() {
               max={100}
               value={profile.location_weight}
               onChange={(e) => set('location_weight', parseInt(e.target.value, 10))}
-              className="w-full accent-accent-green"
+              className="w-full h-8 accent-accent-green"
             />
           </div>
           <div>
@@ -442,7 +443,7 @@ export default function ProfilePage() {
               max={100}
               value={profile.min_score_threshold}
               onChange={(e) => set('min_score_threshold', parseInt(e.target.value, 10))}
-              className="w-full accent-accent-green"
+              className="w-full h-8 accent-accent-green"
             />
             <p className="text-xs text-white/30 mt-1">
               Jobs scoring below this need an explicit override before you can generate a CV/apply.

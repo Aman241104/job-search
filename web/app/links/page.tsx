@@ -212,7 +212,7 @@ export default function LinksPage() {
   }, []);
 
   return (
-    <div className="min-h-screen p-6 md:p-8 pb-24 md:pb-8">
+    <div className="min-h-screen p-6 md:p-8 pb-8">
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-white/90 mb-1">Job Board Links</h1>
@@ -275,9 +275,9 @@ export default function LinksPage() {
                 <div>
                   <h3 className={clsx('font-semibold text-sm', p.accent)}>{p.name}</h3>
                   <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className="text-[10px] text-white/25 font-mono">{p.tag}</span>
+                    <span className="text-[11px] text-white/35 font-mono">{p.tag}</span>
                     {p.autoScraped && (
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-accent-green/15 text-accent-green border border-accent-green/20">
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-accent-green/15 text-accent-green border border-accent-green/20">
                         AUTO
                       </span>
                     )}
@@ -294,7 +294,8 @@ export default function LinksPage() {
 
             <div
               className={clsx(
-                'text-xs font-semibold py-2 px-3 rounded-xl border text-center transition-all duration-150 group-hover:opacity-100 opacity-0',
+                // Hover-reveal on desktop only: touch screens have no hover
+                'text-xs font-semibold py-2 px-3 rounded-xl border text-center transition-all duration-150 md:opacity-0 md:group-hover:opacity-100',
                 'bg-white/5 border-white/10',
                 p.accent
               )}

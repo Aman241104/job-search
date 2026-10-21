@@ -272,7 +272,7 @@ export default function AnalyticsPage() {
   const maxSalaryCount = salaryData ? Math.max(...salaryData.ranges.map((r) => r.count), 1) : 1;
 
   return (
-    <div className="min-h-screen p-6 md:p-8 pb-24 md:pb-8">
+    <div className="min-h-screen p-6 md:p-8 pb-8">
       {/* Header */}
       <div className="mb-6">
         <h1 className="font-display text-display-sm font-medium text-white/90 mb-1">Career Intelligence</h1>

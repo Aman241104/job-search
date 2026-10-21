@@ -170,7 +170,7 @@ function LearningPageInner() {
                 </div>
                 <button
                   onClick={(e) => cycleStatus(item, e)}
-                  className="flex-shrink-0 mt-0.5 p-1 -m-1 rounded hover:bg-white/10"
+                  className="tap-target flex-shrink-0 mt-0.5 p-1 -m-1 rounded hover:bg-white/10"
                   title="Click to cycle status: not started -> in progress -> done"
                 >
                   <StatusIcon status={item.status} />
@@ -184,7 +184,7 @@ function LearningPageInner() {
   };
 
   return (
-    <div className="min-h-screen pb-24 md:pb-8 flex flex-col">
+    <div className="min-h-screen pb-8 flex flex-col">
       <div className="px-6 md:px-8 py-6 border-b border-border">
         <div className="flex items-start justify-between">
           <div>

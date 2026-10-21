@@ -294,7 +294,7 @@ function BulkBar({ selectedIds, onDeselect, onAction }: BulkBarProps) {
   return (
     <div
       ref={barRef}
-      className="fixed bottom-0 left-0 right-0 z-50 bg-bg-3/95 backdrop-blur border-t border-border px-6 py-3"
+      className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] md:bottom-0 left-0 right-0 z-50 bg-bg-3/95 backdrop-blur border-t border-border px-4 md:px-6 py-3"
     >
       <div className="flex items-center gap-3 flex-wrap max-w-7xl mx-auto">
         <span className="text-sm font-semibold text-white/70 mr-1">
@@ -1433,7 +1433,7 @@ function JobsPageInner() {
         ref={backToTopRef}
         onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
         className={clsx(
-          'fixed bottom-6 right-6 z-40 flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-bg-3 border border-border text-white/50 hover:text-white/80 hover:border-white/20 shadow-xl text-sm transition-colors duration-150',
+          'fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] md:bottom-6 right-4 md:right-6 z-40 flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-bg-3 border border-border text-white/50 hover:text-white/80 hover:border-white/20 shadow-xl text-sm transition-colors duration-150',
           !showBackToTop && 'pointer-events-none opacity-0'
         )}
         title="Back to top"
@@ -1446,7 +1446,7 @@ function JobsPageInner() {
       {/* Keyboard shortcut hint */}
       <button
         onClick={() => setShowShortcuts(true)}
-        className="fixed bottom-6 left-6 md:left-[104px] z-40 flex items-center gap-1.5 px-3 py-2 rounded-full bg-bg-2 border border-border text-white/20 hover:text-white/50 hover:border-white/15 text-xs transition-all duration-150"
+        className="hidden md:flex fixed bottom-6 left-[104px] z-40 items-center gap-1.5 px-3 py-2 rounded-full bg-bg-2 border border-border text-white/20 hover:text-white/50 hover:border-white/15 text-xs transition-all duration-150"
         title="Keyboard shortcuts (?)"
       >
         <Keyboard size={11} />

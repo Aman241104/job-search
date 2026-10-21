@@ -148,7 +148,7 @@ export default function JobCard({ job, onStatusChange, onStarChange, onView }: J
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2 mb-1">
             <div className="min-w-0">
-              <h3 className="font-sans font-semibold text-white/90 text-sm leading-tight truncate">
+              <h3 className="font-sans font-semibold text-white/90 text-sm leading-tight line-clamp-2 break-words">
                 {job.title}
               </h3>
               <p className="text-white/40 text-xs mt-0.5 truncate">{job.company}</p>
@@ -159,7 +159,7 @@ export default function JobCard({ job, onStatusChange, onStarChange, onView }: J
               <button
                 onClick={handleStar}
                 className={clsx(
-                  'p-1 rounded-lg transition-all duration-150',
+                  'tap-target p-1 rounded-lg transition-all duration-150',
                   starred
                     ? 'text-accent-yellow'
                     : 'text-white/20 hover:text-white/50'
@@ -169,7 +169,8 @@ export default function JobCard({ job, onStatusChange, onStarChange, onView }: J
                 <Star size={13} fill={starred ? 'currentColor' : 'none'} />
               </button>
 
-              <span className={clsx('text-[10px] font-medium px-2 py-0.5 rounded-md border', sourceCls)}>
+              {/* Phones: the title needs the width more than the source label */}
+              <span className={clsx('hidden sm:inline text-[10px] font-medium px-2 py-0.5 rounded-md border', sourceCls)}>
                 {job.source}
               </span>
             </div>
@@ -238,7 +239,7 @@ export default function JobCard({ job, onStatusChange, onStarChange, onView }: J
           <button
             onClick={() => setShowStatusMenu(!showStatusMenu)}
             className={clsx(
-              'flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-lg border transition-all duration-150 hover:opacity-80',
+              'flex items-center gap-1.5 text-[11px] font-medium px-3 py-2 md:px-2.5 md:py-1 rounded-lg border transition-all duration-150 hover:opacity-80',
               s.bg, s.text, s.border
             )}
           >
@@ -255,7 +256,7 @@ export default function JobCard({ job, onStatusChange, onStarChange, onView }: J
                     key={st}
                     onClick={() => handleStatusChange(st)}
                     className={clsx(
-                      'w-full text-left px-3 py-2 text-[11px] font-medium transition-all duration-100 hover:bg-white/5',
+                      'w-full text-left px-3 py-3 md:py-2 text-[11px] font-medium transition-all duration-100 hover:bg-white/5',
                       sc.text,
                       currentStatus === st && 'bg-white/5'
                     )}
@@ -274,7 +275,7 @@ export default function JobCard({ job, onStatusChange, onStarChange, onView }: J
           <button
             onClick={() => setShowNotes(!showNotes)}
             className={clsx(
-              'p-1.5 rounded-lg transition-all duration-150',
+              'p-2.5 md:p-1.5 rounded-lg transition-all duration-150',
               showNotes || notes
                 ? 'text-accent-cyan bg-accent-cyan/10'
                 : 'text-white/25 hover:text-white/50 hover:bg-white/5'
@@ -288,7 +289,7 @@ export default function JobCard({ job, onStatusChange, onStarChange, onView }: J
           {hasFiles && job.cv_path && (
             <button
               onClick={() => api.downloadCV(job.id)}
-              className="p-1.5 rounded-lg text-white/25 hover:text-accent-purple hover:bg-accent-purple/10 transition-all duration-150"
+              className="p-2.5 md:p-1.5 rounded-lg text-white/25 hover:text-accent-purple hover:bg-accent-purple/10 transition-all duration-150"
               title="Download CV"
             >
               <FileText size={12} />
@@ -299,7 +300,7 @@ export default function JobCard({ job, onStatusChange, onStarChange, onView }: J
           {hasFiles && job.cover_letter_path && (
             <button
               onClick={() => api.downloadCover(job.id)}
-              className="p-1.5 rounded-lg text-white/25 hover:text-accent-yellow hover:bg-accent-yellow/10 transition-all duration-150"
+              className="p-2.5 md:p-1.5 rounded-lg text-white/25 hover:text-accent-yellow hover:bg-accent-yellow/10 transition-all duration-150"
               title="Download Cover Letter"
             >
               <Envelope size={12} />
@@ -312,7 +313,7 @@ export default function JobCard({ job, onStatusChange, onStarChange, onView }: J
               href={job.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="p-1.5 rounded-lg text-white/25 hover:text-white/60 hover:bg-white/5 transition-all duration-150"
+              className="p-2.5 md:p-1.5 rounded-lg text-white/25 hover:text-white/60 hover:bg-white/5 transition-all duration-150"
             >
               <ArrowSquareOut size={12} />
             </a>
@@ -323,7 +324,7 @@ export default function JobCard({ job, onStatusChange, onStarChange, onView }: J
               onClick={handleApply}
               disabled={applying}
               className={clsx(
-                'flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg border transition-all duration-150',
+                'flex items-center gap-1.5 text-[11px] font-semibold px-4 py-2 md:px-3 md:py-1.5 rounded-lg border transition-all duration-150',
                 applying
                   ? 'border-white/10 text-white/30 cursor-not-allowed'
                   : 'border-accent-green/40 text-accent-green hover:bg-accent-green/10'

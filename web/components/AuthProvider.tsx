@@ -97,7 +97,8 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       <GlobalSearchProvider>
         <div className="relative z-10 flex min-h-screen">
           <Sidebar />
-          <main className="flex-1 overflow-y-auto min-h-screen">{children}</main>
+          {/* Phones: room for the fixed bottom nav (+ iPhone home bar) on every page */}
+          <main className="flex-1 overflow-y-auto min-h-screen pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0">{children}</main>
         </div>
       </GlobalSearchProvider>
     </AuthContext.Provider>

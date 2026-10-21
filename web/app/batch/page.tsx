@@ -217,7 +217,7 @@ function BatchPageInner() {
   const ChannelIcon = channelIcon;
 
   return (
-    <div className="min-h-screen pb-24 md:pb-8 px-6 md:px-8 py-6 max-w-4xl mx-auto">
+    <div className="min-h-screen pb-8 px-6 md:px-8 py-6 max-w-4xl mx-auto">
       {/* ── Hero ── */}
       <div className="relative overflow-hidden rounded-2xl border border-border mb-6">
         <HeroBackground className="absolute inset-0" />

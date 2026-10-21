@@ -97,7 +97,7 @@ function DocList({ docs }: { docs: typeof howItWorks }) {
 
 export default function DocsIndexPage() {
   return (
-    <div className="min-h-screen pb-24 md:pb-8 px-6 md:px-8 py-6">
+    <div className="min-h-screen pb-8 px-6 md:px-8 py-6">
       <div className="max-w-3xl mx-auto">
         <h1 className="text-2xl font-bold text-white/90 mb-1">Docs</h1>
         <p className="text-white/40 text-sm mb-8">Written guides for this project.</p>

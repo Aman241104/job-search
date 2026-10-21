@@ -81,7 +81,7 @@ function ReviewPageInner() {
   const pct = streak ? Math.min(100, Math.round((streak.today_points / streak.goal) * 100)) : 0;
 
   return (
-    <div className="min-h-screen pb-24 md:pb-8 px-6 md:px-8 py-6 max-w-3xl">
+    <div className="min-h-screen pb-8 px-6 md:px-8 py-6 max-w-3xl">
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white/90 mb-1">Review</h1>

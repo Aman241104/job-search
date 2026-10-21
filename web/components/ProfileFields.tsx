@@ -51,7 +51,8 @@ export function ChipEditor({
             {chip}
             <button
               onClick={() => removeChip(chip)}
-              className="text-accent-green/50 hover:text-accent-green transition-colors ml-0.5"
+              aria-label={`Remove ${chip}`}
+              className="tap-target text-accent-green/50 hover:text-accent-green transition-colors ml-0.5"
               type="button"
             >
               <X size={11} />

@@ -737,3 +737,10 @@ select:focus {
   color: rgb(var(--ink) / 0.85);
   font-weight: 600;
 }
+
+/* Bigger invisible touch area for small icon buttons (chip ✕ etc.) without
+   changing their look: 10px of extra hit area on every side. */
+@layer utilities {
+  .tap-target { position: relative; }
+  .tap-target::after { content: ''; position: absolute; inset: -10px; }
+}

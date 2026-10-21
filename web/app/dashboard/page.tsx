@@ -476,7 +476,7 @@ export default function DashboardPage() {
       setStats(statsData);
       setTopJobs(jobsData.jobs || []);
     } catch {
-      setError('Unable to connect to the backend. Make sure FastAPI is running on port 8000.');
+      setError("Couldn't load your dashboard. Check your connection and try again.");
     } finally {
       setLoading(false);
     }
@@ -615,7 +615,7 @@ export default function DashboardPage() {
 
   return (
     <ToastProvider>
-      <div className="min-h-screen p-6 md:p-8 pb-24 md:pb-8">
+      <div className="min-h-screen p-6 md:p-8 pb-8">
         {/* Header */}
         <div className="mb-8 flex items-start justify-between">
           <div>
@@ -643,8 +643,14 @@ export default function DashboardPage() {
         </div>
 
         {error && (
-          <div className="mb-8 -mt-4 bg-accent-pink/10 border border-accent-pink/20 rounded-xl px-4 py-3 text-sm text-accent-pink">
-            {error}
+          <div className="mb-8 -mt-4 flex items-center justify-between gap-3 bg-accent-pink/10 border border-accent-pink/20 rounded-xl px-4 py-3 text-sm text-accent-pink">
+            <span>{error}</span>
+            <button
+              onClick={fetchData}
+              className="flex-shrink-0 text-xs font-semibold px-3 py-2 rounded-lg border border-accent-pink/30 hover:bg-accent-pink/10"
+            >
+              Retry
+            </button>
           </div>
         )}
 
@@ -754,13 +760,13 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-3">
                     <Link
                       href="/jobs?min_score=70&sort=score"
-                      className="text-xs text-accent-cyan hover:text-accent-cyan/80 transition-colors"
+                      className="text-xs py-2 text-accent-cyan hover:text-accent-cyan/80 transition-colors"
                     >
                       High Match →
                     </Link>
                     <Link
                       href="/jobs"
-                      className="flex items-center gap-1.5 text-xs text-accent-green hover:text-accent-green/80 transition-colors"
+                      className="flex items-center gap-1.5 text-xs py-2 text-accent-green hover:text-accent-green/80 transition-colors"
                     >
                       View all
                       <ArrowRight size={12} />

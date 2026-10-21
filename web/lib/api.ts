@@ -4,8 +4,22 @@
 // instead of one the browser will never send it back to. credentials:
 // 'include' is harmless-but-unnecessary here now; left on in case a caller
 // ever bypasses the proxy.
-function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
-  return fetch(input, { ...init, credentials: 'include' });
+// Reads retry twice with backoff on a network error or 5xx: a Cloud Run cold
+// start or a flaky mobile connection otherwise shows up as an error screen.
+// Writes are never retried (they may not be idempotent).
+const RETRY_DELAYS_MS = [1000, 3000];
+
+async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const isRead = !init.method || init.method.toUpperCase() === 'GET';
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(input, { ...init, credentials: 'include' });
+      if (!isRead || res.status < 500 || attempt >= RETRY_DELAYS_MS.length) return res;
+    } catch (err) {
+      if (!isRead || attempt >= RETRY_DELAYS_MS.length) throw err;
+    }
+    await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+  }
 }
 
 if (typeof window !== 'undefined' && process.env.NODE_ENV === 'production' && !process.env.NEXT_PUBLIC_API_URL) {

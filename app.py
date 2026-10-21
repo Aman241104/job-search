@@ -1455,13 +1455,13 @@ def get_learning_topics(user_id: str = Depends(get_current_user)):
     tracker = TrackerAgent()
     tracker.seed_learning_items(user_id, LEARNING_TRACK)
     items = tracker.get_learning_items(user_id)
+    # One grouped query, not one per item (~250ms each to the remote DB).
+    counts = tracker.learning_topic_counts([i['id'] for i in items])
     for item in items:
-        topics = tracker.get_learning_topics(item['id'])
-        item['topic_count'] = len(topics)
-        item['topics_covered'] = sum(1 for t in topics if t.get('covered'))
-        item['coverage_score'] = (
-            round(item['topics_covered'] / item['topic_count'] * 100) if topics else None
-        )
+        total, covered = counts.get(item['id'], (0, 0))
+        item['topic_count'] = total
+        item['topics_covered'] = covered
+        item['coverage_score'] = round(covered / total * 100) if total else None
     return items
 
 

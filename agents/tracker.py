@@ -52,7 +52,14 @@ if not DATABASE_URL:
 
 import psycopg2
 import psycopg2.pool
-_pg_pool = psycopg2.pool.ThreadedConnectionPool(1, 10, DATABASE_URL)
+# Keepalives stop idle pooled connections being dropped between requests.
+_pg_pool = psycopg2.pool.ThreadedConnectionPool(
+    1, 10, DATABASE_URL, keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3)
+# psycopg2 closes any returned connection beyond `minconn`, so with minconn=1
+# every concurrent request opened (and threw away) a fresh TLS connection to
+# Supabase: a dashboard's 6 parallel calls took ~4s each instead of ~0.3s.
+# Raised after construction so startup still opens just one connection.
+_pg_pool.minconn = 10
 
 # The schema DDL below is ~5s against the remote Postgres, and app.py
 # constructs a fresh TrackerAgent() on nearly every request — running it once
@@ -93,12 +100,35 @@ class _PgConnWrapper:
 
     def __init__(self, pool):
         self._pool = pool
-        self._conn = pool.getconn()
+        self._conn = self._fresh()
+        self._used = False
         self.row_factory = None
 
+    def _fresh(self):
+        # Pooled connections die while idle (server/network drops them); a
+        # closed one is thrown away instead of handed out.
+        for _ in range(3):
+            conn = self._pool.getconn()
+            if not conn.closed:
+                return conn
+            self._pool.putconn(conn, close=True)
+        return self._pool.getconn()
+
     def execute(self, sql, params=()):
-        cursor = self._conn.cursor()
-        cursor.execute(sql.replace("?", "%s"), params)
+        sql = sql.replace("?", "%s")
+        try:
+            cursor = self._conn.cursor()
+            cursor.execute(sql, params)
+        except (psycopg2.OperationalError, psycopg2.InterfaceError):
+            # A dead connection only shows itself on first use. Nothing has
+            # run on it yet, so swapping in a fresh one and retrying is safe.
+            if self._used:
+                raise
+            self._pool.putconn(self._conn, close=True)
+            self._conn = self._fresh()
+            cursor = self._conn.cursor()
+            cursor.execute(sql, params)
+        self._used = True
         return _DictCursorProxy(cursor) if self.row_factory else cursor
 
     def commit(self):
@@ -108,11 +138,21 @@ class _PgConnWrapper:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type is None:
-            self._conn.commit()
-        else:
-            self._conn.rollback()
-        self._pool.putconn(self._conn)
+        # Always hand the connection back: when commit/rollback itself failed
+        # on a dead connection, putconn used to be skipped, leaking a pool
+        # slot each time until "connection pool exhausted" took every request down.
+        broken = False
+        try:
+            if exc_type is None:
+                self._conn.commit()
+            else:
+                self._conn.rollback()
+        except psycopg2.Error:
+            broken = True
+            if exc_type is None:
+                raise
+        finally:
+            self._pool.putconn(self._conn, close=broken or bool(self._conn.closed))
 
 
 STATUS_COLORS = {
@@ -1441,14 +1481,20 @@ class TrackerAgent:
         """Insert each seed item if it doesn't already exist for this user —
         never overwrites a status the user has already set, safe to call on
         every startup."""
+        if not items:
+            return
         now = datetime.now().isoformat()
+        # One multi-row INSERT: this runs on every Learning page load, and a
+        # statement per item cost one remote round trip each.
+        rows = ", ".join(["(?, ?, ?, ?, ?, ?, 'not_started', ?)"] * len(items))
+        params = [v for item in items for v in
+                  (f"{user_id}:{item['id']}", user_id, item["title"], item["type"], item["phase"], item["order"], now)]
         with self._get_conn() as conn:
-            for item in items:
-                conn.execute("""
-                    INSERT INTO learning_items (id, user_id, title, item_type, phase, order_index, status, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, 'not_started', ?)
-                    ON CONFLICT (id) DO NOTHING
-                """, (f"{user_id}:{item['id']}", user_id, item["title"], item["type"], item["phase"], item["order"], now))
+            conn.execute(f"""
+                INSERT INTO learning_items (id, user_id, title, item_type, phase, order_index, status, updated_at)
+                VALUES {rows}
+                ON CONFLICT (id) DO NOTHING
+            """, params)
             conn.commit()
 
     def get_learning_items(self, user_id: str) -> list:
@@ -1509,6 +1555,17 @@ class TrackerAgent:
                 "SELECT * FROM learning_topics WHERE item_id = ? ORDER BY order_index ASC", (item_id,)
             ).fetchall()
         return rows
+
+    def learning_topic_counts(self, item_ids: list) -> dict:
+        """{item_id: (topic count, covered count)} in one query."""
+        if not item_ids:
+            return {}
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                "SELECT item_id, COUNT(*), COUNT(*) FILTER (WHERE covered = 1) FROM learning_topics "
+                "WHERE item_id = ANY(?) GROUP BY item_id", (list(item_ids),)
+            ).fetchall()
+        return {r[0]: (r[1], r[2]) for r in rows}
 
     def toggle_learning_topic(self, topic_id: str) -> bool:
         with self._get_conn() as conn:
