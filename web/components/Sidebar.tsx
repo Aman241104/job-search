@@ -31,7 +31,8 @@ export const navItems = [
 // Mobile bottom nav only has room for ~5 comfortable tabs on a 375px screen
 // (9 items — 7 nav links + Search + Export — was overflowing/cramping badly).
 // Keep the 4 most-used destinations visible; everything else lives in "More".
-const mobilePrimaryHrefs = ['/dashboard', '/jobs', '/train', '/analytics'];
+// Review (the daily streak) is the most phone-shaped task, so it beats Analytics.
+const mobilePrimaryHrefs = ['/dashboard', '/jobs', '/review', '/train'];
 const mobilePrimaryItems = navItems.filter((n) => mobilePrimaryHrefs.includes(n.href));
 const mobileMoreItems = navItems.filter((n) => !mobilePrimaryHrefs.includes(n.href));
 
@@ -214,7 +215,7 @@ export default function Sidebar() {
             className="md:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
             onClick={() => setShowMore(false)}
           />
-          <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 glass-panel glass-strong rounded-t-2xl px-4 pt-4 pb-8">
+          <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 glass-panel glass-strong rounded-t-2xl px-4 pt-4 pb-[max(2rem,env(safe-area-inset-bottom))]">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-mono text-white/30 uppercase tracking-widest">More</span>
               <button onClick={() => setShowMore(false)} className="p-1 text-white/40">
@@ -267,7 +268,7 @@ export default function Sidebar() {
       )}
 
       {/* Mobile Bottom Nav — 4 primary destinations + More, sized to fit 375px comfortably */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 glass-panel glass-strong !border-x-0 !border-b-0 flex items-center justify-around px-2 py-2">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 glass-panel glass-strong !border-x-0 !border-b-0 flex items-center justify-around px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         {mobilePrimaryItems.map(({ href, icon: Icon, label }) => {
           const isActive = pathname === href || pathname.startsWith(href + '/');
           return (

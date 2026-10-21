@@ -9,11 +9,12 @@ import { useToast } from '@/components/Toast';
 interface Props {
   open: boolean;
   initialUrl?: string;
+  initialText?: string;
   onClose: () => void;
   onAdded: (jobId: string) => void;
 }
 
-export default function AddJobModal({ open, initialUrl = '', onClose, onAdded }: Props) {
+export default function AddJobModal({ open, initialUrl = '', initialText = '', onClose, onAdded }: Props) {
   const [mode, setMode] = useState<'url' | 'text'>('url');
   const [url, setUrl] = useState(initialUrl);
   const [text, setText] = useState('');
@@ -27,7 +28,8 @@ export default function AddJobModal({ open, initialUrl = '', onClose, onAdded }:
 
   useEffect(() => {
     if (initialUrl) { setMode('url'); setUrl(initialUrl); }
-  }, [initialUrl]);
+    else if (initialText) { setMode('text'); setText(initialText); }
+  }, [initialUrl, initialText]);
 
   if (!open) return null;
 
@@ -99,13 +101,18 @@ export default function AddJobModal({ open, initialUrl = '', onClose, onAdded }:
           {saving ? 'Reading the job…' : 'Save job'}
         </button>
 
+        <p className="md:hidden text-[11px] text-white/35 border-t border-border pt-3">
+          On your phone: add JobHunt to your home screen (browser menu → Add to Home screen), then use
+          Share → JobHunt on any job in Naukri, LinkedIn or WhatsApp.
+        </p>
         {bookmarklet && (
-          <div className="flex items-start gap-2 text-[11px] text-white/35 border-t border-border pt-3">
+          <div className="hidden md:flex items-start gap-2 text-[11px] text-white/35 border-t border-border pt-3">
             <BookmarkSimple size={14} className="flex-shrink-0 mt-0.5" />
             <p>
               Save from any site: drag{' '}
+              {/* href set on the DOM node: React refuses javascript: URLs in props */}
               <a
-                href={bookmarklet}
+                ref={(el) => el?.setAttribute('href', bookmarklet)}
                 onClick={(e) => e.preventDefault()}
                 className="text-accent-cyan underline cursor-grab"
               >

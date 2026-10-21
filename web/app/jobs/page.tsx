@@ -385,6 +385,7 @@ function JobsPageInner() {
   const [drawerJobId, setDrawerJobId] = useState<string | null>(null);
   const [showAddJob, setShowAddJob] = useState(false);
   const [addUrl, setAddUrl] = useState('');
+  const [addText, setAddText] = useState('');
 
   // ── View mode ──
   const [viewMode, setViewMode] = useState<'list' | 'kanban' | 'discover' | 'explore'>('list');
@@ -477,17 +478,21 @@ function JobsPageInner() {
   }, [page]);
 
   // Auto-open drawer from ?open=<id> (GlobalSearch), or the Add Job dialog
-  // from ?add=<url> (the "Save to Job Search" bookmarklet).
+  // from the bookmarklet (?add=<url>), the home-screen shortcut (?new=1), or
+  // the phone Share sheet (?add / ?share_text / ?share_title, manifest share_target).
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const openId = params.get('open');
-    const addUrl = params.get('add');
+    const shared = [params.get('share_title'), params.get('share_text')].filter(Boolean).join('\n');
+    // Many apps share a link inside the text field rather than as `url`
+    const link = params.get('add') || shared.match(/https?:\/\/\S+/)?.[0] || '';
     if (openId) setDrawerJobId(openId);
-    if (addUrl) { setAddUrl(addUrl); setShowAddJob(true); }
-    if (openId || addUrl) {
+    if (link) setAddUrl(link);
+    else if (shared) setAddText(shared);
+    if (link || shared || params.get('new')) setShowAddJob(true);
+    if (openId || link || shared || params.get('new')) {
       const url = new URL(window.location.href);
-      url.searchParams.delete('open');
-      url.searchParams.delete('add');
+      ['open', 'add', 'new', 'share_text', 'share_title'].forEach((k) => url.searchParams.delete(k));
       window.history.replaceState({}, '', url.toString());
     }
   }, []);
@@ -697,10 +702,12 @@ function JobsPageInner() {
       <AddJobModal
         open={showAddJob}
         initialUrl={addUrl}
-        onClose={() => { setShowAddJob(false); setAddUrl(''); }}
+        initialText={addText}
+        onClose={() => { setShowAddJob(false); setAddUrl(''); setAddText(''); }}
         onAdded={(id) => {
           setShowAddJob(false);
           setAddUrl('');
+          setAddText('');
           setDrawerJobId(id);
           if (viewMode === 'list') fetchJobs(page, false);
         }}
@@ -737,9 +744,10 @@ function JobsPageInner() {
 
         {/* Filter bar */}
         <div className="sticky top-0 z-30 bg-bg/90 backdrop-blur-lg border-b border-border px-6 md:px-8 py-4">
-          <div className="flex items-center gap-3 mb-3">
+          {/* Phones: search takes its own full-width row, controls wrap below */}
+          <div className="flex flex-wrap items-center gap-3 mb-3">
             {/* Search */}
-            <div className="flex-1 relative">
+            <div className="flex-1 basis-full sm:basis-0 relative">
               <MagnifyingGlass size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
               <input
                 type="text"

@@ -102,7 +102,9 @@ def from_json_ld(html: str) -> dict | None:
                 return {
                     "title": _text(item.get("title")),
                     "company": _text(item.get("hiringOrganization")),
-                    "description": _text(item.get("description"))[:4000],
+                    # Long: many JDs open with paragraphs of company boilerplate
+                    # and only list requirements at the end.
+                    "description": _text(item.get("description"))[:12000],
                     "location": _location(item),
                     "salary": _salary(item),
                     "date_posted": str(item.get("datePosted") or ""),

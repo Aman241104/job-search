@@ -110,9 +110,9 @@ function ReviewPageInner() {
             )}
           </div>
           <div className="flex-1 min-w-[160px]">
-            <div className="flex justify-between text-[11px] text-white/40 mb-1">
+            <div className="flex flex-wrap justify-between gap-x-3 text-[11px] text-white/40 mb-1">
               <span>Today {streak.today_points}/{streak.goal} pts</span>
-              <span>apply 5 · review/train 1</span>
+              <span className="hidden sm:inline">apply 5 · review/train 1</span>
             </div>
             <div className="h-2 rounded-full bg-white/5 overflow-hidden">
               <div className={`h-full rounded-full ${streak.met_today ? 'bg-accent-green' : 'bg-accent-yellow'}`} style={{ width: `${pct}%` }} />
@@ -143,7 +143,7 @@ function ReviewPageInner() {
           title={counts.total ? 'All caught up' : 'No cards yet'}
           description={
             counts.total
-              ? `${counts.total} cards scheduled. Come back when the next ones are due.`
+              ? `${counts.total} card${counts.total === 1 ? '' : 's'} scheduled. Come back when the next ones are due.`
               : 'Sync builds cards from your Story Bank and every job prep pack you have generated.'
           }
           action={{ label: 'Sync cards', onClick: sync }}

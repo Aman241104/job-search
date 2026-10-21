@@ -1,0 +1,25 @@
+{
+  "name": "JobHunt — Job Search",
+  "short_name": "JobHunt",
+  "description": "Find, track and prepare for jobs.",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FBFAF7",
+  "theme_color": "#FBFAF7",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Review", "url": "/review", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Add a job", "url": "/jobs?new=1", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] }
+  ],
+  "share_target": {
+    "action": "/jobs",
+    "method": "GET",
+    "enctype": "application/x-www-form-urlencoded",
+    "params": { "title": "share_title", "text": "share_text", "url": "add" }
+  }
+}

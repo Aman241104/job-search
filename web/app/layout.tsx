@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Fragment_Mono, Outfit } from 'next/font/google';
 import localFont from 'next/font/local';
 import { ThemeProvider } from 'next-themes';
@@ -42,7 +42,20 @@ export const metadata: Metadata = {
   description: 'Track, find, and ace your job search with AI-powered insights.',
   icons: {
     icon: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%23FBFAF7'/%3E%3Ccircle cx='50' cy='50' r='32' fill='none' stroke='%233F7355' stroke-width='9'/%3E%3Ccircle cx='50' cy='50' r='12' fill='%233F7355'/%3E%3C/svg%3E",
+    apple: '/apple-touch-icon.png',
   },
+  // Installable app (Add to Home Screen); share_target in the manifest puts
+  // JobHunt in the phone's Share sheet so a job link from any app lands in Add Job.
+  manifest: '/manifest.webmanifest',
+  appleWebApp: { capable: true, title: 'JobHunt', statusBarStyle: 'default' },
+  other: { 'mobile-web-app-capable': 'yes' },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#FBFAF7',
 };
 
 export default function RootLayout({

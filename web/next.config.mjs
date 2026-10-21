@@ -25,6 +25,9 @@ const STATIC_EXPORT = process.env.STATIC_EXPORT === '1';
 const nextConfig = STATIC_EXPORT
   ? { output: 'export' }
   : {
+      // AI endpoints (tutor, prep pack, audio overview) can run past the
+      // proxy's 30s default and were cut off as "socket hang up" -> 500.
+      experimental: { proxyTimeout: 120_000 },
       async rewrites() {
         return [
           { source: '/api/:path*', destination: `${BACKEND_URL}/api/:path*` },
