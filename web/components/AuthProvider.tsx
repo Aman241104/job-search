@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { api, AuthUser } from '@/lib/api';
+import { isDemo, setDemo } from '@/lib/demo';
 import Sidebar from '@/components/Sidebar';
 import { GlobalSearchProvider } from '@/components/GlobalSearch';
 
@@ -20,7 +21,7 @@ export function useAuth() {
 
 // /login is the only route that renders without a session — every other
 // page redirects there until api.me() resolves to a real user.
-const PUBLIC_PATHS = ['/login'];
+const PUBLIC_PATHS = ['/login', '/demo'];
 // /onboarding needs a session (it saves to the real per-user profile) but
 // renders standalone, no Sidebar/nav — same treatment as /login below.
 const NO_SHELL_PATHS = ['/onboarding'];
@@ -98,7 +99,15 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         <div className="relative z-10 flex min-h-screen">
           <Sidebar />
           {/* Phones: room for the fixed bottom nav (+ iPhone home bar) on every page */}
-          <main className="flex-1 overflow-y-auto min-h-screen pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0">{children}</main>
+          <main className="flex-1 overflow-y-auto min-h-screen pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0">
+            {isDemo() && (
+              <div className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-xs font-mono bg-amber-300 text-black">
+                <span>Demo mode · sample jobs and invented companies · nothing is saved</span>
+                <button type="button" className="underline underline-offset-2 min-h-[32px]" onClick={() => { setDemo(false); window.location.href = '/login'; }}>Exit demo</button>
+              </div>
+            )}
+            {children}
+          </main>
         </div>
       </GlobalSearchProvider>
     </AuthContext.Provider>

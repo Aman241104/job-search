@@ -59,6 +59,9 @@ export default function LoginPage() {
           <GoogleLogo size={18} weight="bold" className="relative z-10" />
           <span className="relative z-10">Sign in with Google</span>
         </a>
+        <a href="/demo" className="mt-3 flex items-center justify-center w-full px-4 py-3 rounded-xl border border-amber-300/50 text-amber-200 hover:bg-amber-300/10 transition-colors text-sm font-medium">
+          Just looking? Try the demo (sample data, no sign-in)
+        </a>
       </div>
     </div>
   );

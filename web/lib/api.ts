@@ -7,6 +7,8 @@
 // Reads retry twice with backoff on a network error or 5xx: a Cloud Run cold
 // start or a flaky mobile connection otherwise shows up as an error screen.
 // Writes are never retried (they may not be idempotent).
+import { withDemo } from './demo';
+
 const RETRY_DELAYS_MS = [1000, 3000];
 
 async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
@@ -329,7 +331,7 @@ export interface AuthUser {
 // fetch() calls, ends up with the session cookie scoped to this domain.
 export const AUTH_LOGIN_URL = `/auth/google/login`;
 
-export const api = {
+const realApi = {
   me: (): Promise<AuthUser | null> =>
     apiFetch(`/auth/me`).then((r) => {
       // 401/403 = genuinely logged out. Anything else non-ok (502/503 from
@@ -933,3 +935,6 @@ export const api = {
   blacklistCompany: (jobId: string): Promise<{ blacklisted: boolean; company: string }> =>
     apiFetch(`/api/jobs/${jobId}/blacklist`, { method: 'POST' }).then((r) => r.json()),
 };
+
+// /demo: answered from lib/demo.ts fixtures, no backend (see there).
+export const api = withDemo(realApi);
